@@ -39,8 +39,7 @@ public sealed class DutyExportWindow : UIWindow
     protected override void Dispose(bool disposing)
     {
         _subscription.Dispose();
-        _cancel?.Cancel();
-        _cancel?.Dispose();
+        BulkExport.StopWaiting(_export, _cancel);
         base.Dispose(disposing);
     }
 
