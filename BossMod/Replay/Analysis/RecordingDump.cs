@@ -204,9 +204,10 @@ static class RecordingDump
             return;
         }
 
-        // ability -> player -> offsets from the caster at each resolution
-        var byAbility = new Dictionary<ActionID, Dictionary<Replay.Participant, List<WDir>>>();
-        var casterPositions = new Dictionary<ActionID, List<WPos>>();
+        // ability -> player -> (offset when the cast began, offset when it landed)
+        var byAbility = new Dictionary<ActionID, Dictionary<Replay.Participant, List<(WDir AtCast, WDir AtHit)>>>();
+        var resolutions = new Dictionary<ActionID, int>();
+        var telegraphed = new Dictionary<ActionID, int>();
 
         foreach (var a in replay.Actions)
         {
@@ -215,47 +216,130 @@ static class RecordingDump
                 continue;
             }
 
-            var t = a.Timestamp;
-            var src = a.Source.PosRotAt(t);
-            var origin = new WPos(src.X, src.Z);
+            var hitAt = a.Timestamp;
+            var castAt = CastStart(a.Source, a.ID, hitAt);
 
-            casterPositions.GetOrAdd(a.ID).Add(origin);
+            resolutions[a.ID] = resolutions.GetValueOrDefault(a.ID) + 1;
+            if (castAt != hitAt)
+            {
+                telegraphed[a.ID] = telegraphed.GetValueOrDefault(a.ID) + 1;
+            }
+
+            var hitSrc = a.Source.PosRotAt(hitAt);
+            var castSrc = a.Source.PosRotAt(castAt);
+            var hitOrigin = new WPos(hitSrc.X, hitSrc.Z);
+            var castOrigin = new WPos(castSrc.X, castSrc.Z);
+
             var perPlayer = byAbility.GetOrAdd(a.ID);
 
             foreach (var p in involved)
             {
-                if (p.DeadAt(t))
+                if (p.DeadAt(hitAt))
                 {
                     continue;
                 }
 
-                var pos = p.PosRotAt(t);
-                perPlayer.GetOrAdd(p).Add(new WPos(pos.X, pos.Z) - origin);
+                var atHit = p.PosRotAt(hitAt);
+                var atCast = p.PosRotAt(castAt);
+                perPlayer.GetOrAdd(p).Add((new WPos(atCast.X, atCast.Z) - castOrigin, new WPos(atHit.X, atHit.Z) - hitOrigin));
             }
         }
 
         sb.AppendLine("========================================================================");
-        sb.AppendLine("POSITIONS, relative to whatever cast the ability, at the moment it resolved");
+        sb.AppendLine("POSITIONS, relative to whatever cast the ability");
+        sb.AppendLine("'cast' is where somebody stood when the cast began, which is the position they chose.");
+        sb.AppendLine("'hit' is where they were when it landed. For a knockback or a chase the two differ, and");
+        sb.AppendLine("the difference is the mechanic; for a plain dodge they are the same.");
         sb.AppendLine();
 
         foreach (var (aid, perPlayer) in byAbility)
         {
-            var casts = casterPositions[aid].Count;
+            var casts = resolutions[aid];
             sb.Append(aid.ToString()).Append(" - ").Append(casts).AppendLine(" resolutions");
             sb.Append("  looks like: ").AppendLine(Classify(replay, aid, involved.Count));
 
-            foreach (var (p, offsets) in perPlayer)
+            if (telegraphed.GetValueOrDefault(aid) == 0)
             {
-                var (mean, spread) = MeanAndSpread(offsets);
-                sb.Append("  ").Append($"{p.Class} {Name(p)}".PadRight(26))
-                  .Append("mean ").Append(Fixed(mean.X)).Append(", ").Append(Fixed(mean.Z))
-                  .Append("  dist ").Append(Fixed(mean.Length()))
-                  .Append("  ").Append(Octant(mean).PadRight(7))
-                  .Append("spread ").Append(Fixed(spread)).AppendLine("y");
+                sb.AppendLine("  no cast bar was recorded, so 'cast' and 'hit' are the same instant");
+            }
+
+            // Several casts landing together give every player the same set of timestamps, so their spread
+            // collapses to the variation between casters rather than between players. Worth saying out loud,
+            // since an identical figure on every row otherwise looks like a coincidence.
+            if (SimultaneousResolutions(replay, aid))
+            {
+                sb.AppendLine("  these resolve simultaneously, so spread measures the casters, not the players");
+            }
+
+            foreach (var (p, samples) in perPlayer)
+            {
+                var castOffsets = new List<WDir>(samples.Count);
+                var hitOffsets = new List<WDir>(samples.Count);
+                var moved = 0f;
+                foreach (var (atCast, atHit) in samples)
+                {
+                    castOffsets.Add(atCast);
+                    hitOffsets.Add(atHit);
+                    moved += (atHit - atCast).Length();
+                }
+
+                var (castMean, castSpread) = MeanAndSpread(castOffsets);
+                var (hitMean, _) = MeanAndSpread(hitOffsets);
+
+                sb.Append("  ").Append($"{p.Class} {Name(p)}".PadRight(24))
+                  .Append("cast (").Append(Fixed(castMean.X)).Append(',').Append(Fixed(castMean.Z)).Append(')')
+                  .Append(" d=").Append(Fixed(castMean.Length()))
+                  .Append(' ').Append(Octant(castMean).PadRight(6))
+                  .Append("spread ").Append(Fixed(castSpread)).Append("y  |  hit d=").Append(Fixed(hitMean.Length()))
+                  .Append(' ').Append(Octant(hitMean).PadRight(6))
+                  .Append("moved ").Append(Fixed(moved / samples.Count)).AppendLine("y");
             }
 
             sb.AppendLine();
         }
+    }
+
+    /// <summary>
+    /// When the cast that produced this resolution began. Matched by ability and by which cast of it finished
+    /// nearest the resolution, since an instant ability has no cast at all and returns the resolution itself.
+    /// </summary>
+    private static DateTime CastStart(Replay.Participant source, ActionID id, DateTime resolution)
+    {
+        var best = resolution;
+        var bestDelta = 2d; // beyond a couple of seconds it is a different cast of the same ability
+        foreach (var c in source.Casts)
+        {
+            if (c.ID != id)
+            {
+                continue;
+            }
+
+            var delta = Math.Abs((c.Time.End - resolution).TotalSeconds);
+            if (delta < bestDelta)
+            {
+                bestDelta = delta;
+                best = c.Time.Start;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>Whether this ability tends to resolve several at once, which changes what spread measures.</summary>
+    private static bool SimultaneousResolutions(Replay replay, ActionID aid)
+    {
+        var times = new HashSet<DateTime>();
+        var total = 0;
+        foreach (var a in replay.Actions)
+        {
+            if (a.ID == aid && IsHostile(a.Source))
+            {
+                ++total;
+                times.Add(a.Timestamp);
+            }
+        }
+
+        return total > times.Count;
     }
 
     /// <summary>
