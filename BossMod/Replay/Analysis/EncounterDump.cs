@@ -252,10 +252,6 @@ sealed class EncounterDump : CommonEnumInfo
     }
 
     /// <summary>
-    /// Where everyone stood, per ability. Delegates to the role position pass rather than recomputing it, so
-    /// the two can never disagree about the same encounter.
-    /// </summary>
-    /// <summary>
     /// Where the party stood, per pull. Uses the same analysis as a recording with no module, since there is
     /// no reason a fight somebody has written a module for should get the weaker of the two; the only
     /// difference is that roles are known here, so rows are labelled by role rather than by name.
@@ -276,9 +272,14 @@ sealed class EncounterDump : CommonEnumInfo
             sb.AppendLine("========================================================================");
             sb.Append("POSITIONS for pull ").AppendLine((i + 1).ToString());
 
+            // Derived per pull rather than once for the module: the same fight can be instanced at different
+            // world coordinates, so a centre taken from one pull does not describe another.
+            var arena = ArenaEstimate.Derive(party, enc.Time.Start, enc.Time.End);
+
             PositionAnalysis.Append(sb, replay, party,
                 p => Label(roles[p.ContentID], p),
-                a => enc.Time.Contains(a.Timestamp));
+                a => enc.Time.Contains(a.Timestamp),
+                arena);
         }
     }
 

@@ -19,6 +19,10 @@ module content.
   with distance, compass direction, and spread across resolutions.
 - **Mechanic shapes** inferred from what happened: stack, spread, raidwide, light party, probable tank
   buster, hedged where the data cannot decide.
+- **Arena estimated from where the party stood**, with centre, reach and a guess at circle or square, so
+  positions can also be read from the middle of the room rather than only from the boss.
+- **Recordings split into fights** wherever the log goes quiet, so a dungeon reads as its bosses rather than
+  one long encounter on a single clock.
 - **Contributions**: damage, DPS, healing, damage taken and deaths per player, to judge whether a recording
   came from a run worth learning from.
 - **Roles** assigned automatically on duty entry, skipped in extreme, savage and ultimate where people

@@ -12,6 +12,16 @@ static class RecordingDump
 {
     private const int MaxEvents = 8000;
 
+    // How long the recording has to go quiet before what follows counts as a separate fight. A dungeon is one
+    // recording containing several bosses with corridors between them, and treating it as one long encounter
+    // puts every boss on the same clock and averages four arenas into one.
+    private const double IdleGap = 45d;
+
+    // Below this a segment is a trash pull, and a full positional breakdown of three mobs dying in eight
+    // seconds is noise. They are still listed, just not analysed.
+    private const double MinFightSeconds = 20d;
+    private const int MinFightActions = 30;
+
     /// <summary>
     /// Whether something counts as part of the fight rather than part of the party. Checking for "not a
     /// player" is not enough: a scholar's fairy and a machinist's turret are separate actors, and in the
@@ -22,15 +32,28 @@ static class RecordingDump
 
     private readonly record struct Event(DateTime Timestamp, int Order, string Text);
 
+    /// <summary>One stretch of continuous fighting, named after whatever did the most in it.</summary>
+    private readonly record struct Fight(DateTime Start, DateTime End, string Label, int Actions)
+    {
+        public double Seconds => (End - Start).TotalSeconds;
+        public bool WorthAnalysing => Seconds >= MinFightSeconds && Actions >= MinFightActions;
+    }
+
     public static string Build(Replay replay)
     {
         var events = Collect(replay, Involved(replay));
         var sb = new StringBuilder();
 
+        var fights = Fights(replay);
+
         sb.Append("Recording dump for a duty with no boss module (").Append(replay.Path).AppendLine(")");
         sb.AppendLine("No encounters exist in this recording, so there are no phases or timings to report.");
-        sb.AppendLine("Times are seconds from the first recorded hostile action. Positions are world coordinates.");
+        sb.AppendLine("It has been split into fights wherever the recording went quiet for " + IdleGap + " seconds or more,");
+        sb.AppendLine("since a dungeon is several bosses with corridors between them rather than one long encounter.");
+        sb.AppendLine("Times are seconds from the start of the fight they fall in. Positions are world coordinates.");
         sb.AppendLine();
+
+        AppendFightList(sb, fights);
 
         AppendPlayers(sb, replay);
 
@@ -41,12 +64,24 @@ static class RecordingDump
         }
 
         events.Sort((a, b) => a.Timestamp != b.Timestamp ? a.Timestamp.CompareTo(b.Timestamp) : a.Order.CompareTo(b.Order));
-        var start = events[0].Timestamp;
 
         sb.AppendLine("--- TIMELINE ---");
         var shown = Math.Min(events.Count, MaxEvents);
+        var current = -1;
+        var start = fights.Count > 0 ? fights[0].Start : events[0].Timestamp;
         for (var i = 0; i < shown; ++i)
         {
+            // Events that arrive before the first hostile action, or in a corridor between two fights, belong
+            // to the fight they lead into, so the index only ever moves forward.
+            var next = fights.Count > 0 ? FightIndex(fights, events[i].Timestamp) : -1;
+            if (next > current)
+            {
+                current = next;
+                start = fights[current].Start;
+                sb.AppendLine();
+                sb.Append("  === FIGHT ").Append(current + 1).Append(": ").Append(fights[current].Label).AppendLine(" ===");
+            }
+
             var rel = (float)(events[i].Timestamp - start).TotalSeconds;
             sb.Append("  T+").Append(rel.ToString("f1").PadLeft(8)).Append("  ").AppendLine(events[i].Text);
         }
@@ -58,7 +93,28 @@ static class RecordingDump
 
         sb.AppendLine();
         AppendContributions(sb, replay);
-        PositionAnalysis.Append(sb, replay, Involved(replay), p => $"{p.Class} {Name(p)}", _ => true);
+
+        var involved = Involved(replay);
+        if (involved.Count == 0)
+        {
+            return sb.ToString();
+        }
+
+        for (var i = 0; i < fights.Count; ++i)
+        {
+            var fight = fights[i];
+            if (!fight.WorthAnalysing)
+            {
+                continue;
+            }
+
+            sb.AppendLine("========================================================================");
+            sb.Append("POSITIONS for fight ").Append(i + 1).Append(": ").AppendLine(fight.Label);
+
+            var arena = ArenaEstimate.Derive(involved, fight.Start, fight.End);
+            PositionAnalysis.Append(sb, replay, involved, p => $"{p.Class} {Name(p)}",
+                a => a.Timestamp >= fight.Start && a.Timestamp <= fight.End, arena);
+        }
 
         return sb.ToString();
     }
@@ -192,6 +248,103 @@ static class RecordingDump
 
     private static string Name(Replay.Participant p)
         => p.NameHistory.Count > 0 ? p.NameHistory.Values[0].name : $"{p.InstanceID:X}";
+
+    private static void AppendFightList(StringBuilder sb, List<Fight> fights)
+    {
+        if (fights.Count == 0)
+        {
+            return;
+        }
+
+        sb.AppendLine("--- FIGHTS ---");
+        for (var i = 0; i < fights.Count; ++i)
+        {
+            var fight = fights[i];
+            sb.Append("  ").Append((i + 1).ToString().PadLeft(2)).Append(". ")
+              .Append(fight.Label.PadRight(30))
+              .Append(fight.Seconds.ToString("f0").PadLeft(4)).Append("s  ")
+              .Append(fight.Actions.ToString().PadLeft(5)).Append(" actions")
+              .AppendLine(fight.WorthAnalysing ? "" : "  (too short to analyse, probably trash)");
+        }
+
+        sb.AppendLine();
+    }
+
+    /// <summary>Which fight a moment falls in. Gaps belong to the fight they lead into, so nothing is dropped
+    /// from the timeline just because it happened while the party was walking.</summary>
+    private static int FightIndex(List<Fight> fights, DateTime t)
+    {
+        for (var i = 0; i < fights.Count; ++i)
+        {
+            if (t <= fights[i].End)
+            {
+                return i;
+            }
+        }
+
+        return Math.Max(0, fights.Count - 1);
+    }
+
+    private static List<Fight> Fights(Replay replay)
+    {
+        var hostile = new List<(DateTime Time, Replay.Participant Source)>();
+        foreach (var a in replay.Actions)
+        {
+            if (IsHostile(a.Source))
+            {
+                hostile.Add((a.Timestamp, a.Source));
+            }
+        }
+
+        if (hostile.Count == 0)
+        {
+            return [];
+        }
+
+        hostile.Sort((x, y) => x.Time.CompareTo(y.Time));
+
+        var fights = new List<Fight>();
+        var counts = new Dictionary<Replay.Participant, int>();
+        var start = hostile[0].Time;
+        var prev = start;
+        var actions = 0;
+
+        foreach (var (t, src) in hostile)
+        {
+            if ((t - prev).TotalSeconds > IdleGap)
+            {
+                fights.Add(new(start, prev, Busiest(counts, start), actions));
+                counts.Clear();
+                actions = 0;
+                start = t;
+            }
+
+            counts[src] = counts.GetValueOrDefault(src) + 1;
+            ++actions;
+            prev = t;
+        }
+
+        fights.Add(new(start, prev, Busiest(counts, start), actions));
+        return fights;
+    }
+
+    /// <summary>Whoever acted most during a stretch, which for a boss fight is the boss and for a trash pull is
+    /// whichever mob lived longest. Either way it is the most recognisable name available.</summary>
+    private static string Busiest(Dictionary<Replay.Participant, int> counts, DateTime t)
+    {
+        Replay.Participant? best = null;
+        var bestCount = 0;
+        foreach (var (p, n) in counts)
+        {
+            if (n > bestCount)
+            {
+                bestCount = n;
+                best = p;
+            }
+        }
+
+        return best != null ? Describe(best, t) : "unknown";
+    }
 
     private static void AppendPlayers(StringBuilder sb, Replay replay)
     {
