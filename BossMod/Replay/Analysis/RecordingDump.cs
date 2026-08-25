@@ -1,4 +1,4 @@
-namespace BossMod.ReplayAnalysis;
+﻿namespace BossMod.ReplayAnalysis;
 
 /// <summary>
 /// Dumps a whole recording that contains no encounters.
@@ -53,22 +53,36 @@ static class RecordingDump
 
     private static void AppendPlayers(StringBuilder sb, Replay replay)
     {
-        sb.AppendLine("--- PLAYERS SEEN ---");
-        var any = false;
-        foreach (var p in replay.Participants)
+        // Everyone the recording ever saw includes whatever crowd was standing around when it started. Only
+        // players something hostile actually hit were in the fight.
+        var involved = new HashSet<Replay.Participant>();
+        foreach (var a in replay.Actions)
         {
-            if (p.Type != ActorType.Player)
+            if (a.Source.Type == ActorType.Player)
             {
                 continue;
             }
 
-            any = true;
-            sb.Append("  ").AppendLine(p.NameHistory.Count > 0 ? p.NameHistory.Values[0].name : $"{p.InstanceID:X}");
+            foreach (var t in a.Targets)
+            {
+                if (t.Target.Type == ActorType.Player)
+                {
+                    involved.Add(t.Target);
+                }
+            }
         }
 
-        if (!any)
+        sb.AppendLine("--- PLAYERS IN THE FIGHT ---");
+        if (involved.Count == 0)
         {
-            sb.AppendLine("  (none)");
+            sb.AppendLine("  (nobody was hit by anything hostile)");
+        }
+        else
+        {
+            foreach (var p in involved)
+            {
+                sb.Append("  ").AppendLine(p.NameHistory.Count > 0 ? p.NameHistory.Values[0].name : $"{p.InstanceID:X}");
+            }
         }
 
         sb.AppendLine();
@@ -122,8 +136,7 @@ static class RecordingDump
 
         foreach (var st in replay.Statuses)
         {
-            // Same filter as the encounter export: a player's own buffs are rotation, not mechanics.
-            if (st.Target.Type != ActorType.Player || (st.Source != null && st.Source.Type == ActorType.Player))
+            if (st.Target.Type != ActorType.Player || !InflictedByTheFight(st))
             {
                 continue;
             }
@@ -138,6 +151,14 @@ static class RecordingDump
 
         return events;
     }
+
+    /// <summary>
+    /// A status counts as part of the fight only if some non-player actor applied it. Filtering on the target
+    /// alone is not enough: Free Company buffs, food and sprint all land on players with no source at all, and
+    /// in a crowded instance they outnumbered real mechanic debuffs roughly two to one, taking the meaning of
+    /// T+0 with them.
+    /// </summary>
+    private static bool InflictedByTheFight(Replay.Status st) => st.Source != null && st.Source.Type != ActorType.Player;
 
     private static string Describe(Replay.Participant p, DateTime t)
     {
