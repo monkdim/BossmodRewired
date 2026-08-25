@@ -32,7 +32,12 @@ sealed record class ArenaEstimate(WPos Center, float Radius, float HalfWidth, fl
     public static ArenaEstimate? ForFight(Replay replay, uint oid, IReadOnlyCollection<Replay.Participant> occupants, DateTime start, DateTime end)
     {
         var declared = DeclaredArena.ForOID(oid);
-        var estimate = Derive(occupants, start, end, Anchor(replay, oid, start, end));
+
+        // Narrowed to the fighting itself. An encounter begins when the module activates and ends when it
+        // deactivates, and neither edge is the fight: the party is walking in at one end and, in a linear
+        // dungeon, already walking out at the other. Those yards land in the same bounding box as the arena.
+        var (from, to) = CombatWindow(replay, start, end);
+        var estimate = Derive(occupants, from, to, Anchor(replay, oid, from, to));
 
         if (estimate != null)
         {
@@ -52,6 +57,33 @@ sealed record class ArenaEstimate(WPos Center, float Radius, float HalfWidth, fl
     // Trimmed rather than absolute, because a single sample from a cutscene, a death teleport or the moment
     // before a wall goes up sits outside the fighting area and would set the size on its own.
     private const float Trim = 0.995f;
+
+    /// <summary>The span actually spent fighting, being the first and last hostile action inside the window.</summary>
+    private static (DateTime From, DateTime To) CombatWindow(Replay replay, DateTime start, DateTime end)
+    {
+        var first = DateTime.MaxValue;
+        var last = DateTime.MinValue;
+
+        foreach (var a in replay.Actions)
+        {
+            if (a.Timestamp < start || a.Timestamp > end || a.Source.Type is ActorType.Player or ActorType.Pet or ActorType.Chocobo or ActorType.Buddy)
+            {
+                continue;
+            }
+
+            if (a.Timestamp < first)
+            {
+                first = a.Timestamp;
+            }
+
+            if (a.Timestamp > last)
+            {
+                last = a.Timestamp;
+            }
+        }
+
+        return last > first ? (first, last) : (start, end);
+    }
 
     // No arena in the game is anywhere near this big. It exists to reject the corridor a party walked down to
     // reach the boss, which otherwise lands in the same bounding box as the fight.
