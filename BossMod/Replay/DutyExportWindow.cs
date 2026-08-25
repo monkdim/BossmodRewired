@@ -39,9 +39,12 @@ public sealed class DutyExportWindow : UIWindow
     protected override void Dispose(bool disposing)
     {
         _subscription.Dispose();
-        BulkExport.StopWaiting(_export, _cancel);
+        _cancel?.Cancel();
         base.Dispose(disposing);
     }
+
+    /// <summary>Stops the worker and does not return until it has actually stopped.</summary>
+    public Task StopAsync() => BulkExport.StopAsync(_export, _cancel);
 
     private void OnRecordingFinished(string logPath)
     {

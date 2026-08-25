@@ -32,25 +32,34 @@ public sealed class BulkExport : IDisposable
 
     private bool _skipExisting = true;
 
-    public void Dispose() => StopWaiting(_task, _cancel);
+    public void Dispose() => _cancel?.Cancel();
+
+    /// <summary>Stops the worker and does not return until it has actually stopped.</summary>
+    public Task StopAsync() => StopAsync(_task, _cancel);
 
     /// <summary>
-    /// Cancelling is not enough on its own. Dalamud unloads the assembly as soon as the plugin finishes
-    /// disposing, and a parse still running on the thread pool would then be executing code that no longer
-    /// exists, which takes the game down rather than throwing. Cancellation is checked per operation so the
-    /// wait is short, and it is bounded so a wedged parse cannot hang the game on unload instead.
+    /// Cancelling is not enough on its own. Dalamud unloads the assembly once the plugin finishes disposing,
+    /// and a parse still running on the thread pool would then be executing code that no longer exists, which
+    /// takes the game down rather than throwing.
+    ///
+    /// Awaited, never blocked on. An earlier version of this waited synchronously, and disposal runs on the
+    /// game's own thread, so it stopped the game dead for as long as the parse took and deadlocked outright
+    /// against anything the parse needed that thread for.
     /// </summary>
-    internal static void StopWaiting(Task? task, CancellationTokenSource? cancel)
+    internal static async Task StopAsync(Task? task, CancellationTokenSource? cancel)
     {
         cancel?.Cancel();
 
-        try
+        if (task != null)
         {
-            task?.Wait(TimeSpan.FromSeconds(5));
-        }
-        catch (Exception)
-        {
-            // Cancelled, or faulted earlier and never observed. Either way it has stopped, which is the point.
+            try
+            {
+                await task.ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // Cancelled, or faulted earlier and never observed. Either way it has stopped, which is the point.
+            }
         }
 
         cancel?.Dispose();

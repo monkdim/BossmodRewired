@@ -173,6 +173,14 @@ public sealed class Plugin : IAsyncDalamudPlugin
 
     public async ValueTask DisposeAsync()
     {
+        // Before anything else, and awaited rather than blocked on. An export runs on the thread pool and
+        // would otherwise still be inside this assembly when Dalamud unloads it, which takes the game down
+        // instead of throwing. Waiting for it synchronously is not the answer either: disposal continues on
+        // the game's own thread, so a blocking wait stops the game dead and deadlocks against anything the
+        // export needs that thread for.
+        await _wndDutyExport.StopAsync();
+        await _wndReplay.StopExportingAsync();
+
         await Service.Framework.RunOnFrameworkThread(() =>
         {
             _dalamud.UiBuilder.Draw -= DrawUI;
