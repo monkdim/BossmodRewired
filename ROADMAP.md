@@ -68,8 +68,11 @@ Roughly 900 of the modules with a state machine declare a trivial phase and have
 bars can only show casts already in progress. Recorded timings can supply the rest, but distinguishing a
 fixed duration from a variable one needs several recordings of the same fight.
 
-## Not planned
+## Out of scope
 
-- Anything that reads or writes another player's client.
-- Automating play. The timer bars, hints and notes are there to tell you what is happening; pressing the
-  buttons stays your job.
+Nothing here is being built by this fork. What it adds is analysis and information: capture, positions,
+timings, hints and notes. Reading them and pressing the buttons is the player's job.
+
+- **Automation of play.** Note that the fork inherits upstream's autorotation and AI modules, which do
+  automate play. They come with the codebase, are off by default, and are not being developed here.
+- **Anything that reads or writes another player's client.**
