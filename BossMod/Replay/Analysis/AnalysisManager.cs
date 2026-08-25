@@ -183,6 +183,7 @@ sealed class AnalysisManager : IDisposable
     }
 
     private readonly List<Replay> _replays;
+    private string _exportResult = "";
     private readonly Global _global;
     private readonly Dictionary<uint, PerEncounter> _perEncounter = []; // key = encounter OID
     private readonly UITree _tree = new();
@@ -201,6 +202,21 @@ sealed class AnalysisManager : IDisposable
     public void Draw()
     {
         ImGui.TextUnformatted($"{_replays.Count} logs found");
+
+        // Sits above everything else and outside the encounter tree on purpose. The per-encounter export only
+        // exists where a module activated, so a recording of content nobody has covered yet had no export
+        // button at all, which is precisely the content worth exporting.
+        if (ImGui.Button("Export all loaded recordings to text"))
+        {
+            ExportAll();
+        }
+
+        if (_exportResult.Length > 0)
+        {
+            ImGui.SameLine();
+            ImGui.TextUnformatted(_exportResult);
+        }
+
         foreach (var n in _tree.Node("Global analysis"))
         {
             _global.Draw(_tree);
@@ -209,6 +225,31 @@ sealed class AnalysisManager : IDisposable
         {
             n.Value.Draw(_tree);
         }
+    }
+
+    private void ExportAll()
+    {
+        var written = 0;
+        var failed = 0;
+
+        foreach (var replay in _replays)
+        {
+            try
+            {
+                Service.ChatGui.Print($"[BMR] {ReplayExport.Write(replay)}");
+                ++written;
+            }
+            catch (Exception e)
+            {
+                // One unreadable recording should not stop the rest from being written.
+                Service.ChatGui.Print($"[BMR] Could not export {replay.Path}: {e.Message}");
+                ++failed;
+            }
+        }
+
+        _exportResult = failed > 0
+            ? $"wrote {written}, {failed} failed, see chat"
+            : $"wrote {written} to {EncounterDump.TargetDirectory()}";
     }
 
     private void InitEncounters()
