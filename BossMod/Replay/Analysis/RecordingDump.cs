@@ -17,6 +17,13 @@ static class RecordingDump
     // puts every boss on the same clock and averages four arenas into one.
     private const double IdleGap = 45d;
 
+    // How far the party as a whole has to shift between two consecutive hostile actions for the second one to
+    // count as a different fight. An idle gap alone is not enough: an alliance raid never goes quiet for
+    // forty-five seconds, and Syrcus Tower came back as one eight hundred second encounter spanning every
+    // boss in it. Changing rooms moves everybody at once, and nothing inside a fight does that, because a
+    // party cannot run this far between two actions that are seconds apart.
+    private const float RoomChange = 40f;
+
     // Below this a segment is a trash pull, and a full positional breakdown of three mobs dying in eight
     // seconds is noise. They are still listed, just not analysed.
     private const double MinFightSeconds = 20d;
@@ -41,15 +48,16 @@ static class RecordingDump
 
     public static string Build(Replay replay)
     {
-        var events = Collect(replay, Involved(replay));
+        var involved = Involved(replay);
+        var events = Collect(replay, involved);
+        var fights = Fights(replay, involved);
         var sb = new StringBuilder();
-
-        var fights = Fights(replay);
 
         sb.Append("Recording dump for a duty with no boss module (").Append(replay.Path).AppendLine(")");
         sb.AppendLine("No encounters exist in this recording, so there are no phases or timings to report.");
         sb.AppendLine("It has been split into fights wherever the recording went quiet for " + IdleGap + " seconds or more,");
-        sb.AppendLine("since a dungeon is several bosses with corridors between them rather than one long encounter.");
+        sb.AppendLine("or the party moved to another room, since content is several bosses with walking between them");
+        sb.AppendLine("rather than one long encounter.");
         sb.AppendLine("Times are seconds from the start of the fight they fall in. Positions are world coordinates.");
         sb.AppendLine();
 
@@ -95,7 +103,6 @@ static class RecordingDump
         sb.AppendLine();
         AppendContributions(sb, replay);
 
-        var involved = Involved(replay);
         if (involved.Count == 0)
         {
             return sb.ToString();
@@ -288,7 +295,27 @@ static class RecordingDump
         return Math.Max(0, fights.Count - 1);
     }
 
-    private static List<Fight> Fights(Replay replay)
+    /// <summary>Middle of the party at one moment, or nothing when there is no party to speak of.</summary>
+    private static WPos? Centroid(HashSet<Replay.Participant> party, DateTime t)
+    {
+        if (party.Count == 0)
+        {
+            return null;
+        }
+
+        var sumX = 0f;
+        var sumZ = 0f;
+        foreach (var p in party)
+        {
+            var posRot = p.PosRotAt(t);
+            sumX += posRot.X;
+            sumZ += posRot.Z;
+        }
+
+        return new WPos(sumX / party.Count, sumZ / party.Count);
+    }
+
+    private static List<Fight> Fights(Replay replay, HashSet<Replay.Participant> party)
     {
         var hostile = new List<(DateTime Time, Replay.Participant Source)>();
         foreach (var a in replay.Actions)
@@ -311,10 +338,15 @@ static class RecordingDump
         var start = hostile[0].Time;
         var prev = start;
         var actions = 0;
+        var prevCentre = Centroid(party, start);
 
         foreach (var (t, src) in hostile)
         {
-            if ((t - prev).TotalSeconds > IdleGap)
+            var centre = Centroid(party, t);
+            var walked = prevCentre is WPos a && centre is WPos b ? (b - a).Length() : 0f;
+            prevCentre = centre;
+
+            if ((t - prev).TotalSeconds > IdleGap || walked > RoomChange)
             {
                 var (label, oid) = Busiest(counts, start);
                 fights.Add(new(start, prev, label, oid, actions));
