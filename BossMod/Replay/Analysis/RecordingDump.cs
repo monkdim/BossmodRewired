@@ -80,9 +80,11 @@ static class RecordingDump
 
             foreach (var t in a.Targets)
             {
-                for (var i = 0; i < ActionEffects.MaxCount; ++i)
+                // Copied to a local first: the indexer hands back raw ulongs, and ValidEffects returns a span
+                // into the struct, which would point at a temporary if called on the property directly.
+                var effects = t.Effects;
+                foreach (var eff in effects.ValidEffects())
                 {
-                    var eff = t.Effects[i];
                     switch (eff.Type)
                     {
                         case ActionEffectType.Damage:
