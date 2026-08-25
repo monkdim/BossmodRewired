@@ -141,9 +141,11 @@ public sealed class ReplayBuilder : IDisposable
                         m.Encounter.ParticipantsByOID.GetOrAdd(p.OID).Add(p);
                     }
 
-                    foreach (var p in _ws.Party.WithoutSlot(true))
+                    foreach (var (slot, p) in _ws.Party.WithSlot(true))
                     {
-                        m.Encounter.PartyMembers.Add((_participants[p.InstanceID], p.Class, p.Level));
+                        var participant = _participants[p.InstanceID];
+                        participant.ContentID = _ws.Party.Members[slot].ContentId;
+                        m.Encounter.PartyMembers.Add((participant, p.Class, p.Level));
                     }
 
                     _res.Encounters.Add(m.Encounter);

@@ -10,7 +10,11 @@
   </PropertyGroup>
 
 <PropertyGroup>
-  <AssemblyName>BossModReborn</AssemblyName>
+  <AssemblyName>BossModRewired</AssemblyName>
+  <!-- Pinned deliberately. Embedded obstacle maps have no explicit LogicalName, so their resource
+       names derive from RootNamespace; letting it follow AssemblyName would rename them and break
+       pathfinding at runtime with no compile error. Shaders and fonts set LogicalName and are unaffected. -->
+  <RootNamespace>BossModReborn</RootNamespace>
 </PropertyGroup>
 
   <PropertyGroup>
@@ -125,7 +129,7 @@
 
   <Target Name="CleanupOutput" AfterTargets="Build" BeforeTargets="DalamudPackage">
     <ItemGroup>
-      <_ExtraOutputFiles Include="$(OutputPath)*" Exclude="$(OutputPath)BossModReborn.*;$(OutputPath)DefaultRotationPresets.json;$(OutputPath)RebornPresets.json;$(OutputPath)PInvoke.User32.dll" />
+      <_ExtraOutputFiles Include="$(OutputPath)*" Exclude="$(OutputPath)BossModRewired.*;$(OutputPath)DefaultRotationPresets.json;$(OutputPath)RebornPresets.json;$(OutputPath)PInvoke.User32.dll" />
     </ItemGroup>
     <Delete Files="@(_ExtraOutputFiles)" />
   </Target>

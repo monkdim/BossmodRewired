@@ -38,6 +38,7 @@ public sealed class Replay
     public sealed record class Participant(ulong InstanceID)
     {
         public uint OID;
+        public ulong ContentID; // only set for party members; needed to resolve role assignments during analysis
         public ActorType Type;
         public ulong OwnerID;
         public uint ZoneID;
