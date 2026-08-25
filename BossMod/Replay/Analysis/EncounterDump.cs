@@ -14,6 +14,10 @@ namespace BossMod.ReplayAnalysis;
 /// </summary>
 sealed class EncounterDump : CommonEnumInfo
 {
+    /// <summary>Pets and buddies fight on your side, so "not a player" is the wrong test for hostility.</summary>
+    private static bool IsHostile(Replay.Participant p)
+        => p.Type is not (ActorType.Player or ActorType.Pet or ActorType.Chocobo or ActorType.Buddy);
+
     // A long ultimate can produce tens of thousands of events. The cap keeps the file readable; the true count
     // is always written into the file so a truncated dump never reads as complete.
     private const int MaxEvents = 5000;
@@ -268,7 +272,7 @@ sealed class EncounterDump : CommonEnumInfo
         // thousands of lines and answers a different question.
         foreach (var p in replay.Participants)
         {
-            if (p.Type == ActorType.Player)
+            if (!IsHostile(p))
             {
                 continue;
             }
@@ -288,7 +292,7 @@ sealed class EncounterDump : CommonEnumInfo
 
         foreach (var a in replay.EncounterActions(enc))
         {
-            if (a.Source.Type == ActorType.Player)
+            if (!IsHostile(a.Source))
             {
                 continue;
             }
