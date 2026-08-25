@@ -8,6 +8,9 @@ namespace BossMod.ReplayAnalysis;
 /// modules are loaded, so for a moduled encounter there is no reason to estimate: instantiating the module
 /// away from a live world is enough to read its centre and bounds back out.
 ///
+/// Note the qualified type names below: this namespace has its own unrelated ArenaBounds, the analysis-window
+/// tool that draws player movement, and an unqualified reference binds to that one instead of the real bounds.
+///
 /// It is worth more than the encounters it covers. Running the estimate alongside a declaration that is known
 /// to be right is the only way to find out how far short of the wall a party actually gets, and that
 /// correction is what makes an estimate trustworthy for the content with no module at all.
@@ -59,13 +62,13 @@ sealed record class DeclaredArena(WPos Center, float Radius, float MaxReach, str
     /// into its corners. Comparing a party's reach against the radius instead would make every square arena
     /// look like the estimate had overshot.
     /// </summary>
-    private static float ReachOf(ArenaBounds bounds) => bounds is ABRect r
+    private static float ReachOf(BossMod.ArenaBounds bounds) => bounds is ABRect r
         ? MathF.Sqrt(r.HalfWidth * r.HalfWidth + r.HalfHeight * r.HalfHeight)
         : bounds.Radius;
 
     /// <summary>The bounds subclass names the shape outright, which is more than any amount of position data
     /// can establish.</summary>
-    private static string Describe(ArenaBounds bounds) => bounds switch
+    private static string Describe(BossMod.ArenaBounds bounds) => bounds switch
     {
         ArenaBoundsCircle => "circle",
         ArenaBoundsSquare sq => $"square, {sq.HalfWidth * 2f:f1}y across",
