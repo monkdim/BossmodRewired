@@ -58,8 +58,25 @@ public sealed class Plugin : IAsyncDalamudPlugin
     private MainDebugWindow _wndDebug = null!;
     private RotationSolverRebornModule _rsr = null!;
 
+    /// <summary>Upstream's internal name. Both plugins detour the same game functions.</summary>
+    private const string ConflictingPlugin = "BossModReborn";
+
     public Plugin(IDalamudPluginInterface dalamud, ICommandManager commandManager, ISigScanner sigScanner, IDataManager dataManager)
     {
+        // Checked before anything else, because the very next statements resolve signatures and initialise the
+        // renderer. Two plugins detouring one address is not a conflict that degrades gracefully; the game goes
+        // down with it, and a crash on install tells the user nothing about why. Refusing to load with an
+        // explanation is the only outcome anyone can act on.
+        foreach (var p in dalamud.InstalledPlugins)
+        {
+            if (p.IsLoaded && string.Equals(p.InternalName, ConflictingPlugin, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "BossMod Reborn is enabled. It and BossMod Rewired hook the same game functions, and running both at once crashes the game. " +
+                    "Disable BossMod Reborn in the plugin installer, then enable BossMod Rewired. Everything BossMod Reborn does is included here, so you do not need both.");
+            }
+        }
+
         _dalamud = dalamud;
         CommandManager = commandManager;
 

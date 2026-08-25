@@ -3,7 +3,7 @@
   "Name": "BossMod Rewired",
   "InternalName": "BossModRewired",
   "RepoUrl": "https://github.com/monkdim/BossmodRewired",
-  "Description": "A fork of BossMod Reborn focused on depth: role-specific positioning, exact safe spots, mechanic timer bars and per-mechanic notes for savage and ultimate content.\n\nBuilt on the work of awgil's ffxiv_bossmod and the Combat Reborn team's BossMod Reborn, both BSD 3-Clause.",
+  "Description": "IMPORTANT: disable BossMod Reborn before enabling this. Both hook the same game functions and running them together crashes the game. Everything BossMod Reborn does is included here, so you do not need both.\n\nA fork of BossMod Reborn focused on depth: role-specific positioning, exact safe spots, mechanic timer bars and per-mechanic notes for savage and ultimate content. Records every duty you enter and exports it as readable text, whether or not a module exists for the fight.\n\nBuilt on the work of awgil's ffxiv_bossmod and the Combat Reborn team's BossMod Reborn, both BSD 3-Clause.",
   "ApplicableVersion": "any",
   "Tags": [
     "combat",
