@@ -106,12 +106,12 @@ static class RecordingDump
         {
             var casts = casterPositions[aid].Count;
             sb.Append(aid).Append(" - ").Append(casts).AppendLine(" resolutions");
+            sb.Append("  looks like: ").AppendLine(Classify(replay, aid, involved.Count));
 
             foreach (var (p, offsets) in perPlayer)
             {
                 var (mean, spread) = MeanAndSpread(offsets);
-                var name = p.NameHistory.Count > 0 ? p.NameHistory.Values[0].name : $"{p.InstanceID:X}";
-                sb.Append("  ").Append(name.PadRight(22))
+                sb.Append("  ").Append($"{p.Class} {Name(p)}".PadRight(26))
                   .Append("mean ").Append(Fixed(mean.X)).Append(", ").Append(Fixed(mean.Z))
                   .Append("  dist ").Append(Fixed(mean.Length()))
                   .Append("  ").Append(Octant(mean).PadRight(7))
@@ -121,6 +121,115 @@ static class RecordingDump
             sb.AppendLine();
         }
     }
+
+    /// <summary>
+    /// Names the shape of a mechanic from what it did, since a recording with no module has nobody's word for
+    /// it. How many players it hit, and how far apart they were standing when it landed, separates a stack
+    /// from a spread from something that ignored position entirely.
+    ///
+    /// The labels hedge where the data genuinely cannot decide. A raidwide that happens to land while everyone
+    /// is stacked looks exactly like a stack, and saying so is more useful than picking one.
+    /// </summary>
+    private static string Classify(Replay replay, ActionID aid, int partySize)
+    {
+        var hits = new List<int>();
+        var spans = new List<float>();
+        var closest = new List<float>();
+        var roles = new HashSet<Role>();
+
+        foreach (var a in replay.Actions)
+        {
+            if (a.ID != aid || a.Source.Type == ActorType.Player)
+            {
+                continue;
+            }
+
+            var positions = new List<WPos>();
+            foreach (var t in a.Targets)
+            {
+                if (t.Target.Type != ActorType.Player)
+                {
+                    continue;
+                }
+
+                roles.Add(t.Target.Class.GetRole());
+                var pr = t.Target.PosRotAt(a.Timestamp);
+                positions.Add(new(pr.X, pr.Z));
+            }
+
+            if (positions.Count == 0)
+            {
+                continue;
+            }
+
+            hits.Add(positions.Count);
+
+            var maxSpan = 0f;
+            var minSpan = float.MaxValue;
+            for (var i = 0; i < positions.Count; ++i)
+            {
+                for (var j = i + 1; j < positions.Count; ++j)
+                {
+                    var d = (positions[i] - positions[j]).Length();
+                    maxSpan = Math.Max(maxSpan, d);
+                    minSpan = Math.Min(minSpan, d);
+                }
+            }
+
+            spans.Add(maxSpan);
+            if (minSpan < float.MaxValue)
+            {
+                closest.Add(minSpan);
+            }
+        }
+
+        if (hits.Count == 0)
+        {
+            return "hit nobody, so it was either dodged every time or does not target players";
+        }
+
+        var avgHit = hits.Average();
+        var avgSpan = spans.Count > 0 ? spans.Average() : 0f;
+        var avgClosest = closest.Count > 0 ? closest.Average() : 0f;
+
+        if (avgHit < 1.5f)
+        {
+            var role = roles.Count == 1 ? roles.First() : Role.None;
+            return role switch
+            {
+                Role.Tank => "single target on a tank, so probably a tank buster",
+                Role.Healer => "single target on a healer",
+                _ => $"single target, hitting {Describe(roles)}"
+            };
+        }
+
+        // Everyone caught, spread across the arena: position made no difference.
+        if (avgHit >= partySize - 0.5f && avgSpan > 12f)
+        {
+            return $"raidwide, everyone hit wherever they stood (up to {avgSpan:f1}y apart)";
+        }
+
+        if (avgSpan <= 6f)
+        {
+            var who = avgHit >= partySize - 0.5f ? "full party" : avgHit <= 4.5f ? "light party" : "part of the party";
+            return $"{who} stack, {avgHit:f1} players within {avgSpan:f1}y of each other";
+        }
+
+        if (avgClosest >= 8f)
+        {
+            return $"spread, {avgHit:f1} players with nobody closer than {avgClosest:f1}y";
+        }
+
+        return avgHit >= partySize - 0.5f
+            ? $"everyone hit, {avgSpan:f1}y apart, so a raidwide or a loose stack"
+            : $"{avgHit:f1} players hit, {avgSpan:f1}y apart, hitting {Describe(roles)}";
+    }
+
+    private static string Describe(HashSet<Role> roles)
+        => roles.Count == 0 ? "nobody" : string.Join(" and ", roles.Where(r => r != Role.None).Select(r => r.ToString().ToLowerInvariant()));
+
+    private static string Name(Replay.Participant p)
+        => p.NameHistory.Count > 0 ? p.NameHistory.Values[0].name : $"{p.InstanceID:X}";
 
     private static (WDir Mean, float Spread) MeanAndSpread(List<WDir> offsets)
     {
@@ -173,7 +282,9 @@ static class RecordingDump
         {
             foreach (var p in involved)
             {
-                sb.Append("  ").AppendLine(p.NameHistory.Count > 0 ? p.NameHistory.Values[0].name : $"{p.InstanceID:X}");
+                sb.Append("  ").Append(p.Class.ToString().PadRight(6))
+                  .Append(p.Class.GetRole().ToString().PadRight(8))
+                  .AppendLine(Name(p));
             }
         }
 

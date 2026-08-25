@@ -39,6 +39,8 @@ public sealed class Replay
     {
         public uint OID;
         public ulong ContentID; // only set for party members; needed to resolve role assignments during analysis
+        public Class Class; // last seen class; recordings with no encounter have no other source of job info
+        public int Level;
         public ActorType Type;
         public ulong OwnerID;
         public uint ZoneID;
