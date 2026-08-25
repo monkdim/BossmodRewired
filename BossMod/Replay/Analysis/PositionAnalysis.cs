@@ -44,6 +44,10 @@ static class PositionAnalysis
         // avoidable, so the hints below are built from the ones that connected at least once.
         var landed = new HashSet<ActionID>();
 
+        // Whether an ability ever caught more than one person at once. A mechanic that gathers or scatters the
+        // party is worth a hint from a single cast; one that picks somebody at random is not.
+        var grouped = new HashSet<ActionID>();
+
         foreach (var a in replay.Actions)
         {
             if (!IsHostile(a.Source) || !inScope(a))
@@ -51,13 +55,23 @@ static class PositionAnalysis
                 continue;
             }
 
+            var playersHit = 0;
             foreach (var t in a.Targets)
             {
                 if (t.Target.Type == ActorType.Player)
                 {
-                    landed.Add(a.ID);
-                    break;
+                    ++playersHit;
                 }
+            }
+
+            if (playersHit > 0)
+            {
+                landed.Add(a.ID);
+            }
+
+            if (playersHit > 1)
+            {
+                grouped.Add(a.ID);
             }
 
             var hitAt = a.Timestamp;
@@ -171,41 +185,47 @@ static class PositionAnalysis
             sb.AppendLine();
         }
 
-        AppendHints(sb, byAbility, resolutions, landed, shapes, label, arena);
+        AppendHints(sb, byAbility, resolutions, telegraphed, landed, grouped, shapes, label, arena);
     }
 
     // A cast-time spread this tight means the position was chosen rather than stumbled into, and is the line
     // between a spot worth writing into a module and where somebody happened to be standing.
     private const float FixedSpot = 1.5f;
-    private const float LooseSpot = 4f;
+    private const float LooseSpot = 3f;
 
     /// <summary>
     /// The same data again, said as instructions.
     ///
     /// Everything above describes what happened. This answers the question the fork exists for: given a role,
     /// where should that person be standing when this cast goes off. It reads from the cast moment rather than
-    /// the resolution, because by the time a mechanic resolves the choice has already been made, and it says
-    /// out loud how firm each spot is, since a position held across every cast means something and one taken
-    /// once does not.
+    /// the resolution, because by the time a mechanic resolves the choice has already been made.
+    ///
+    /// The first version of this printed every player against every ability and was useless: five exports
+    /// produced two thousand rows saying a position was not held, against four hundred saying it was. A line
+    /// reporting a mean position next to a note that it varied by thirty yards is worse than no line, since
+    /// the mean reads as a place to stand. Only what was actually held is printed now, and only for abilities
+    /// that were telegraphed, since an instant hit gives nobody anything to position for.
     /// </summary>
     private static void AppendHints(StringBuilder sb,
         Dictionary<ActionID, Dictionary<Replay.Participant, List<Sample>>> byAbility,
         Dictionary<ActionID, int> resolutions,
+        Dictionary<ActionID, int> telegraphed,
         HashSet<ActionID> landed,
+        HashSet<ActionID> grouped,
         Dictionary<ActionID, string> shapes,
         Func<Replay.Participant, string> label,
         ArenaEstimate? arena)
     {
         sb.AppendLine("========================================================================");
         sb.AppendLine("WHERE TO STAND, per role, at the moment each cast begins");
-        sb.AppendLine("Only abilities that hit somebody at least once: one nobody was ever caught by teaches");
-        sb.AppendLine("nothing about positioning beyond that it can be walked out of.");
-        sb.AppendLine("'from caster' is the distance and compass direction from whatever cast it. 'from centre'");
-        sb.AppendLine("is the same measured from the middle of the arena, as a fraction where 1.00 is the wall.");
-        sb.AppendLine("The last column says how much to trust it.");
+        sb.AppendLine("Only telegraphed abilities that hit somebody, and only positions that were actually held.");
+        sb.AppendLine("Anything a player wandered around is left out: a mean position with a wide spread behind it");
+        sb.AppendLine("reads as a place to stand, and is not one.");
         sb.AppendLine();
 
-        var any = false;
+        var shown = 0;
+        var skippedInstant = 0;
+        var skippedUnheld = 0;
 
         foreach (var (aid, perPlayer) in byAbility)
         {
@@ -214,9 +234,15 @@ static class PositionAnalysis
                 continue;
             }
 
-            any = true;
+            if (telegraphed.GetValueOrDefault(aid) == 0)
+            {
+                ++skippedInstant;
+                continue;
+            }
+
             var casts = resolutions.GetValueOrDefault(aid);
-            sb.Append(aid.ToString()).Append("  (").Append(shapes.GetValueOrDefault(aid) ?? "").AppendLine(")");
+            var isGroup = grouped.Contains(aid);
+            var rows = new List<string>();
 
             foreach (var (p, samples) in perPlayer)
             {
@@ -228,8 +254,17 @@ static class PositionAnalysis
 
                 var (mean, spread) = MeanAndSpread(castOffsets);
 
-                sb.Append("  ").Append(label(p).PadRight(24))
-                  .Append("from caster ").Append(Fixed(mean.Length())).Append("y ").Append(Octant(mean).PadRight(8));
+                // A single cast cannot show whether a position was held, so it only earns a line when the
+                // ability gathered or scattered the party, which is the case where one cast is all there is.
+                var trustworthy = samples.Count > 1 ? spread < LooseSpot : isGroup;
+                if (!trustworthy)
+                {
+                    continue;
+                }
+
+                var row = new StringBuilder();
+                row.Append("  ").Append(label(p).PadRight(24))
+                   .Append("from caster ").Append(Fixed(mean.Length())).Append("y ").Append(Octant(mean).PadRight(8));
 
                 if (arena != null)
                 {
@@ -241,18 +276,40 @@ static class PositionAnalysis
 
                     var (fromCentre, _) = MeanAndSpread(centre);
                     var fraction = arena.Scale > 0f ? fromCentre.Length() / arena.Scale : 0f;
-                    sb.Append("from centre ").Append(fraction.ToString("f2")).Append("r ").Append(Octant(fromCentre).PadRight(8));
+                    row.Append("from centre ").Append(fraction.ToString("f2")).Append("r ").Append(Octant(fromCentre).PadRight(8));
                 }
 
-                sb.AppendLine(Confidence(samples.Count, casts, spread));
+                rows.Add(row.Append(Confidence(samples.Count, casts, spread)).ToString());
+            }
+
+            if (rows.Count == 0)
+            {
+                ++skippedUnheld;
+                continue;
+            }
+
+            ++shown;
+            sb.Append(aid.ToString()).Append("  (").Append(shapes.GetValueOrDefault(aid) ?? "").AppendLine(")");
+            foreach (var row in rows)
+            {
+                sb.AppendLine(row);
             }
 
             sb.AppendLine();
         }
 
-        if (!any)
+        if (shown == 0)
         {
-            sb.AppendLine("Nothing here ever hit anybody, so there is nothing to say about where to stand.");
+            sb.AppendLine("Nobody held a position tightly enough here for it to look prescribed. That is the normal");
+            sb.AppendLine("answer for content where standing anywhere works, and is worth knowing rather than hiding.");
+            sb.AppendLine();
+        }
+
+        // Said out loud so a short section does not read as data having gone missing.
+        if (skippedInstant > 0 || skippedUnheld > 0)
+        {
+            sb.Append("Left out: ").Append(skippedInstant).Append(" ability(s) with no cast bar, and ")
+              .Append(skippedUnheld).AppendLine(" where nobody held a position.");
             sb.AppendLine();
         }
     }
@@ -260,12 +317,11 @@ static class PositionAnalysis
     /// <summary>How much weight a single row deserves, which one cast cannot earn however tidy it looks.</summary>
     private static string Confidence(int samples, int casts, float spread) => samples switch
     {
-        < 2 => "one cast only, so this is where they were rather than where to be",
+        < 2 => "the only cast, so this is where they were rather than where to be",
         _ => spread switch
         {
-            < FixedSpot => $"held to within {spread:f1}y across {samples} of {casts} casts, so a real spot",
-            < LooseSpot => $"roughly held, {spread:f1}y across {samples} of {casts} casts",
-            _ => $"wandered {spread:f1}y across {samples} casts, so probably not a prescribed spot"
+            < FixedSpot => $"held to within {spread:f1}y across {samples} of {casts} casts",
+            _ => $"roughly held, {spread:f1}y across {samples} of {casts} casts"
         }
     };
 
@@ -418,12 +474,14 @@ static class PositionAnalysis
 
         if (avgHit < 1.5f)
         {
+            // Every cast hit one person, but not the same person, so listing the roles it touched reads as a
+            // contradiction: "single target, hitting tank and ranged and healer". It picked somebody.
             var role = roles.Count == 1 ? roles.First() : Role.None;
             return role switch
             {
-                Role.Tank => "single target on a tank, so probably a tank buster",
-                Role.Healer => "single target on a healer",
-                _ => $"single target, hitting {Describe(roles)}"
+                Role.Tank => "single target on a tank every time, so probably a tank buster",
+                Role.Healer => "single target on a healer every time",
+                _ => $"single target, picking a different player from cast to cast ({Describe(roles)} caught at least once)"
             };
         }
 
