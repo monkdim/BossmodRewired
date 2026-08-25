@@ -153,45 +153,10 @@ public sealed class DutyExportWindow : UIWindow
     }
 
     /// <summary>
-    /// Reparses the finished log and writes one text file covering every encounter it contains. Reparsing
-    /// rather than reusing the live world state is deliberate: it is the same path the analysis window takes,
-    /// so the prompt cannot produce a different answer from the tooling it is a shortcut for.
+    /// Reparses the finished log and writes one text file covering it. Reparsing rather than reusing the live
+    /// world state is deliberate: it is the same path the analysis window takes, so the prompt cannot produce
+    /// a different answer from the tooling it is a shortcut for.
     /// </summary>
     private string Run(string logPath, CancellationToken token)
-    {
-        var replay = ReplayParserLog.Parse(logPath, ref _progress, token);
-
-        var sb = new StringBuilder();
-        var oids = new HashSet<uint>();
-        string summary;
-
-        if (replay.Encounters.Count == 0)
-        {
-            // Encounters only exist where a module activated, so a duty nobody has covered yet produces none.
-            // That is the content most worth capturing, so it falls back to dumping the recording wholesale
-            // rather than writing an empty file and calling it done.
-            sb.Append(ReplayAnalysis.RecordingDump.Build(replay));
-            summary = "no boss module for this duty, exported the whole recording";
-        }
-        else
-        {
-            var replays = new List<Replay> { replay };
-            foreach (var enc in replay.Encounters)
-            {
-                if (oids.Add(enc.OID))
-                {
-                    sb.Append(new ReplayAnalysis.EncounterDump(replays, enc.OID).BuildAll());
-                    sb.AppendLine();
-                }
-            }
-
-            summary = $"{oids.Count} encounter(s)";
-        }
-
-        var name = $"{Path.GetFileNameWithoutExtension(logPath)}.txt";
-        var target = Path.Combine(ReplayAnalysis.EncounterDump.TargetDirectory(), name);
-        File.WriteAllText(target, sb.ToString());
-
-        return $"Exported {summary} to {target}";
-    }
+        => ReplayAnalysis.ReplayExport.Write(ReplayParserLog.Parse(logPath, ref _progress, token));
 }
