@@ -37,7 +37,7 @@ sealed record class ArenaEstimate(WPos Center, float Radius, float HalfWidth, fl
         // deactivates, and neither edge is the fight: the party is walking in at one end and, in a linear
         // dungeon, already walking out at the other. Those yards land in the same bounding box as the arena.
         var (from, to) = CombatWindow(replay, start, end);
-        var estimate = Derive(occupants, from, to, Anchor(replay, oid, from, to));
+        var estimate = Derive(occupants, from, to);
 
         if (estimate != null)
         {
@@ -57,6 +57,14 @@ sealed record class ArenaEstimate(WPos Center, float Radius, float HalfWidth, fl
     // Trimmed rather than absolute, because a single sample from a cutscene, a death teleport or the moment
     // before a wall goes up sits outside the fighting area and would set the size on its own.
     private const float Trim = 0.995f;
+
+    // The smallest an arena is assumed to be. Without a floor, a party that fought in one corner of a large
+    // room would have the rest of the room ruled out as though it were a corridor.
+    private const float MinArena = 25f;
+
+    // How far past the party's usual distance from the middle a sample can be and still be part of the same
+    // room. Generous, because the point is to reject a corridor hundreds of yards long, not to trim the edges.
+    private const float Spill = 3f;
 
     /// <summary>The span actually spent fighting, being the first and last hostile action inside the window.</summary>
     private static (DateTime From, DateTime To) CombatWindow(Replay replay, DateTime start, DateTime end)
@@ -85,101 +93,55 @@ sealed record class ArenaEstimate(WPos Center, float Radius, float HalfWidth, fl
         return last > first ? (first, last) : (start, end);
     }
 
-    // No arena in the game is anywhere near this big. It exists to reject the corridor a party walked down to
-    // reach the boss, which otherwise lands in the same bounding box as the fight.
-    private const float MaxPlausibleArena = 60f;
-
-    /// <summary>
-    /// Where the fight actually happened, taken from the boss rather than from the party.
-    ///
-    /// A party's positions over a pull include walking in, and in a dungeon that is a corridor hundreds of
-    /// yards long which dwarfs the arena at the end of it. A boss does not walk anywhere: it is in its arena
-    /// for the whole fight, so its own median position is a reliable point to measure the arena around.
-    /// </summary>
-    private static WPos? Anchor(Replay replay, uint oid, DateTime start, DateTime end)
+    public static ArenaEstimate? Derive(IReadOnlyCollection<Replay.Participant> occupants, DateTime start, DateTime end)
     {
-        if (oid == default)
+        var samples = Collect(occupants, start, end);
+        if (samples.Count < MinSamples)
         {
             return null;
         }
 
-        var xs = new List<float>();
-        var zs = new List<float>();
+        // Where the party actually spent the fight, taken as a median so that the minority of samples from
+        // walking in cannot move it. Anchoring on the boss was tried first and is worse: a boss can be pulled
+        // across the room, can share its identifier with adds spawned elsewhere, and in the fights that needed
+        // this most it put the anchor somewhere the party never stood.
+        var anchor = Median(samples);
 
-        foreach (var p in replay.Participants)
+        var spread = new List<float>(samples.Count);
+        foreach (var p in samples)
         {
-            if (p.OID != oid)
-            {
-                continue;
-            }
+            spread.Add((p - anchor).Length());
+        }
 
-            var hist = p.PosRotHistory;
-            var count = hist.Count;
-            for (var i = 0; i < count; ++i)
-            {
-                var t = hist.Keys[i];
-                if (t < start)
-                {
-                    continue;
-                }
-                if (t > end)
-                {
-                    break;
-                }
+        spread.Sort();
 
-                var posRot = hist.Values[i];
-                xs.Add(posRot.X);
-                zs.Add(posRot.Z);
+        // Scaled to how far this particular party ranges rather than fixed, since a 15 yard arena and a 45
+        // yard one are both normal and a single threshold cannot serve both.
+        var cutoff = Math.Max(MinArena, Spill * spread[spread.Count / 2]);
+        var cutoffSq = cutoff * cutoff;
+
+        var kept = new List<WPos>(samples.Count);
+        foreach (var p in samples)
+        {
+            if ((p - anchor).LengthSq() <= cutoffSq)
+            {
+                kept.Add(p);
             }
         }
 
-        if (xs.Count == 0)
+        // If almost everything was rejected the assumption was wrong, so use it all rather than describe a
+        // corner of the room as the whole of it.
+        if (kept.Count < MinSamples)
         {
-            return null;
+            kept = samples;
         }
 
-        // Median per axis, not mean: a boss that walks to one side for a phase should not drag the anchor
-        // halfway there, and a boss that gets pulled across the room should not drag it at all.
-        xs.Sort();
-        zs.Sort();
-        return new WPos(xs[xs.Count / 2], zs[zs.Count / 2]);
-    }
-
-    public static ArenaEstimate? Derive(IReadOnlyCollection<Replay.Participant> occupants, DateTime start, DateTime end, WPos? anchor = null)
-    {
-        var xs = new List<float>();
-        var zs = new List<float>();
-
-        foreach (var p in occupants)
+        var xs = new List<float>(kept.Count);
+        var zs = new List<float>(kept.Count);
+        foreach (var p in kept)
         {
-            var hist = p.PosRotHistory;
-            var count = hist.Count;
-            for (var i = 0; i < count; ++i)
-            {
-                var t = hist.Keys[i];
-                if (t < start)
-                {
-                    continue;
-                }
-                if (t > end)
-                {
-                    break;
-                }
-
-                var posRot = hist.Values[i];
-                if (anchor is WPos a && (new WPos(posRot.X, posRot.Z) - a).LengthSq() > MaxPlausibleArena * MaxPlausibleArena)
-                {
-                    continue; // walking to the fight, not standing in it
-                }
-
-                xs.Add(posRot.X);
-                zs.Add(posRot.Z);
-            }
-        }
-
-        if (xs.Count < MinSamples)
-        {
-            return null;
+            xs.Add(p.X);
+            zs.Add(p.Z);
         }
 
         xs.Sort();
@@ -199,9 +161,33 @@ sealed record class ArenaEstimate(WPos Center, float Radius, float HalfWidth, fl
         // the sample that distinguishes the two, since neither shape leaves a trace anywhere else.
         var cardinal = new List<float>();
         var diagonal = new List<float>();
-        var all = new List<float>(xs.Count);
+        var all = new List<float>(kept.Count);
 
-        // xs and zs were sorted independently and no longer pair up, so distances need a second pass.
+        foreach (var p in kept)
+        {
+            var offset = p - center;
+            var d = offset.Length();
+            all.Add(d);
+
+            if (d < 1f)
+            {
+                continue; // no meaningful bearing near the middle
+            }
+
+            var bearing = (180f - offset.ToAngle().Deg + 360f) % 360f;
+            var octant = (int)MathF.Round(bearing / 45f) % 8;
+            (octant % 2 == 0 ? cardinal : diagonal).Add(d);
+        }
+
+        all.Sort();
+
+        return new(center, Percentile(all, Trim), halfWidth, halfHeight, DescribeShape(cardinal, diagonal, halfWidth, halfHeight), all.Count);
+    }
+
+    private static List<WPos> Collect(IReadOnlyCollection<Replay.Participant> occupants, DateTime start, DateTime end)
+    {
+        var samples = new List<WPos>();
+
         foreach (var p in occupants)
         {
             var hist = p.PosRotHistory;
@@ -219,31 +205,27 @@ sealed record class ArenaEstimate(WPos Center, float Radius, float HalfWidth, fl
                 }
 
                 var posRot = hist.Values[i];
-                var here = new WPos(posRot.X, posRot.Z);
-                if (anchor is WPos a && (here - a).LengthSq() > MaxPlausibleArena * MaxPlausibleArena)
-                {
-                    continue; // same rejection as the first pass, or the two would disagree on the sample set
-                }
-
-                var offset = here - center;
-                var d = offset.Length();
-                all.Add(d);
-
-                if (d < 1f)
-                {
-                    continue; // no meaningful bearing near the middle
-                }
-
-                var bearing = (180f - offset.ToAngle().Deg + 360f) % 360f;
-                var octant = (int)MathF.Round(bearing / 45f) % 8;
-                (octant % 2 == 0 ? cardinal : diagonal).Add(d);
+                samples.Add(new(posRot.X, posRot.Z));
             }
         }
 
-        all.Sort();
-        var radius = Percentile(all, Trim);
+        return samples;
+    }
 
-        return new(center, radius, halfWidth, halfHeight, DescribeShape(cardinal, diagonal, halfWidth, halfHeight), all.Count);
+    /// <summary>Component-wise median, which is not a point anybody stood on but is reliably inside the room.</summary>
+    private static WPos Median(List<WPos> samples)
+    {
+        var xs = new List<float>(samples.Count);
+        var zs = new List<float>(samples.Count);
+        foreach (var p in samples)
+        {
+            xs.Add(p.X);
+            zs.Add(p.Z);
+        }
+
+        xs.Sort();
+        zs.Sort();
+        return new(xs[xs.Count / 2], zs[zs.Count / 2]);
     }
 
     /// <summary>How the arena reads in one line, with the caveat attached, since the number invites more trust
