@@ -27,10 +27,12 @@ sealed class EncounterDump : CommonEnumInfo
     private readonly uint _oid;
     private readonly string _moduleName;
     private readonly List<(Replay Replay, Replay.Encounter Encounter)> _encounters = [];
+    private readonly List<Replay> _replays;
 
     public EncounterDump(List<Replay> replays, uint oid)
     {
         _oid = oid;
+        _replays = replays;
         var moduleInfo = BossModuleRegistry.FindByOID(oid);
         _oidType = moduleInfo?.ObjectIDType;
         _aidType = moduleInfo?.ActionIDType;
@@ -148,6 +150,7 @@ sealed class EncounterDump : CommonEnumInfo
             BuildOne(sb, replay, enc, i + 1);
         }
 
+        AppendPositions(sb, _replays);
         return sb.ToString();
     }
 
@@ -214,6 +217,18 @@ sealed class EncounterDump : CommonEnumInfo
         sb.AppendLine();
     }
 
+    /// <summary>
+    /// Where everyone stood, per ability. Delegates to the role position pass rather than recomputing it, so
+    /// the two can never disagree about the same encounter.
+    /// </summary>
+    private void AppendPositions(StringBuilder sb, List<Replay> replays)
+    {
+        sb.AppendLine("========================================================================");
+        sb.AppendLine("POSITIONS, aggregated across every pull above");
+        sb.AppendLine();
+        sb.Append(new RolePositions(replays, _oid).BuildText());
+    }
+
     private List<Event> CollectEvents(Replay replay, Replay.Encounter enc)
     {
         var events = new List<Event>();
@@ -277,6 +292,13 @@ sealed class EncounterDump : CommonEnumInfo
             // Statuses on enemies are mostly the boss's own bookkeeping; the ones that shape player behaviour
             // are the ones landing on players.
             if (st.Target.Type != ActorType.Player)
+            {
+                continue;
+            }
+
+            // ...but only the ones a player did not put there. Rotation buffs and party heals-over-time
+            // outnumbered real mechanic debuffs roughly three to one in the first dump, burying them.
+            if (st.Source != null && st.Source.Type == ActorType.Player)
             {
                 continue;
             }
