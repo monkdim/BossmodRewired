@@ -160,28 +160,38 @@ public sealed class DutyExportWindow : UIWindow
     private string Run(string logPath, CancellationToken token)
     {
         var replay = ReplayParserLog.Parse(logPath, ref _progress, token);
-        if (replay.Encounters.Count == 0)
-        {
-            return "Nothing to export: this recording contains no encounters with a boss module.";
-        }
 
-        var replays = new List<Replay> { replay };
         var sb = new StringBuilder();
         var oids = new HashSet<uint>();
+        string summary;
 
-        foreach (var enc in replay.Encounters)
+        if (replay.Encounters.Count == 0)
         {
-            if (oids.Add(enc.OID))
+            // Encounters only exist where a module activated, so a duty nobody has covered yet produces none.
+            // That is the content most worth capturing, so it falls back to dumping the recording wholesale
+            // rather than writing an empty file and calling it done.
+            sb.Append(ReplayAnalysis.RecordingDump.Build(replay));
+            summary = "no boss module for this duty, exported the whole recording";
+        }
+        else
+        {
+            var replays = new List<Replay> { replay };
+            foreach (var enc in replay.Encounters)
             {
-                sb.Append(new ReplayAnalysis.EncounterDump(replays, enc.OID).BuildAll());
-                sb.AppendLine();
+                if (oids.Add(enc.OID))
+                {
+                    sb.Append(new ReplayAnalysis.EncounterDump(replays, enc.OID).BuildAll());
+                    sb.AppendLine();
+                }
             }
+
+            summary = $"{oids.Count} encounter(s)";
         }
 
         var name = $"{Path.GetFileNameWithoutExtension(logPath)}.txt";
         var target = Path.Combine(ReplayAnalysis.EncounterDump.TargetDirectory(), name);
         File.WriteAllText(target, sb.ToString());
 
-        return $"Exported {oids.Count} encounter(s) to {target}";
+        return $"Exported {summary} to {target}";
     }
 }
