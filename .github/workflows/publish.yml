@@ -1,8 +1,16 @@
-name: Publish
+﻿name: Publish
 on:
   push:
     tags:
       - '*.*.*.*'
+  # Manual trigger, because a tag push needs a credential with tag-ref write access and not every
+  # automation context has one. Dispatching with a version does the same job and creates the tag.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, four dot-separated numbers, e.g. 1.0.0.0'
+        required: true
+        type: string
 jobs:
   Build:
     permissions:
@@ -16,7 +24,17 @@ jobs:
 
       - name: Get Environment Variables
         run: |
-          $tag = "${{ github.ref }}" -replace 'refs/tags/', ''
+          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            '${{ inputs.version }}'
+          } else {
+            "${{ github.ref }}" -replace 'refs/tags/', ''
+          }
+
+          # Dalamud compares four-part assembly versions, so a malformed version has to fail here rather
+          # than produce a release nobody can update to.
+          if ($tag -notmatch '^\d+\.\d+\.\d+\.\d+$') {
+            throw "version '$tag' must be four dot-separated numbers, e.g. 1.0.0.0"
+          }
 
           "tag=$tag" | Out-File -Append -FilePath $Env:GITHUB_ENV
 
@@ -100,6 +118,8 @@ jobs:
       - name: Publish Plugin
         uses: softprops/action-gh-release@v3
         with:
+          # Explicit tag_name so a dispatched run creates the tag; on a tag push this matches github.ref.
+          tag_name: ${{ env.tag }}
           files: |
             ./build/latest.zip
             ./build/repo.json
