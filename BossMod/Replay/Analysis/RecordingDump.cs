@@ -12,11 +12,19 @@ static class RecordingDump
 {
     private const int MaxEvents = 8000;
 
+    /// <summary>
+    /// Whether something counts as part of the fight rather than part of the party. Checking for "not a
+    /// player" is not enough: a scholar's fairy and a machinist's turret are separate actors, and in the
+    /// first real export the fairy was the single largest source of "hostile" actions in the file.
+    /// </summary>
+    private static bool IsHostile(Replay.Participant p)
+        => p.Type is not (ActorType.Player or ActorType.Pet or ActorType.Chocobo or ActorType.Buddy);
+
     private readonly record struct Event(DateTime Timestamp, int Order, string Text);
 
     public static string Build(Replay replay)
     {
-        var events = Collect(replay);
+        var events = Collect(replay, Involved(replay));
         var sb = new StringBuilder();
 
         sb.Append("Recording dump for a duty with no boss module (").Append(replay.Path).AppendLine(")");
@@ -76,7 +84,7 @@ static class RecordingDump
 
         foreach (var a in replay.Actions)
         {
-            var sourceIsPlayer = a.Source.Type == ActorType.Player;
+            var sourceIsPlayer = !IsHostile(a.Source);
 
             foreach (var t in a.Targets)
             {
@@ -163,7 +171,7 @@ static class RecordingDump
         var last = DateTime.MinValue;
         foreach (var a in replay.Actions)
         {
-            if (a.Source.Type == ActorType.Player)
+            if (!IsHostile(a.Source))
             {
                 continue;
             }
@@ -202,7 +210,7 @@ static class RecordingDump
 
         foreach (var a in replay.Actions)
         {
-            if (a.Source.Type == ActorType.Player)
+            if (!IsHostile(a.Source))
             {
                 continue;
             }
@@ -233,7 +241,7 @@ static class RecordingDump
         foreach (var (aid, perPlayer) in byAbility)
         {
             var casts = casterPositions[aid].Count;
-            sb.Append(aid).Append(" - ").Append(casts).AppendLine(" resolutions");
+            sb.Append(aid.ToString()).Append(" - ").Append(casts).AppendLine(" resolutions");
             sb.Append("  looks like: ").AppendLine(Classify(replay, aid, involved.Count));
 
             foreach (var (p, offsets) in perPlayer)
@@ -267,7 +275,7 @@ static class RecordingDump
 
         foreach (var a in replay.Actions)
         {
-            if (a.ID != aid || a.Source.Type == ActorType.Player)
+            if (a.ID != aid || !IsHostile(a.Source))
             {
                 continue;
             }
@@ -428,7 +436,7 @@ static class RecordingDump
         var involved = new HashSet<Replay.Participant>();
         foreach (var a in replay.Actions)
         {
-            if (a.Source.Type == ActorType.Player)
+            if (!IsHostile(a.Source))
             {
                 continue;
             }
@@ -445,13 +453,13 @@ static class RecordingDump
         return involved;
     }
 
-    private static List<Event> Collect(Replay replay)
+    private static List<Event> Collect(Replay replay, HashSet<Replay.Participant> involved)
     {
         var events = new List<Event>();
 
         foreach (var p in replay.Participants)
         {
-            if (p.Type == ActorType.Player)
+            if (!IsHostile(p))
             {
                 continue;
             }
@@ -466,7 +474,7 @@ static class RecordingDump
 
         foreach (var a in replay.Actions)
         {
-            if (a.Source.Type == ActorType.Player)
+            if (!IsHostile(a.Source))
             {
                 continue;
             }
@@ -493,7 +501,10 @@ static class RecordingDump
 
         foreach (var st in replay.Statuses)
         {
-            if (st.Target.Type != ActorType.Player || !InflictedByTheFight(st))
+            // Restricted to the party rather than to players generally. Bystanders standing around when the
+            // recording started otherwise contribute entries at the very front of the timeline, and since
+            // times are measured from the first event, they drag T+0 to before anything happened.
+            if (!involved.Contains(st.Target) || !InflictedByTheFight(st))
             {
                 continue;
             }

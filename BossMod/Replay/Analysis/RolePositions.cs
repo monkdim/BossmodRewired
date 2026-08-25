@@ -60,8 +60,9 @@ sealed class RolePositions : CommonEnumInfo
                 foreach (var action in replay.EncounterActions(enc))
                 {
                     // Player GCDs are a rotation question, not a positional one, and including them buries the boss
-                    // abilities under thousands of entries. Everything hostile or environmental is kept.
-                    if (action.Source.Type == ActorType.Player)
+                    // abilities under thousands of entries. Pets count as the party for this: a fairy's heals are
+                    // no more a mechanic than the scholar's own casts.
+                    if (action.Source.Type is ActorType.Player or ActorType.Pet or ActorType.Chocobo or ActorType.Buddy)
                     {
                         continue;
                     }
@@ -241,7 +242,7 @@ sealed class RolePositions : CommonEnumInfo
     private void AppendAbility(StringBuilder sb, ActionID aid, AbilityData data)
     {
         var name = aid.Type == ActionType.Spell ? _aidType?.GetEnumName(aid.ID) : null;
-        sb.Append("// ").Append(aid).Append(' ').Append(name ?? "unnamed").Append(" - ").Append(data.Instances.Count).AppendLine(" casts");
+        sb.Append("// ").Append(aid.ToString()).Append(' ').Append(name ?? "unnamed").Append(" - ").Append(data.Instances.Count).AppendLine(" casts");
         sb.AppendLine("// consensus position, relative to the arena centre derived from this encounter:");
         foreach (var (label, mean, spread, samples) in Consensus(data))
         {
