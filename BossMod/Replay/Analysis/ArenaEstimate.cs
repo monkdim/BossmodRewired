@@ -156,32 +156,15 @@ sealed record class ArenaEstimate(WPos Center, float Radius, float HalfWidth, fl
         var halfWidth = (maxX - minX) * 0.5f;
         var halfHeight = (maxZ - minZ) * 0.5f;
 
-        // Reach is measured separately along the cardinals and the diagonals. A circle reaches equally far in
-        // both; a square reaches about 1.41 times further into its corners. That ratio is the only thing in
-        // the sample that distinguishes the two, since neither shape leaves a trace anywhere else.
-        var cardinal = new List<float>();
-        var diagonal = new List<float>();
         var all = new List<float>(kept.Count);
-
         foreach (var p in kept)
         {
-            var offset = p - center;
-            var d = offset.Length();
-            all.Add(d);
-
-            if (d < 1f)
-            {
-                continue; // no meaningful bearing near the middle
-            }
-
-            var bearing = (180f - offset.ToAngle().Deg + 360f) % 360f;
-            var octant = (int)MathF.Round(bearing / 45f) % 8;
-            (octant % 2 == 0 ? cardinal : diagonal).Add(d);
+            all.Add((p - center).Length());
         }
 
         all.Sort();
 
-        return new(center, Percentile(all, Trim), halfWidth, halfHeight, DescribeShape(cardinal, diagonal, halfWidth, halfHeight), all.Count);
+        return new(center, Percentile(all, Trim), halfWidth, halfHeight, DescribeShape(halfWidth, halfHeight), all.Count);
     }
 
     private static List<WPos> Collect(IReadOnlyCollection<Replay.Participant> occupants, DateTime start, DateTime end)
@@ -284,35 +267,31 @@ sealed record class ArenaEstimate(WPos Center, float Radius, float HalfWidth, fl
         sb.AppendLine();
     }
 
-    private static string DescribeShape(List<float> cardinal, List<float> diagonal, float halfWidth, float halfHeight)
+    /// <summary>
+    /// What can honestly be said about the outline, which is less than it first appears.
+    ///
+    /// This used to compare reach along the cardinals against reach along the diagonals, on the reasoning that
+    /// a square reaches about 1.41 times further into its corners than a circle does. Real exports settled it:
+    /// parties do not stand in corners. Four of the six arenas in one Windurst run were declared rectangles or
+    /// squares and every one of them was reported as probably circular, because nobody had been near enough to
+    /// a corner to leave a trace of it. A confident wrong answer is worse than none, so the only claims left
+    /// are the ones the samples actually support: how far the occupied area reaches on each axis.
+    /// </summary>
+    private static string DescribeShape(float halfWidth, float halfHeight)
     {
-        if (halfWidth > 0f && halfHeight > 0f)
+        if (halfWidth <= 0f || halfHeight <= 0f)
         {
-            var aspect = Math.Max(halfWidth, halfHeight) / Math.Min(halfWidth, halfHeight);
-            if (aspect > 1.35f)
-            {
-                return halfWidth > halfHeight ? "long east to west" : "long north to south";
-            }
+            return "too little coverage to say anything about the outline";
         }
 
-        if (cardinal.Count < MinSamples / 4 || diagonal.Count < MinSamples / 4)
+        var aspect = Math.Max(halfWidth, halfHeight) / Math.Min(halfWidth, halfHeight);
+        var elongation = aspect switch
         {
-            return "shape unclear, the party did not cover enough of it";
-        }
-
-        cardinal.Sort();
-        diagonal.Sort();
-        var ratio = Percentile(diagonal, Trim) / Percentile(cardinal, Trim);
-
-        // The circular threshold used to be 1.12 and called two known square arenas circular. Parties line the
-        // walls of a square and stay out of its corners, so the diagonals barely outreach the cardinals and the
-        // ratio looks like a circle's. Only a genuinely even reach claims a circle now; the rest says so.
-        return ratio switch
-        {
-            > 1.25f => "corners reachable, so square or rectangular",
-            < 1.05f => "reach is even in every direction, so probably circular",
-            _ => "shape unclear: could be a circle, or a square whose corners nobody stood in"
+            > 1.35f => halfWidth > halfHeight ? ", noticeably longer east to west" : ", noticeably longer north to south",
+            _ => ""
         };
+
+        return $"occupied area only{elongation}; a circle and a square look alike from inside, since nobody stands in the corners";
     }
 
     private static float Percentile(List<float> sorted, float p)

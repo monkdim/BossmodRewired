@@ -24,6 +24,12 @@ static class RecordingDump
     // party cannot run this far between two actions that are seconds apart.
     private const float RoomChange = 40f;
 
+    // The same idea for a walk that never takes one long stride. Syrcus Tower's middle section stayed merged
+    // because its rooms are joined by corridors with trash in them, so the party drifted between bosses a few
+    // yards at a time and no single step was ever large. Distance from where the current fight started catches
+    // that, and is still far more than a party moves inside one arena.
+    private const float RoomDrift = 60f;
+
     // Below this a segment is a trash pull, and a full positional breakdown of three mobs dying in eight
     // seconds is noise. They are still listed, just not analysed.
     private const double MinFightSeconds = 20d;
@@ -339,20 +345,23 @@ static class RecordingDump
         var prev = start;
         var actions = 0;
         var prevCentre = Centroid(party, start);
+        var fightCentre = prevCentre;
 
         foreach (var (t, src) in hostile)
         {
             var centre = Centroid(party, t);
             var walked = prevCentre is WPos a && centre is WPos b ? (b - a).Length() : 0f;
+            var drifted = fightCentre is WPos c && centre is WPos d ? (d - c).Length() : 0f;
             prevCentre = centre;
 
-            if ((t - prev).TotalSeconds > IdleGap || walked > RoomChange)
+            if ((t - prev).TotalSeconds > IdleGap || walked > RoomChange || drifted > RoomDrift)
             {
                 var (label, oid) = Busiest(counts, start);
                 fights.Add(new(start, prev, label, oid, actions));
                 counts.Clear();
                 actions = 0;
                 start = t;
+                fightCentre = centre;
             }
 
             counts[src] = counts.GetValueOrDefault(src) + 1;
