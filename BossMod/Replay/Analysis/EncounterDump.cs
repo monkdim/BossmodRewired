@@ -255,12 +255,37 @@ sealed class EncounterDump : CommonEnumInfo
     /// Where everyone stood, per ability. Delegates to the role position pass rather than recomputing it, so
     /// the two can never disagree about the same encounter.
     /// </summary>
+    /// <summary>
+    /// Where the party stood, per pull. Uses the same analysis as a recording with no module, since there is
+    /// no reason a fight somebody has written a module for should get the weaker of the two; the only
+    /// difference is that roles are known here, so rows are labelled by role rather than by name.
+    /// </summary>
     private void AppendPositions(StringBuilder sb, List<Replay> replays)
     {
-        sb.AppendLine("========================================================================");
-        sb.AppendLine("POSITIONS, aggregated across every pull above");
-        sb.AppendLine();
-        sb.Append(new RolePositions(replays, _oid).BuildText());
+        var roles = Service.Config.Get<PartyRolesConfig>();
+
+        for (var i = 0; i < _encounters.Count; ++i)
+        {
+            var (replay, enc) = _encounters[i];
+            var party = new List<Replay.Participant>(enc.PartyMembers.Count);
+            foreach (var (p, _, _) in enc.PartyMembers)
+            {
+                party.Add(p);
+            }
+
+            sb.AppendLine("========================================================================");
+            sb.Append("POSITIONS for pull ").AppendLine((i + 1).ToString());
+
+            PositionAnalysis.Append(sb, replay, party,
+                p => Label(roles[p.ContentID], p),
+                a => enc.Time.Contains(a.Timestamp));
+        }
+    }
+
+    private static string Label(PartyRolesConfig.Assignment role, Replay.Participant p)
+    {
+        var name = p.NameHistory.Count > 0 ? p.NameHistory.Values[0].name : $"{p.InstanceID:X}";
+        return role != PartyRolesConfig.Assignment.Unassigned ? $"{role} {p.Class}" : $"{p.Class} {name}";
     }
 
     private List<Event> CollectEvents(Replay replay, Replay.Encounter enc)
