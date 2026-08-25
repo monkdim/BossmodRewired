@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using System.IO;
 
 namespace BossMod.ReplayAnalysis;
@@ -54,7 +54,23 @@ sealed class EncounterDump : CommonEnumInfo
     public void Draw(UITree tree)
     {
         tree.LeafNode($"{_encounters.Count} recorded pull(s) of {_moduleName}.");
-        tree.LeafNode("Right-click this node to export everything, or copy it to the clipboard.", Colors.TextColor2);
+
+        // Buttons rather than a right-click menu. The menu is still there for consistency with the other
+        // passes, but a hidden right-click is a poor way to expose the one action people actually want,
+        // and it is worse on a trackpad.
+        if (ImGui.Button("Export to file"))
+        {
+            Export();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Copy to clipboard"))
+        {
+            ImGui.SetClipboardText(BuildAll());
+            Service.ChatGui.Print("[BMR] Encounter dump copied to clipboard.");
+        }
+
+        tree.LeafNode($"Export writes to: {TargetDirectory()}", Colors.TextColor2);
     }
 
     public void DrawContextMenu()
