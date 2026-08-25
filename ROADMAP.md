@@ -1,0 +1,75 @@
+# Roadmap
+
+What this fork is for, what it already does, and what is being considered. Nothing here is a promise.
+
+## The point
+
+BossMod Reborn tells you a mechanic is coming. This fork is trying to tell you where *you*, in your role,
+should be standing for it, with a note when the mechanic needs more than a shape on a radar.
+
+Getting there needs data from real fights, so a large part of the work is capture and analysis rather than
+module content.
+
+## Done
+
+- **Records every duty automatically**, module or not, on by default.
+- **Exports each duty as readable text** to `Downloads/Current Duties` with no interaction.
+- **Recordings with no module** fall back to a whole-recording dump, so uncovered content is not lost.
+- **Positions**: where each player stood when every ability resolved, as an offset from whatever cast it,
+  with distance, compass direction, and spread across resolutions.
+- **Mechanic shapes** inferred from what happened: stack, spread, raidwide, light party, probable tank
+  buster, hedged where the data cannot decide.
+- **Contributions**: damage, DPS, healing, damage taken and deaths per player, to judge whether a recording
+  came from a run worth learning from.
+- **Roles** assigned automatically on duty entry, skipped in extreme, savage and ultimate where people
+  assign deliberately.
+- **Mechanic timer bars** for enemy casts in any fight, plus upcoming states where a module defines them.
+- **Unknown mechanic alerts** when a fight does something its module has never seen.
+- **Refuses to load** alongside upstream BossMod Reborn, which crashes the game.
+
+## Being considered
+
+### Automatic upload of exports
+
+Send exports somewhere central after each duty, so people capturing on someone else's behalf never have to
+send files by hand.
+
+A Discord webhook is the obvious mechanism: no server, no accounts, revocable, and roughly forty lines. The
+URL belongs in config rather than in the repository, defaulting to empty, so the plugin does nothing unusual
+for anyone who has not set one.
+
+The hard part is not technical. **Recordings contain the names of every random player in the party**, and
+they have not agreed to anything. Two ways out:
+
+- The existing anonymize option, which scrambles names and content IDs but also breaks role resolution, and
+  role resolution is most of what makes the data useful.
+- A name-stripping export mode that keeps roles, jobs and positions but replaces people with their role slot.
+  Not built. This is the better answer, since the names were never the useful part.
+
+If this is built, it should be the webhook and the name-stripping mode together.
+
+### Structured export for other tools
+
+The text export is shaped for reading. Rotation analysis wants a table: action, timestamp, GCD or oGCD,
+buffs active, target. A JSON export alongside the text would serve consumers that are not a person reading
+prose, including the HealAssist side of this project.
+
+The recording already contains all of it; only the projection is missing.
+
+### Per-role positional hints
+
+The end goal. Take the measured positions above, decide which are prescribed by the mechanic rather than
+incidental, and render them as the arena hints a player actually follows. The spread figure already
+separates a fixed spot from somebody who happened to be standing there.
+
+### Timelines for fights that lack them
+
+Roughly 900 of the modules with a state machine declare a trivial phase and have no timings, so their timer
+bars can only show casts already in progress. Recorded timings can supply the rest, but distinguishing a
+fixed duration from a variable one needs several recordings of the same fight.
+
+## Not planned
+
+- Anything that reads or writes another player's client.
+- Automating play. The timer bars, hints and notes are there to tell you what is happening; pressing the
+  buttons stays your job.
