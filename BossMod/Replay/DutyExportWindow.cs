@@ -102,7 +102,7 @@ public sealed class DutyExportWindow : UIWindow
         if (_export != null)
         {
             ImGui.TextUnformatted("Reading the recording...");
-            ImGui.ProgressBar(_progress, new(-1f, 22f));
+            ImGui.ProgressBar(_progress, new Vector2(-1f, 22f));
             return;
         }
 
