@@ -78,6 +78,7 @@ sealed class AnalysisManager : IDisposable
         private readonly Lazy<MapEffectInfo> _mapEffectInfo;
         private readonly Lazy<DirectorInfo> _directorInfo;
         private readonly Lazy<ArenaBounds> _arenaBounds;
+        private readonly Lazy<RolePositions> _rolePositions;
         private readonly Lazy<TEASpecific>? _teaSpecific;
         private readonly Lazy<TOPSpecific>? _topSpecific;
 
@@ -92,6 +93,7 @@ sealed class AnalysisManager : IDisposable
             _mapEffectInfo = new(() => new(replays, oid));
             _directorInfo = new(() => new(replays, oid));
             _arenaBounds = new(() => new(replays, oid));
+            _rolePositions = new(() => new(replays, oid));
             if (oid == (uint)Shadowbringers.Ultimate.TEA.OID.BossP1)
             {
                 _teaSpecific = new(() => new(replays, oid));
@@ -148,6 +150,11 @@ sealed class AnalysisManager : IDisposable
             foreach (var n in tree.Node("Arena bounds", false, Colors.TextColor1, () => _arenaBounds.Get().DrawContextMenu()))
             {
                 _arenaBounds.Get().Draw(tree);
+            }
+
+            foreach (var n in tree.Node("Role positions", false, Colors.TextColor1, () => _rolePositions.Get().DrawContextMenu()))
+            {
+                _rolePositions.Get().Draw(tree);
             }
 
             if (_teaSpecific != null)
