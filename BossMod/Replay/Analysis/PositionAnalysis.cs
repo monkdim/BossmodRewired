@@ -13,13 +13,18 @@ static class PositionAnalysis
     private static bool IsHostile(Replay.Participant p)
         => p.Type is not (ActorType.Player or ActorType.Pet or ActorType.Chocobo or ActorType.Buddy);
 
+    /// <summary>Where each player stood at one moment, both relative to the caster and in the world.</summary>
+    private readonly record struct Sample(WDir AtCast, WDir AtHit, WDir Settled, WPos CastWorld, WPos HitWorld, WPos SettledWorld);
+
     /// <summary>
-    /// Where everyone stood when each ability resolved, measured from the caster rather than from an arena
-    /// centre. A recording with no module can span several arenas in different parts of the map, so a single
-    /// centre would be meaningless; and "how far from the thing casting it, and in which direction" is the
-    /// question a positional hint answers anyway.
+    /// Where everyone stood when each ability resolved, measured from the caster: "how far from the thing
+    /// casting it, and in which direction" is the question a positional hint answers.
+    ///
+    /// Caster-relative cannot express everything, though. A knockback is about the arena, not the boss, which
+    /// is usually standing in the middle of it, so when the caller can name an arena the same positions are
+    /// reported from its centre as well.
     /// </summary>
-    public static void Append(StringBuilder sb, Replay replay, IReadOnlyCollection<Replay.Participant> involved, Func<Replay.Participant, string> label, Func<Replay.Action, bool> inScope)
+    public static void Append(StringBuilder sb, Replay replay, IReadOnlyCollection<Replay.Participant> involved, Func<Replay.Participant, string> label, Func<Replay.Action, bool> inScope, ArenaEstimate? arena = null)
     {
         if (involved.Count == 0)
         {
@@ -30,8 +35,8 @@ static class PositionAnalysis
         // resolution is still pre-displacement. This is how long to wait before asking where they ended up.
         const double SettleSeconds = 2d;
 
-        // ability -> player -> (offset when the cast began, when it landed, and once things settled)
-        var byAbility = new Dictionary<ActionID, Dictionary<Replay.Participant, List<(WDir AtCast, WDir AtHit, WDir Settled)>>>();
+        // ability -> player -> where they were when the cast began, when it landed, and once things settled
+        var byAbility = new Dictionary<ActionID, Dictionary<Replay.Participant, List<Sample>>>();
         var resolutions = new Dictionary<ActionID, int>();
         var telegraphed = new Dictionary<ActionID, int>();
 
@@ -68,19 +73,28 @@ static class PositionAnalysis
                 var atHit = p.PosRotAt(hitAt);
                 var atCast = p.PosRotAt(castAt);
                 var settled = p.PosRotAt(hitAt.AddSeconds(SettleSeconds));
-                perPlayer.GetOrAdd(p).Add((
-                    new WPos(atCast.X, atCast.Z) - castOrigin,
-                    new WPos(atHit.X, atHit.Z) - hitOrigin,
-                    new WPos(settled.X, settled.Z) - hitOrigin));
+                var castWorld = new WPos(atCast.X, atCast.Z);
+                var hitWorld = new WPos(atHit.X, atHit.Z);
+                var settledWorld = new WPos(settled.X, settled.Z);
+                perPlayer.GetOrAdd(p).Add(new(
+                    castWorld - castOrigin, hitWorld - hitOrigin, settledWorld - hitOrigin,
+                    castWorld, hitWorld, settledWorld));
             }
         }
 
         sb.AppendLine("========================================================================");
+        arena?.Append(sb);
         sb.AppendLine("POSITIONS, relative to whatever cast the ability");
         sb.AppendLine("'cast' is where somebody stood when the cast began, which is the position they chose.");
         sb.AppendLine("'hit' is where they were when it landed, and 'moved' is how far they travelled to get there.");
         sb.AppendLine("'after' is how far they were displaced in the two seconds following, which is where a");
         sb.AppendLine("knockback shows up: the damage lands first and the shove arrives a moment later.");
+        if (arena != null)
+        {
+            sb.AppendLine("The second line of each row repeats the same three moments measured from the arena centre,");
+            sb.AppendLine("with the distance also given as a fraction of the reach above, so 0.00 is dead centre and");
+            sb.AppendLine("1.00 is as far out as anybody got.");
+        }
         sb.AppendLine();
 
         foreach (var (aid, perPlayer) in byAbility)
@@ -108,12 +122,12 @@ static class PositionAnalysis
                 var hitOffsets = new List<WDir>(samples.Count);
                 var moved = 0f;
                 var pushed = 0f;
-                foreach (var (atCast, atHit, settled) in samples)
+                foreach (var s in samples)
                 {
-                    castOffsets.Add(atCast);
-                    hitOffsets.Add(atHit);
-                    moved += (atHit - atCast).Length();
-                    pushed += (settled - atHit).Length();
+                    castOffsets.Add(s.AtCast);
+                    hitOffsets.Add(s.AtHit);
+                    moved += (s.AtHit - s.AtCast).Length();
+                    pushed += (s.Settled - s.AtHit).Length();
                 }
 
                 var (castMean, castSpread) = MeanAndSpread(castOffsets);
@@ -127,10 +141,48 @@ static class PositionAnalysis
                   .Append(' ').Append(Octant(hitMean).PadRight(8))
                   .Append("moved ").Append(Fixed(moved / samples.Count))
                   .Append("y  after ").Append(Fixed(pushed / samples.Count)).AppendLine("y");
+
+                if (arena != null)
+                {
+                    AppendArenaRow(sb, arena, samples);
+                }
             }
 
             sb.AppendLine();
         }
+    }
+
+    /// <summary>
+    /// The same three moments again, measured from the arena centre. Caster-relative says a knockback moved
+    /// somebody thirteen yards; this says whether those thirteen yards ended at the edge or back in the middle,
+    /// which is the difference between a mechanic you survive and one you do not.
+    /// </summary>
+    private static void AppendArenaRow(StringBuilder sb, ArenaEstimate arena, List<Sample> samples)
+    {
+        var cast = new List<WDir>(samples.Count);
+        var hit = new List<WDir>(samples.Count);
+        var settled = new List<WDir>(samples.Count);
+        foreach (var s in samples)
+        {
+            cast.Add(s.CastWorld - arena.Center);
+            hit.Add(s.HitWorld - arena.Center);
+            settled.Add(s.SettledWorld - arena.Center);
+        }
+
+        var (castMean, _) = MeanAndSpread(cast);
+        var (hitMean, _) = MeanAndSpread(hit);
+        var (settledMean, _) = MeanAndSpread(settled);
+
+        sb.Append(' ', 26).Append("from centre: cast ").Append(Describe(castMean, arena.Radius))
+          .Append(", hit ").Append(Describe(hitMean, arena.Radius))
+          .Append(", after ").AppendLine(Describe(settledMean, arena.Radius));
+    }
+
+    private static string Describe(WDir offset, float radius)
+    {
+        var d = offset.Length();
+        var fraction = radius > 0f ? d / radius : 0f;
+        return $"{d,6:f2}y {Octant(offset),-8}({fraction:f2}r)";
     }
 
     /// <summary>
