@@ -31,6 +31,7 @@ public sealed class ReplayBuilder : IDisposable
         _mgr = new(_ws);
         _subscribers = new
         (
+            _ws.Party.Modified.Subscribe(PartyMemberChanged),
             _ws.Actors.Added.Subscribe(ActorAdded),
             _ws.Actors.Removed.Subscribe(ActorRemoved),
             _ws.Actors.Renamed.Subscribe(ActorRenamed),
@@ -218,9 +219,39 @@ public sealed class ReplayBuilder : IDisposable
     }
     private Replay.Participant? GetOrCreateOptionalParticipant(ulong instanceID) => instanceID is 0 or 0xE0000000 ? null : GetOrCreateParticipant(instanceID);
 
+    /// <summary>
+    /// A participant's content ID is how role assignments are resolved at analysis time, and it was only ever
+    /// filled in while building an encounter. A duty with no boss module produces no encounters, so the
+    /// content it matters most to label by role was the one case that never got the identifier to do it with,
+    /// and every export of it fell back to naming people by job.
+    ///
+    /// Both directions are needed: a party slot can be filled before its actor appears or after.
+    /// </summary>
+    private void PartyMemberChanged(PartyState.OpModify op)
+    {
+        if (op.Member.InstanceId != default && op.Member.ContentId != default && _participants.TryGetValue(op.Member.InstanceId, out var p))
+        {
+            p.ContentID = op.Member.ContentId;
+        }
+    }
+
+    private void AdoptPartyContentID(Replay.Participant p, ulong instanceID)
+    {
+        for (var i = 0; i < PartyState.MaxPartySize; ++i)
+        {
+            ref var m = ref _ws.Party.Members[i];
+            if (m.InstanceId == instanceID && m.ContentId != default)
+            {
+                p.ContentID = m.ContentId;
+                return;
+            }
+        }
+    }
+
     private void ActorAdded(Actor actor)
     {
         var p = GetOrCreateParticipant(actor.InstanceID, false);
+        AdoptPartyContentID(p, actor.InstanceID);
         if (p.EffectiveExistence.End > _ws.CurrentTime)
         {
             throw new InvalidOperationException($"Unexpected actor add while participant still effectively exists: {actor}");

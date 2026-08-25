@@ -128,7 +128,7 @@ static class RecordingDump
             // No encounter means no module activated, but the registry is still worth asking: a module that
             // exists and failed to start still declares the arena, and a declaration beats an estimate.
             var arena = ArenaEstimate.ForFight(replay, fight.OID, involved, fight.Start, fight.End);
-            PositionAnalysis.Append(sb, replay, involved, p => $"{p.Class} {Name(p)}",
+            PositionAnalysis.Append(sb, replay, involved, Label,
                 a => a.Timestamp >= fight.Start && a.Timestamp <= fight.End, arena);
         }
 
@@ -260,6 +260,17 @@ static class RecordingDump
         }
 
         return last > first ? (float)(last - first).TotalSeconds : 0f;
+    }
+
+    /// <summary>
+    /// Role first where one is known, since "Tank 1" is the answer to where should I stand and "DRK Funni
+    /// Bnnuy" is not. Falls back to job and name, which is all there is for anyone the party roles config has
+    /// never seen.
+    /// </summary>
+    private static string Label(Replay.Participant p)
+    {
+        var role = Service.Config.Get<PartyRolesConfig>()[p.ContentID];
+        return role != PartyRolesConfig.Assignment.Unassigned ? $"{role} {p.Class}" : $"{p.Class} {Name(p)}";
     }
 
     private static string Name(Replay.Participant p)
@@ -403,9 +414,11 @@ static class RecordingDump
         }
         else
         {
+            var roles = Service.Config.Get<PartyRolesConfig>();
             foreach (var p in involved)
             {
-                sb.Append("  ").Append(p.Class.ToString().PadRight(6))
+                sb.Append("  ").Append(roles[p.ContentID].ToString().PadRight(11))
+                  .Append(p.Class.ToString().PadRight(6))
                   .Append(p.Class.GetRole().ToString().PadRight(8))
                   .AppendLine(Name(p));
             }
