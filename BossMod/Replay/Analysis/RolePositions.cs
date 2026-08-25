@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 
 namespace BossMod.ReplayAnalysis;
 
@@ -167,7 +167,7 @@ sealed class RolePositions : CommonEnumInfo
 
     private void DrawConsensus(UITree tree, AbilityData data)
     {
-        foreach (var (role, mean, spread, samples) in Consensus(data))
+        foreach (var (label, mean, spread, samples) in Consensus(data))
         {
             // Spread is what tells you whether a position is prescribed by the mechanic or just where somebody
             // happened to be standing. A tight spread across pulls is a real spot worth drawing in a module.
@@ -177,14 +177,18 @@ sealed class RolePositions : CommonEnumInfo
                 < 3f => "roughly consistent",
                 _ => "varies, probably not a fixed spot"
             };
-            tree.LeafNode($"{role,-10} mean {mean.X:f2}, {mean.Z:f2}  spread {spread:f2}y over {samples} casts - {confidence}");
+            tree.LeafNode($"{label,-16} mean {mean.X:f2}, {mean.Z:f2}  spread {spread:f2}y over {samples} samples - {confidence}");
         }
     }
 
-    // Mean position and mean distance from that mean, per role, across every cast of one ability.
-    private static List<(PartyRolesConfig.Assignment Role, WPos Mean, float Spread, int Samples)> Consensus(AbilityData data)
+    /// <summary>
+    /// Mean position and mean distance from that mean, bucketed per role, across every cast of one ability.
+    /// Players with no role assignment are bucketed individually by name rather than lumped together, since
+    /// averaging the whole party into one row produces the party's centroid and tells you nothing.
+    /// </summary>
+    private static List<(string Label, WPos Mean, float Spread, int Samples)> Consensus(AbilityData data)
     {
-        var byRole = new Dictionary<PartyRolesConfig.Assignment, List<WPos>>();
+        var buckets = new Dictionary<string, List<WPos>>();
         foreach (var inst in data.Instances)
         {
             foreach (var s in inst.Snapshots)
@@ -194,34 +198,37 @@ sealed class RolePositions : CommonEnumInfo
                     continue; // a corpse is not standing anywhere meaningful
                 }
 
+                var label = s.Role != PartyRolesConfig.Assignment.Unassigned ? s.Role.ToString() : s.Name;
+
                 // Store arena-relative so pulls in differently placed arena instances can be averaged together.
-                byRole.GetOrAdd(s.Role).Add(new(s.Position.X - inst.Origin.X, s.Position.Z - inst.Origin.Z));
+                buckets.GetOrAdd(label).Add(new(s.Position.X - inst.Origin.X, s.Position.Z - inst.Origin.Z));
             }
         }
 
-        var res = new List<(PartyRolesConfig.Assignment, WPos, float, int)>(byRole.Count);
-        foreach (var (role, positions) in byRole)
+        var res = new List<(string, WPos, float, int)>(buckets.Count);
+        foreach (var (label, positions) in buckets)
         {
+            var count = positions.Count;
             var sumX = 0f;
             var sumZ = 0f;
-            for (var i = 0; i < positions.Count; ++i)
+            for (var i = 0; i < count; ++i)
             {
                 sumX += positions[i].X;
                 sumZ += positions[i].Z;
             }
 
-            var mean = new WPos(sumX / positions.Count, sumZ / positions.Count);
+            var mean = new WPos(sumX / count, sumZ / count);
 
             var spread = 0f;
-            for (var i = 0; i < positions.Count; ++i)
+            for (var i = 0; i < count; ++i)
             {
                 spread += (positions[i] - mean).Length();
             }
 
-            res.Add((role, mean, spread / positions.Count, positions.Count));
+            res.Add((label, mean, spread / count, count));
         }
 
-        res.Sort((a, b) => a.Item1.CompareTo(b.Item1));
+        res.Sort((a, b) => string.CompareOrdinal(a.Item1, b.Item1));
         return res;
     }
 
@@ -229,12 +236,12 @@ sealed class RolePositions : CommonEnumInfo
     {
         var name = aid.Type == ActionType.Spell ? _aidType?.GetEnumName(aid.ID) : null;
         sb.Append("// ").Append(aid).Append(' ').Append(name ?? "unnamed").Append(" - ").Append(data.Instances.Count).AppendLine(" casts");
-        sb.AppendLine("// consensus position per role, arena-relative:");
-        foreach (var (role, mean, spread, samples) in Consensus(data))
+        sb.AppendLine("// consensus position, relative to the arena centre derived from this encounter:");
+        foreach (var (label, mean, spread, samples) in Consensus(data))
         {
-            sb.Append("//   ").Append(role.ToString().PadRight(10))
+            sb.Append("//   ").Append(label.PadRight(16)).Append(' ')
               .Append("new WDir(").Append(mean.X.ToString("f2")).Append("f, ").Append(mean.Z.ToString("f2")).Append("f)")
-              .Append("  spread ").Append(spread.ToString("f2")).Append("y over ").Append(samples).AppendLine(" casts");
+              .Append("  spread ").Append(spread.ToString("f2")).Append("y over ").Append(samples).AppendLine(" samples");
         }
 
         sb.AppendLine();
@@ -276,8 +283,23 @@ sealed class RolePositions : CommonEnumInfo
 
         foreach (var (p, _, _) in enc.PartyMembers)
         {
-            foreach (var posRot in p.PosRotHistory.Values)
+            // Only positions during the encounter. Scanning the whole history would box in the entire
+            // dungeon, corridors and trash included, and put the origin somewhere in a hallway.
+            var hist = p.PosRotHistory;
+            var count = hist.Count;
+            for (var i = 0; i < count; ++i)
             {
+                var t = hist.Keys[i];
+                if (t < enc.Time.Start)
+                {
+                    continue;
+                }
+                if (t > enc.Time.End)
+                {
+                    break;
+                }
+
+                var posRot = hist.Values[i];
                 minX = Math.Min(minX, posRot.X);
                 minZ = Math.Min(minZ, posRot.Z);
                 maxX = Math.Max(maxX, posRot.X);
