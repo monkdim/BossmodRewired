@@ -145,14 +145,20 @@ sealed class RolePositions : CommonEnumInfo
     {
         if (ImGui.MenuItem("Copy all abilities and role positions"))
         {
-            var sb = new StringBuilder();
-            foreach (var (aid, data) in _data)
-            {
-                AppendAbility(sb, aid, data);
-            }
-
-            ImGui.SetClipboardText(sb.ToString());
+            ImGui.SetClipboardText(BuildText());
         }
+    }
+
+    /// <summary>Every ability's consensus block as text, so the encounter export can embed it verbatim.</summary>
+    public string BuildText()
+    {
+        var sb = new StringBuilder();
+        foreach (var (aid, data) in _data)
+        {
+            AppendAbility(sb, aid, data);
+        }
+
+        return sb.ToString();
     }
 
     private void DrawAbilityContextMenu(ActionID aid, AbilityData data)
