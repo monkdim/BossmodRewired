@@ -39,7 +39,7 @@ sealed record class DeclaredArena(WPos Center, float Radius, float MaxReach, str
                 var center = module.Center;
                 var reliable = center != default;
 
-                res = new(center, bounds.Radius, MaxReach(bounds), Describe(bounds), reliable);
+                res = new(center, bounds.Radius, ReachOf(bounds), Describe(bounds), reliable);
             }
         }
         catch (Exception e)
@@ -59,7 +59,7 @@ sealed record class DeclaredArena(WPos Center, float Radius, float MaxReach, str
     /// into its corners. Comparing a party's reach against the radius instead would make every square arena
     /// look like the estimate had overshot.
     /// </summary>
-    private static float MaxReach(ArenaBounds bounds) => bounds is ABRect r
+    private static float ReachOf(ArenaBounds bounds) => bounds is ABRect r
         ? MathF.Sqrt(r.HalfWidth * r.HalfWidth + r.HalfHeight * r.HalfHeight)
         : bounds.Radius;
 
