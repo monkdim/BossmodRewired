@@ -21,6 +21,9 @@ module content.
   with distance, compass direction, and spread across resolutions.
 - **Mechanic shapes** inferred from what happened: stack, spread, raidwide, light party, probable tank
   buster, hedged where the data cannot decide.
+- **Where to stand, per role**, for every ability that hit somebody: distance and direction from the caster
+  and from the arena centre, taken at the moment the cast begins, with a plain statement of how firmly each
+  spot was held across casts.
 - **Arena read from the module where one exists**, since every module carries the real centre and shape as
   a literal somebody typed in, and estimated from where the party stood where none does. Moduled fights
   print both, so how far short of the wall a party gets is a measured number rather than a guess.

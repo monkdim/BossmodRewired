@@ -238,6 +238,13 @@ sealed record class ArenaEstimate(WPos Center, float Radius, float HalfWidth, fl
               .Append("  extent ").Append((HalfWidth * 2f).ToString("f1")).Append(" by ").Append((HalfHeight * 2f).ToString("f1")).Append('y')
               .Append("  ").AppendLine(Shape);
             sb.Append("  from ").Append(Samples).AppendLine(" position samples. Nobody stands against the wall, so this always reads small.");
+
+            // Only worth saying where there is no declaration. When the module names the shape we already
+            // have the real one, and repeating the caveat under every arena in a file is noise.
+            if (Declared == null)
+            {
+                sb.AppendLine("  a circle and a square look alike from inside, since nobody stands in the corners");
+            }
         }
 
         // The whole reason both are printed. Content with a module does not need an estimate; it needs to
@@ -291,7 +298,7 @@ sealed record class ArenaEstimate(WPos Center, float Radius, float HalfWidth, fl
             _ => ""
         };
 
-        return $"occupied area only{elongation}; a circle and a square look alike from inside, since nobody stands in the corners";
+        return $"occupied area only{elongation}";
     }
 
     private static float Percentile(List<float> sorted, float p)
