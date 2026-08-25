@@ -1,4 +1,4 @@
-using BossMod.Autorotation;
+﻿using BossMod.Autorotation;
 using Dalamud.Common;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
@@ -15,7 +15,7 @@ namespace BossMod;
 
 public sealed class Plugin : IAsyncDalamudPlugin
 {
-    public string Name => "BossMod Reborn";
+    public string Name => "BossMod Rewired";
 
     private readonly IDalamudPluginInterface _dalamud;
     private readonly ICommandManager CommandManager;
@@ -292,7 +292,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
     private void OpenConfigUI(string showTab = "")
     {
         _configUI.ShowTab(showTab);
-        _ = new UISimpleWindow("BossModReborn", _configUI.Draw, true, new(300, 300));
+        _ = new UISimpleWindow("BossMod Rewired", _configUI.Draw, true, new(300, 300));
     }
 
     private void DrawUI()
