@@ -13,6 +13,37 @@ namespace BossMod.ReplayAnalysis;
 /// </summary>
 sealed record class ArenaEstimate(WPos Center, float Radius, float HalfWidth, float HalfHeight, string Shape, int Samples)
 {
+    /// <summary>What the module said, when there was a module to ask.</summary>
+    public DeclaredArena? Declared { get; init; }
+
+    /// <summary>The centre positions are measured from. A declaration beats an estimate, except where the
+    /// module took its centre from the boss and reported the origin instead.</summary>
+    public WPos Reference => Declared is { CenterIsReliable: true } d ? d.Center : Center;
+
+    /// <summary>What a distance is divided by to become a fraction of the arena.</summary>
+    public float Scale => Declared?.MaxReach ?? Radius;
+
+    /// <summary>
+    /// Both readings of the same arena, together. For a moduled fight the estimate is redundant, and it is
+    /// printed anyway: it is the only way to find out how far short of the wall a party gets, and that number
+    /// is what decides whether the estimate can be trusted on content with no module to check it against.
+    /// </summary>
+    public static ArenaEstimate? ForFight(uint oid, IReadOnlyCollection<Replay.Participant> occupants, DateTime start, DateTime end)
+    {
+        var declared = DeclaredArena.ForOID(oid);
+        var estimate = Derive(occupants, start, end);
+
+        if (estimate != null)
+        {
+            return estimate with { Declared = declared };
+        }
+
+        // Too few samples to estimate, but a declaration needs none.
+        return declared != null
+            ? new(declared.Center, declared.Radius, declared.Radius, declared.Radius, "", 0) { Declared = declared }
+            : null;
+    }
+
     // Below this there is not enough coverage for the extremes to mean anything, and a confident-looking
     // radius drawn from a handful of samples is worse than saying nothing.
     private const int MinSamples = 64;
@@ -115,12 +146,45 @@ sealed record class ArenaEstimate(WPos Center, float Radius, float HalfWidth, fl
     /// than it has earned.</summary>
     public void Append(StringBuilder sb)
     {
-        sb.AppendLine("--- ARENA, estimated from where the party stood ---");
-        sb.Append("  centre (").Append(Center.X.ToString("f2")).Append(", ").Append(Center.Z.ToString("f2")).Append(')')
-          .Append("  reach ").Append(Radius.ToString("f1")).Append('y')
-          .Append("  extent ").Append((HalfWidth * 2f).ToString("f1")).Append(" by ").Append((HalfHeight * 2f).ToString("f1")).Append('y')
-          .Append("  ").AppendLine(Shape);
-        sb.Append("  from ").Append(Samples).AppendLine(" position samples. Nobody stands against the wall, so the real arena is a little larger.");
+        sb.AppendLine("--- ARENA ---");
+
+        if (Declared != null)
+        {
+            sb.Append("  declared by the module: centre (")
+              .Append(Declared.Center.X.ToString("f2")).Append(", ").Append(Declared.Center.Z.ToString("f2")).Append(')')
+              .Append("  radius ").Append(Declared.Radius.ToString("f1")).Append('y')
+              .Append("  ").AppendLine(Declared.Shape);
+
+            if (!Declared.CenterIsReliable)
+            {
+                sb.AppendLine("  that centre reads as the origin, so the module takes it from the boss; the estimated one is used instead");
+            }
+        }
+
+        if (Samples > 0)
+        {
+            sb.Append("  estimated from where the party stood: centre (")
+              .Append(Center.X.ToString("f2")).Append(", ").Append(Center.Z.ToString("f2")).Append(')')
+              .Append("  reach ").Append(Radius.ToString("f1")).Append('y')
+              .Append("  extent ").Append((HalfWidth * 2f).ToString("f1")).Append(" by ").Append((HalfHeight * 2f).ToString("f1")).Append('y')
+              .Append("  ").AppendLine(Shape);
+            sb.Append("  from ").Append(Samples).AppendLine(" position samples. Nobody stands against the wall, so this always reads small.");
+        }
+
+        // The whole reason both are printed. Content with a module does not need an estimate; it needs to
+        // say how wrong the estimate was, so the estimate can be corrected everywhere there is nothing to
+        // check it against.
+        if (Declared != null && Samples > 0 && Declared.MaxReach > 0f)
+        {
+            sb.Append("  CALIBRATION: the party reached ").Append((Radius / Declared.MaxReach).ToString("f2"))
+              .Append(" of the ").Append(Declared.MaxReach.ToString("f1")).Append("y it could have");
+            if (Declared.CenterIsReliable)
+            {
+                sb.Append(", and the estimated centre was ").Append((Center - Declared.Center).Length().ToString("f2")).Append("y off");
+            }
+            sb.AppendLine();
+        }
+
         sb.AppendLine();
     }
 

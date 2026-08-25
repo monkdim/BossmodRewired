@@ -92,8 +92,8 @@ static class PositionAnalysis
         if (arena != null)
         {
             sb.AppendLine("The second line of each row repeats the same three moments measured from the arena centre,");
-            sb.AppendLine("with the distance also given as a fraction of the reach above, so 0.00 is dead centre and");
-            sb.AppendLine("1.00 is as far out as anybody got.");
+            sb.AppendLine("with the distance also given as a fraction of the arena, so 0.00 is dead centre and 1.00");
+            sb.AppendLine("is the edge.");
         }
         sb.AppendLine();
 
@@ -159,23 +159,24 @@ static class PositionAnalysis
     /// </summary>
     private static void AppendArenaRow(StringBuilder sb, ArenaEstimate arena, List<Sample> samples)
     {
+        var center = arena.Reference;
         var cast = new List<WDir>(samples.Count);
         var hit = new List<WDir>(samples.Count);
         var settled = new List<WDir>(samples.Count);
         foreach (var s in samples)
         {
-            cast.Add(s.CastWorld - arena.Center);
-            hit.Add(s.HitWorld - arena.Center);
-            settled.Add(s.SettledWorld - arena.Center);
+            cast.Add(s.CastWorld - center);
+            hit.Add(s.HitWorld - center);
+            settled.Add(s.SettledWorld - center);
         }
 
         var (castMean, _) = MeanAndSpread(cast);
         var (hitMean, _) = MeanAndSpread(hit);
         var (settledMean, _) = MeanAndSpread(settled);
 
-        sb.Append(' ', 26).Append("from centre: cast ").Append(Describe(castMean, arena.Radius))
-          .Append(", hit ").Append(Describe(hitMean, arena.Radius))
-          .Append(", after ").AppendLine(Describe(settledMean, arena.Radius));
+        sb.Append(' ', 26).Append("from centre: cast ").Append(Describe(castMean, arena.Scale))
+          .Append(", hit ").Append(Describe(hitMean, arena.Scale))
+          .Append(", after ").AppendLine(Describe(settledMean, arena.Scale));
     }
 
     private static string Describe(WDir offset, float radius)
