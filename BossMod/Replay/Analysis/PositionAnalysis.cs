@@ -176,7 +176,6 @@ static class PositionAnalysis
         return total > times.Count;
     }
 
-
     /// <summary>
     /// Names the shape of a mechanic from what it did, since a recording with no module has nobody's word for
     /// it. How many players it hit, and how far apart they were standing when it landed, separates a stack
@@ -321,31 +320,4 @@ static class PositionAnalysis
     }
 
     private static string Fixed(float v) => v.ToString("f2").PadLeft(7);
-
-    private static void AppendPlayers(StringBuilder sb, Replay replay)
-    {
-        var involved = Involved(replay);
-
-        sb.AppendLine("--- PLAYERS IN THE FIGHT ---");
-        if (involved.Count == 0)
-        {
-            sb.AppendLine("  (nobody was hit by anything hostile)");
-        }
-        else
-        {
-            foreach (var p in involved)
-            {
-                sb.Append("  ").Append(p.Class.ToString().PadRight(6))
-                  .Append(p.Class.GetRole().ToString().PadRight(8))
-                  .AppendLine(Name(p));
-            }
-        }
-
-        sb.AppendLine();
-    }
-
-    /// <summary>
-    /// Everyone the recording saw includes whatever crowd was standing around when it started, so membership
-    /// is defined by being hit by something hostile rather than by being present.
-    /// </summary>
 }

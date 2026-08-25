@@ -193,6 +193,32 @@ static class RecordingDump
     private static string Name(Replay.Participant p)
         => p.NameHistory.Count > 0 ? p.NameHistory.Values[0].name : $"{p.InstanceID:X}";
 
+    private static void AppendPlayers(StringBuilder sb, Replay replay)
+    {
+        var involved = Involved(replay);
+
+        sb.AppendLine("--- PLAYERS IN THE FIGHT ---");
+        if (involved.Count == 0)
+        {
+            sb.AppendLine("  (nobody was hit by anything hostile)");
+        }
+        else
+        {
+            foreach (var p in involved)
+            {
+                sb.Append("  ").Append(p.Class.ToString().PadRight(6))
+                  .Append(p.Class.GetRole().ToString().PadRight(8))
+                  .AppendLine(Name(p));
+            }
+        }
+
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Everyone the recording saw includes whatever crowd was standing around when it started, so membership
+    /// is defined by being hit by something hostile rather than by being present.
+    /// </summary>
     private static HashSet<Replay.Participant> Involved(Replay replay)
     {
         var involved = new HashSet<Replay.Participant>();
