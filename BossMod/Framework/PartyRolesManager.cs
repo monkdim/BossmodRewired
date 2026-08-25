@@ -1,4 +1,4 @@
-namespace BossMod;
+﻿namespace BossMod;
 
 // manager that handles automatic party role assignment when entering duties
 public sealed class PartyRolesManager : IDisposable
@@ -64,10 +64,24 @@ public sealed class PartyRolesManager : IDisposable
         }
     }
 
+    /// <summary>The game's own flag for extreme, savage and ultimate content.</summary>
+    private static bool IsHighEndDuty(uint cfcId)
+        => cfcId != default && (Service.LuminaRow<Lumina.Excel.Sheets.ContentFinderCondition>(cfcId)?.HighEndDuty ?? false);
+
     private void OnZoneChanged(WorldState.OpZoneChange op)
     {
         if (!_config.AutoAssignOnDutyEnter)
         {
+            _lastZone = op.Zone;
+            return;
+        }
+
+        // High-end duties are where people assign roles deliberately, and where guessing them wrong is worst:
+        // an auto-assignment silently overwriting a raid's agreed layout mid-prog is a bad trade for saving a
+        // few clicks. Everything else is roulette content nobody is going to assign by hand.
+        if (_config.SkipAutoAssignInHighEndDuties && IsHighEndDuty(_ws.CurrentCFCID))
+        {
+            Service.Log("[PartyRoles] High-end duty, leaving role assignments alone");
             _lastZone = op.Zone;
             return;
         }

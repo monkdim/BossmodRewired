@@ -12,7 +12,11 @@ public class PartyRolesConfig : ConfigNode
     public enum Assignment { MT, OT, H1, H2, M1, M2, R1, R2, Unassigned }
 
     [PropertyDisplay("Automatically assign roles on zone change")]
-    public bool AutoAssignOnDutyEnter = false;
+    public bool AutoAssignOnDutyEnter = true;
+
+    [PropertyDisplay("...but never in extreme, savage or ultimate",
+        tooltip: "High-end duties are where roles get assigned deliberately. Overwriting an agreed layout mid-prog to save a few clicks is a bad trade, so those are left alone for you to set yourself.")]
+    public bool SkipAutoAssignInHighEndDuties = true;
 
     [PropertyDisplay("Preferred auto-assigned role", tooltip: "Only applied when auto-assigning roles (via the 'Auto-Assign Roles' button or on zone change when that option is enabled). Biases the player toward the chosen slot when their job matches the role; otherwise it falls back to the default logic.")]
     public Assignment PreferredAutoAssignedRole = Assignment.Unassigned;

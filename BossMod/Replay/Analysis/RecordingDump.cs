@@ -49,9 +49,135 @@ static class RecordingDump
         }
 
         sb.AppendLine();
+        AppendContributions(sb, replay);
         AppendPositions(sb, replay);
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// What each player actually contributed, and how much they got hit.
+    ///
+    /// Positional data is only worth building on if the run it came from was played reasonably. A pug that
+    /// ate every mechanic produces confident-looking numbers describing where people should not have been
+    /// standing, and nothing in the export would otherwise say so.
+    /// </summary>
+    private static void AppendContributions(StringBuilder sb, Replay replay)
+    {
+        var involved = Involved(replay);
+        if (involved.Count == 0)
+        {
+            return;
+        }
+
+        var dealt = new Dictionary<Replay.Participant, long>();
+        var healed = new Dictionary<Replay.Participant, long>();
+        var taken = new Dictionary<Replay.Participant, long>();
+
+        foreach (var a in replay.Actions)
+        {
+            var sourceIsPlayer = a.Source.Type == ActorType.Player;
+
+            foreach (var t in a.Targets)
+            {
+                for (var i = 0; i < ActionEffects.MaxCount; ++i)
+                {
+                    var eff = t.Effects[i];
+                    switch (eff.Type)
+                    {
+                        case ActionEffectType.Damage:
+                        case ActionEffectType.BlockedDamage:
+                        case ActionEffectType.ParriedDamage:
+                            if (sourceIsPlayer && t.Target.Type != ActorType.Player)
+                            {
+                                Add(dealt, a.Source, eff.DamageHealValue);
+                            }
+                            else if (!sourceIsPlayer && t.Target.Type == ActorType.Player)
+                            {
+                                Add(taken, t.Target, eff.DamageHealValue);
+                            }
+                            break;
+                        case ActionEffectType.Heal:
+                            if (sourceIsPlayer)
+                            {
+                                Add(healed, a.Source, eff.DamageHealValue);
+                            }
+                            break;
+                    }
+                }
+            }
+        }
+
+        var duration = Duration(replay);
+
+        sb.AppendLine("========================================================================");
+        sb.Append("CONTRIBUTIONS over ").Append(duration.ToString("f0")).AppendLine("s of recorded combat");
+        sb.AppendLine("Use this to judge whether the positions below came from a run worth learning from.");
+        sb.AppendLine();
+
+        foreach (var p in involved.OrderByDescending(p => dealt.GetValueOrDefault(p)))
+        {
+            var dmg = dealt.GetValueOrDefault(p);
+            var dps = duration > 0f ? dmg / duration : 0f;
+            var deaths = Deaths(p);
+
+            sb.Append("  ").Append($"{p.Class} {Name(p)}".PadRight(26))
+              .Append("damage ").Append(dmg.ToString("N0").PadLeft(10))
+              .Append("  dps ").Append(dps.ToString("N0").PadLeft(7))
+              .Append("  healing ").Append(healed.GetValueOrDefault(p).ToString("N0").PadLeft(9))
+              .Append("  taken ").Append(taken.GetValueOrDefault(p).ToString("N0").PadLeft(9))
+              .Append("  deaths ").Append(deaths)
+              .AppendLine();
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void Add(Dictionary<Replay.Participant, long> into, Replay.Participant p, int amount)
+        => into[p] = into.GetValueOrDefault(p) + amount;
+
+    private static int Deaths(Replay.Participant p)
+    {
+        var deaths = 0;
+        var wasDead = false;
+        foreach (var dead in p.DeadHistory.Values)
+        {
+            if (dead && !wasDead)
+            {
+                ++deaths;
+            }
+
+            wasDead = dead;
+        }
+
+        return deaths;
+    }
+
+    /// <summary>Span between the first and last hostile action, rather than the whole recording, so time spent
+    /// walking to the boss does not deflate everyone's damage per second.</summary>
+    private static float Duration(Replay replay)
+    {
+        var first = DateTime.MaxValue;
+        var last = DateTime.MinValue;
+        foreach (var a in replay.Actions)
+        {
+            if (a.Source.Type == ActorType.Player)
+            {
+                continue;
+            }
+
+            if (a.Timestamp < first)
+            {
+                first = a.Timestamp;
+            }
+
+            if (a.Timestamp > last)
+            {
+                last = a.Timestamp;
+            }
+        }
+
+        return last > first ? (float)(last - first).TotalSeconds : 0f;
     }
 
     /// <summary>
