@@ -59,7 +59,8 @@ static class RecordingDump
 
         if (events.Count == 0)
         {
-            sb.AppendLine("Nothing hostile was recorded.");
+            sb.AppendLine("Nothing hostile was recorded. Everything here died before it acted, which is what an");
+            sb.AppendLine("unrestricted party running old content at level looks like. There are no mechanics to read.");
             return sb.ToString();
         }
 
@@ -113,7 +114,7 @@ static class RecordingDump
 
             // No encounter means no module activated, but the registry is still worth asking: a module that
             // exists and failed to start still declares the arena, and a declaration beats an estimate.
-            var arena = ArenaEstimate.ForFight(fight.OID, involved, fight.Start, fight.End);
+            var arena = ArenaEstimate.ForFight(replay, fight.OID, involved, fight.Start, fight.End);
             PositionAnalysis.Append(sb, replay, involved, p => $"{p.Class} {Name(p)}",
                 a => a.Timestamp >= fight.Start && a.Timestamp <= fight.End, arena);
         }
