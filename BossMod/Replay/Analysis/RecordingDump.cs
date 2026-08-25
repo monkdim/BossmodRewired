@@ -33,7 +33,7 @@ static class RecordingDump
     private readonly record struct Event(DateTime Timestamp, int Order, string Text);
 
     /// <summary>One stretch of continuous fighting, named after whatever did the most in it.</summary>
-    private readonly record struct Fight(DateTime Start, DateTime End, string Label, int Actions)
+    private readonly record struct Fight(DateTime Start, DateTime End, string Label, uint OID, int Actions)
     {
         public double Seconds => (End - Start).TotalSeconds;
         public bool WorthAnalysing => Seconds >= MinFightSeconds && Actions >= MinFightActions;
@@ -111,7 +111,9 @@ static class RecordingDump
             sb.AppendLine("========================================================================");
             sb.Append("POSITIONS for fight ").Append(i + 1).Append(": ").AppendLine(fight.Label);
 
-            var arena = ArenaEstimate.Derive(involved, fight.Start, fight.End);
+            // No encounter means no module activated, but the registry is still worth asking: a module that
+            // exists and failed to start still declares the arena, and a declaration beats an estimate.
+            var arena = ArenaEstimate.ForFight(fight.OID, involved, fight.Start, fight.End);
             PositionAnalysis.Append(sb, replay, involved, p => $"{p.Class} {Name(p)}",
                 a => a.Timestamp >= fight.Start && a.Timestamp <= fight.End, arena);
         }
@@ -313,7 +315,8 @@ static class RecordingDump
         {
             if ((t - prev).TotalSeconds > IdleGap)
             {
-                fights.Add(new(start, prev, Busiest(counts, start), actions));
+                var (label, oid) = Busiest(counts, start);
+                fights.Add(new(start, prev, label, oid, actions));
                 counts.Clear();
                 actions = 0;
                 start = t;
@@ -324,13 +327,14 @@ static class RecordingDump
             prev = t;
         }
 
-        fights.Add(new(start, prev, Busiest(counts, start), actions));
+        var (lastLabel, lastOID) = Busiest(counts, start);
+        fights.Add(new(start, prev, lastLabel, lastOID, actions));
         return fights;
     }
 
     /// <summary>Whoever acted most during a stretch, which for a boss fight is the boss and for a trash pull is
     /// whichever mob lived longest. Either way it is the most recognisable name available.</summary>
-    private static string Busiest(Dictionary<Replay.Participant, int> counts, DateTime t)
+    private static (string Label, uint OID) Busiest(Dictionary<Replay.Participant, int> counts, DateTime t)
     {
         Replay.Participant? best = null;
         var bestCount = 0;
@@ -343,7 +347,7 @@ static class RecordingDump
             }
         }
 
-        return best != null ? Describe(best, t) : "unknown";
+        return best != null ? (Describe(best, t), best.OID) : ("unknown", 0u);
     }
 
     private static void AppendPlayers(StringBuilder sb, Replay replay)

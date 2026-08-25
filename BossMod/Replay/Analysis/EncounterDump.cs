@@ -272,9 +272,10 @@ sealed class EncounterDump : CommonEnumInfo
             sb.AppendLine("========================================================================");
             sb.Append("POSITIONS for pull ").AppendLine((i + 1).ToString());
 
-            // Derived per pull rather than once for the module: the same fight can be instanced at different
-            // world coordinates, so a centre taken from one pull does not describe another.
-            var arena = ArenaEstimate.Derive(party, enc.Time.Start, enc.Time.End);
+            // The module declares the real arena, so nothing here is guessed. The estimate runs alongside it
+            // anyway: comparing the two is what tells us how far short of the wall a party gets, which is the
+            // correction the content with no module to check against has to borrow.
+            var arena = ArenaEstimate.ForFight(enc.OID, party, enc.Time.Start, enc.Time.End);
 
             PositionAnalysis.Append(sb, replay, party,
                 p => Label(roles[p.ContentID], p),
