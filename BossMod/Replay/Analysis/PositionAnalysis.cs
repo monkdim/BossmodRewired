@@ -40,11 +40,24 @@ static class PositionAnalysis
         var resolutions = new Dictionary<ActionID, int>();
         var telegraphed = new Dictionary<ActionID, int>();
 
+        // An ability that never touched anybody teaches nothing about where to stand, only that it was
+        // avoidable, so the hints below are built from the ones that connected at least once.
+        var landed = new HashSet<ActionID>();
+
         foreach (var a in replay.Actions)
         {
             if (!IsHostile(a.Source) || !inScope(a))
             {
                 continue;
+            }
+
+            foreach (var t in a.Targets)
+            {
+                if (t.Target.Type == ActorType.Player)
+                {
+                    landed.Add(a.ID);
+                    break;
+                }
             }
 
             var hitAt = a.Timestamp;
@@ -82,6 +95,13 @@ static class PositionAnalysis
             }
         }
 
+        // Cached because both sections below want it and working it out walks every action in the replay.
+        var shapes = new Dictionary<ActionID, string>();
+        foreach (var aid in byAbility.Keys)
+        {
+            shapes[aid] = Classify(replay, aid, involved.Count, inScope);
+        }
+
         sb.AppendLine("========================================================================");
         arena?.Append(sb);
         sb.AppendLine("POSITIONS, relative to whatever cast the ability");
@@ -101,7 +121,7 @@ static class PositionAnalysis
         {
             var casts = resolutions[aid];
             sb.Append(aid.ToString()).Append(" - ").Append(casts).AppendLine(" resolutions");
-            sb.Append("  looks like: ").AppendLine(Classify(replay, aid, involved.Count, inScope));
+            sb.Append("  looks like: ").AppendLine(shapes[aid]);
 
             if (telegraphed.GetValueOrDefault(aid) == 0)
             {
@@ -150,7 +170,104 @@ static class PositionAnalysis
 
             sb.AppendLine();
         }
+
+        AppendHints(sb, byAbility, resolutions, landed, shapes, label, arena);
     }
+
+    // A cast-time spread this tight means the position was chosen rather than stumbled into, and is the line
+    // between a spot worth writing into a module and where somebody happened to be standing.
+    private const float FixedSpot = 1.5f;
+    private const float LooseSpot = 4f;
+
+    /// <summary>
+    /// The same data again, said as instructions.
+    ///
+    /// Everything above describes what happened. This answers the question the fork exists for: given a role,
+    /// where should that person be standing when this cast goes off. It reads from the cast moment rather than
+    /// the resolution, because by the time a mechanic resolves the choice has already been made, and it says
+    /// out loud how firm each spot is, since a position held across every cast means something and one taken
+    /// once does not.
+    /// </summary>
+    private static void AppendHints(StringBuilder sb,
+        Dictionary<ActionID, Dictionary<Replay.Participant, List<Sample>>> byAbility,
+        Dictionary<ActionID, int> resolutions,
+        HashSet<ActionID> landed,
+        Dictionary<ActionID, string> shapes,
+        Func<Replay.Participant, string> label,
+        ArenaEstimate? arena)
+    {
+        sb.AppendLine("========================================================================");
+        sb.AppendLine("WHERE TO STAND, per role, at the moment each cast begins");
+        sb.AppendLine("Only abilities that hit somebody at least once: one nobody was ever caught by teaches");
+        sb.AppendLine("nothing about positioning beyond that it can be walked out of.");
+        sb.AppendLine("'from caster' is the distance and compass direction from whatever cast it. 'from centre'");
+        sb.AppendLine("is the same measured from the middle of the arena, as a fraction where 1.00 is the wall.");
+        sb.AppendLine("The last column says how much to trust it.");
+        sb.AppendLine();
+
+        var any = false;
+
+        foreach (var (aid, perPlayer) in byAbility)
+        {
+            if (!landed.Contains(aid))
+            {
+                continue;
+            }
+
+            any = true;
+            var casts = resolutions.GetValueOrDefault(aid);
+            sb.Append(aid.ToString()).Append("  (").Append(shapes.GetValueOrDefault(aid) ?? "").AppendLine(")");
+
+            foreach (var (p, samples) in perPlayer)
+            {
+                var castOffsets = new List<WDir>(samples.Count);
+                foreach (var sample in samples)
+                {
+                    castOffsets.Add(sample.AtCast);
+                }
+
+                var (mean, spread) = MeanAndSpread(castOffsets);
+
+                sb.Append("  ").Append(label(p).PadRight(24))
+                  .Append("from caster ").Append(Fixed(mean.Length())).Append("y ").Append(Octant(mean).PadRight(8));
+
+                if (arena != null)
+                {
+                    var centre = new List<WDir>(samples.Count);
+                    foreach (var sample in samples)
+                    {
+                        centre.Add(sample.CastWorld - arena.Reference);
+                    }
+
+                    var (fromCentre, _) = MeanAndSpread(centre);
+                    var fraction = arena.Scale > 0f ? fromCentre.Length() / arena.Scale : 0f;
+                    sb.Append("from centre ").Append(fraction.ToString("f2")).Append("r ").Append(Octant(fromCentre).PadRight(8));
+                }
+
+                sb.AppendLine(Confidence(samples.Count, casts, spread));
+            }
+
+            sb.AppendLine();
+        }
+
+        if (!any)
+        {
+            sb.AppendLine("Nothing here ever hit anybody, so there is nothing to say about where to stand.");
+            sb.AppendLine();
+        }
+    }
+
+    /// <summary>How much weight a single row deserves, which one cast cannot earn however tidy it looks.</summary>
+    private static string Confidence(int samples, int casts, float spread) => samples switch
+    {
+        < 2 => "one cast only, so this is where they were rather than where to be",
+        _ => spread switch
+        {
+            < FixedSpot => $"held to within {spread:f1}y across {samples} of {casts} casts, so a real spot",
+            < LooseSpot => $"roughly held, {spread:f1}y across {samples} of {casts} casts",
+            _ => $"wandered {spread:f1}y across {samples} casts, so probably not a prescribed spot"
+        }
+    };
 
     /// <summary>
     /// The same three moments again, measured from the arena centre. Caster-relative says a knockback moved
