@@ -110,12 +110,42 @@ sealed class EncounterDump : CommonEnumInfo
         }
     }
 
+    public const string FolderName = "Current Duties";
+
+    // Resolved once. The label in the export prompt is drawn every frame, and creating a directory that often
+    // to answer a question whose answer never changes would be silly.
+    private static string? _targetDirectory;
+
     /// <summary>
-    /// Prefers the user's Downloads folder. Under Wine that is normally symlinked to the host's real Downloads,
-    /// so the file shows up in Finder or Explorer without hunting through a prefix. Falls back to somewhere
+    /// A "Current Duties" folder inside the user's Downloads, created on first use, so exports collect in one
+    /// place instead of scattering. Under Wine, Downloads is normally symlinked to the host's real one, so the
+    /// folder shows up in Finder or Explorer without hunting through a prefix. Falls back to somewhere
     /// writable rather than failing.
     /// </summary>
     public static string TargetDirectory()
+    {
+        if (_targetDirectory != null)
+        {
+            return _targetDirectory;
+        }
+
+        var root = ResolveRoot();
+        try
+        {
+            var folder = Path.Combine(root, FolderName);
+            Directory.CreateDirectory(folder);
+            return _targetDirectory = folder;
+        }
+        catch (Exception e)
+        {
+            // A read-only or otherwise unusable Downloads should degrade to writing loose files, not to
+            // failing every export.
+            Service.Log($"[EncounterDump] could not create {FolderName} under {root}: {e.Message}");
+            return _targetDirectory = root;
+        }
+    }
+
+    private static string ResolveRoot()
     {
         var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         if (profile.Length > 0)
