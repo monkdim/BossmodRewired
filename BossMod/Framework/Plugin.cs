@@ -52,6 +52,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
     private MechanicTimersWindow _wndTimers = null!;
     private MechanicDivergenceTracker _divergence = null!;
     private MechanicDivergenceWindow _wndDivergence = null!;
+    private DutyExportWindow _wndDutyExport = null!;
     private ReplayManagementWindow _wndReplay = null!;
     private UIRotationWindow _wndRotation = null!;
     private MainDebugWindow _wndDebug = null!;
@@ -141,6 +142,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
         var config = Service.Config.Get<ReplayManagementConfig>();
         var replayDir = string.IsNullOrEmpty(config.ReplayFolder) ? _dalamud.ConfigDirectory.FullName + "/replays" : config.ReplayFolder;
         _wndReplay = new ReplayManagementWindow(_ws, _bossmod, _rotationDB, new DirectoryInfo(replayDir));
+        _wndDutyExport = new(_wndReplay, _divergence);
         _configUI = new(Service.Config, _ws, new DirectoryInfo(replayDir), _rotationDB);
         config.Modified.ExecuteAndSubscribe(() => _wndReplay.UpdateLogDirectory());
         _wndRotation = new(_rotation, _amex, () => OpenConfigUI("Autorotation presets"));
@@ -163,6 +165,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
         _wndDebug.Dispose();
         _wndRotation.Dispose();
         _wndReplay.Dispose();
+        _wndDutyExport.Dispose();
         _wndDivergence.Dispose();
         _divergence.Dispose();
         _wndTimers.Dispose();

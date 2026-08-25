@@ -19,6 +19,9 @@ public sealed class ReplayManagementWindow : UIWindow
     private readonly EventSubscriptions _subscriptions;
     private readonly BossModuleManager _bmm;
     private ReplayRecorder? _recorder;
+
+    /// <summary>Fired with the log path once a recording is closed and the file is complete.</summary>
+    public readonly Event<string> RecordingFinished = new();
     private string _message = "";
     private bool _recordingManual; // recording was started manually, and so should not be stopped automatically
     private bool _recordingDuty; // recording was started automatically because we've entered duty
@@ -377,9 +380,18 @@ public sealed class ReplayManagementWindow : UIWindow
         _recordingManual = false;
         _recordingDuty = false;
         _recordingActiveModules = 0;
+
+        // Captured before disposal: the file is only complete once the recorder has been disposed, so
+        // anything reading it has to be told afterwards.
+        var finishedPath = _recorder?.LogPath;
         _recorder?.Dispose();
         _recorder = null;
         UpdateTitle();
+
+        if (finishedPath != null)
+        {
+            RecordingFinished.Fire(finishedPath);
+        }
     }
 
     public void UpdateLogDirectory()

@@ -115,7 +115,7 @@ sealed class EncounterDump : CommonEnumInfo
     /// so the file shows up in Finder or Explorer without hunting through a prefix. Falls back to somewhere
     /// writable rather than failing.
     /// </summary>
-    private static string TargetDirectory()
+    public static string TargetDirectory()
     {
         var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         if (profile.Length > 0)
@@ -136,7 +136,7 @@ sealed class EncounterDump : CommonEnumInfo
         return documents.Length > 0 && Directory.Exists(documents) ? documents : Path.GetTempPath();
     }
 
-    private string BuildAll()
+    public string BuildAll()
     {
         var sb = new StringBuilder();
         sb.Append("Encounter dump for ").Append(_moduleName).Append(" (OID ").Append($"{_oid:X}").AppendLine(")");
