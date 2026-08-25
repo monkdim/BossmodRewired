@@ -37,6 +37,7 @@ public sealed class ReplayBuilder : IDisposable
             _ws.Actors.IsTargetableChanged.Subscribe(ActorTargetable),
             _ws.Actors.IsDeadChanged.Subscribe(ActorDead),
             _ws.Actors.IsAllyChanged.Subscribe(ActorAlly),
+            _ws.Actors.ClassChanged.Subscribe(ActorClass),
             _ws.Actors.Moved.Subscribe(ActorMoved),
             _ws.Actors.SizeChanged.Subscribe(ActorSize),
             _ws.Actors.HPMPChanged.Subscribe(ActorHPMP),
@@ -231,6 +232,8 @@ public sealed class ReplayBuilder : IDisposable
             p.Type = actor.Type;
             p.OwnerID = actor.OwnerID;
             p.LayoutID = actor.LayoutID;
+            p.Class = actor.Class;
+            p.Level = actor.Level;
         }
         else if (p.OID == actor.OID && p.Type == actor.Type && p.OwnerID == actor.OwnerID)
         {
@@ -290,6 +293,13 @@ public sealed class ReplayBuilder : IDisposable
     private void ActorDead(Actor actor) => _participants[actor.InstanceID].DeadHistory[_ws.CurrentTime] = actor.IsDead;
 
     private void ActorAlly(Actor actor) => _participants[actor.InstanceID].AllyHistory[_ws.CurrentTime] = actor.IsAlly;
+
+    private void ActorClass(Actor actor)
+    {
+        var p = _participants[actor.InstanceID];
+        p.Class = actor.Class;
+        p.Level = actor.Level;
+    }
 
     private void ActorMoved(Actor actor) => _participants[actor.InstanceID].PosRotHistory[_ws.CurrentTime] = actor.PosRot;
 

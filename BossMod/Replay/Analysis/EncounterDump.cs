@@ -326,9 +326,10 @@ sealed class EncounterDump : CommonEnumInfo
                 continue;
             }
 
-            // ...but only the ones a player did not put there. Rotation buffs and party heals-over-time
-            // outnumbered real mechanic debuffs roughly three to one in the first dump, burying them.
-            if (st.Source != null && st.Source.Type == ActorType.Player)
+            // ...and only the ones some non-player actor inflicted. Filtering out player-applied statuses was
+            // not enough: Free Company buffs, food and sprint arrive with no source at all and sailed straight
+            // through, outnumbering real mechanic debuffs two to one in a crowded instance.
+            if (st.Source == null || st.Source.Type == ActorType.Player)
             {
                 continue;
             }
