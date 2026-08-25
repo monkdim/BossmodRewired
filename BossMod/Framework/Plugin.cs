@@ -49,6 +49,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
     private BossModuleMainWindow _wndBossmod = null!;
     private BossModuleHintsWindow _wndBossmodHints = null!;
     private ZoneModuleWindow _wndZone = null!;
+    private MechanicTimersWindow _wndTimers = null!;
     private ReplayManagementWindow _wndReplay = null!;
     private UIRotationWindow _wndRotation = null!;
     private MainDebugWindow _wndDebug = null!;
@@ -132,6 +133,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
         Service.BossModWindow = _wndBossmod;
         _wndBossmodHints = new(_bossmod, _zonemod);
         _wndZone = new(_zonemod);
+        _wndTimers = new(_bossmod);
         var config = Service.Config.Get<ReplayManagementConfig>();
         var replayDir = string.IsNullOrEmpty(config.ReplayFolder) ? _dalamud.ConfigDirectory.FullName + "/replays" : config.ReplayFolder;
         _wndReplay = new ReplayManagementWindow(_ws, _bossmod, _rotationDB, new DirectoryInfo(replayDir));
@@ -157,6 +159,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
         _wndDebug.Dispose();
         _wndRotation.Dispose();
         _wndReplay.Dispose();
+        _wndTimers.Dispose();
         _wndZone.Dispose();
         _wndBossmodHints.Dispose();
         _wndBossmod.Dispose();
