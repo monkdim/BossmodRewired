@@ -19,7 +19,7 @@ jobs:
           $tag = "${{ github.ref }}" -replace 'refs/tags/', ''
 
           "tag=$tag" | Out-File -Append -FilePath $Env:GITHUB_ENV
-          
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
         with:
@@ -37,13 +37,70 @@ jobs:
         run: dotnet build --no-restore -c Release BossMod\BossModReborn.csproj -p:AssemblyVersion=${{ env.tag }} -p:FileVersion=${{ env.tag }} -p:PackageVersion=${{ env.tag }} -p:InformationalVersion=${{ env.tag }} --output .\build
 
       - name: Cleanup Build Output
-        run: Get-ChildItem .\build\* -Exclude BossModReborn.*,DefaultRotationPresets.json,RebornPresets.json,PInvoke.User32.dll | Remove-Item -Force -Recurse
+        run: Get-ChildItem .\build\* -Exclude BossModRewired.*,DefaultRotationPresets.json,RebornPresets.json,PInvoke.User32.dll | Remove-Item -Force -Recurse
 
       - name: Zip Plugin
         run: Compress-Archive -Path .\build\* -DestinationPath .\build\latest.zip
 
+      # Dalamud compares the AssemblyVersion in repo.json against the one baked into the DLL. If they drift,
+      # the installer offers an update that immediately reappears, so the mismatch is caught here instead.
+      - name: Verify assembly version matches tag
+        run: |
+          $dll = Get-Item .\build\BossModRewired.dll
+          $actual = $dll.VersionInfo.FileVersion
+          Write-Host "dll file version: $actual, tag: ${{ env.tag }}"
+          if ($actual -ne '${{ env.tag }}') {
+            throw "built assembly version $actual does not match tag ${{ env.tag }}"
+          }
+
+      # Generated after the zip so it is not packaged inside it. This is the file Dalamud reads when the
+      # repository URL is added under Custom Plugin Repositories, so it has to be a flat JSON array of
+      # plugin entries, and the download links have to keep working across future releases.
+      - name: Generate repo.json
+        run: |
+          $manifest = Get-Content BossMod\BossModRewired.json -Raw | ConvertFrom-Json
+
+          # The /releases/latest/download/ redirect always resolves to the newest release, which is what makes
+          # the repository URL permanent. Pinning this tag would freeze everyone on this version forever.
+          $download = "https://github.com/${{ github.repository }}/releases/latest/download/latest.zip"
+
+          $manifest | Add-Member -NotePropertyName AssemblyVersion     -NotePropertyValue "${{ env.tag }}" -Force
+          $manifest | Add-Member -NotePropertyName DownloadLinkInstall -NotePropertyValue $download -Force
+          $manifest | Add-Member -NotePropertyName DownloadLinkUpdate  -NotePropertyValue $download -Force
+          $manifest | Add-Member -NotePropertyName DownloadLinkTesting -NotePropertyValue $download -Force
+          $manifest | Add-Member -NotePropertyName IsHide              -NotePropertyValue $false -Force
+          $manifest | Add-Member -NotePropertyName DownloadCount       -NotePropertyValue 0 -Force
+
+          # Piping the single entry with -AsArray produces [{...}]. Wrapping it in @() first and passing that
+          # as -InputObject produces [[{...}]] instead, which Dalamud accepts and then silently ignores.
+          $manifest | ConvertTo-Json -Depth 10 -AsArray | Out-File -Encoding utf8 .\build\repo.json
+
+      - name: Validate repo.json
+        run: |
+          # -NoEnumerate matters: without it ConvertFrom-Json unrolls a one-element array through the pipeline
+          # and the array check below rejects output that was actually correct.
+          $parsed = Get-Content .\build\repo.json -Raw | ConvertFrom-Json -NoEnumerate
+
+          if ($parsed -isnot [System.Collections.IList]) {
+            throw "repo.json is not a JSON array"
+          }
+          if ($parsed.Count -ne 1) {
+            throw "expected exactly one plugin entry, got $($parsed.Count)"
+          }
+          if ($parsed[0].InternalName -ne 'BossModRewired') {
+            throw "unexpected InternalName: $($parsed[0].InternalName)"
+          }
+          if ($parsed[0].AssemblyVersion -ne '${{ env.tag }}') {
+            throw "AssemblyVersion $($parsed[0].AssemblyVersion) does not match tag ${{ env.tag }}"
+          }
+
+          Write-Host "repo.json OK"
+          Get-Content .\build\repo.json -Raw
+
       - name: Publish Plugin
         uses: softprops/action-gh-release@v3
         with:
-          files: ./build/latest.zip
+          files: |
+            ./build/latest.zip
+            ./build/repo.json
           token: ${{ secrets.GITHUB_TOKEN }}

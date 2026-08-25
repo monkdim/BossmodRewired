@@ -1,0 +1,25 @@
+{
+  "Author": "monkdim",
+  "Name": "BossMod Rewired",
+  "InternalName": "BossModRewired",
+  "RepoUrl": "https://github.com/monkdim/BossmodRewired",
+  "Description": "A fork of BossMod Reborn focused on depth: role-specific positioning, exact safe spots, mechanic timer bars and per-mechanic notes for savage and ultimate content.\n\nBuilt on the work of awgil's ffxiv_bossmod and the Combat Reborn team's BossMod Reborn, both BSD 3-Clause.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "combat",
+    "boss",
+    "dodge",
+    "mechanics",
+    "pve",
+    "raids",
+    "trials"
+  ],
+  "DalamudApiLevel": 15,
+  "LoadRequiredState": 0,
+  "LoadSync": false,
+  "CanUnloadAsync": false,
+  "LoadPriority": 0,
+  "IsTestingExclusive": false,
+  "Punchline": "Boss mechanics, with the positions spelled out",
+  "AcceptsFeedback": false
+}

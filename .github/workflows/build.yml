@@ -1,4 +1,4 @@
-name: Build
+﻿name: Build
 on:
   pull_request:
     branches:
@@ -27,3 +27,12 @@ jobs:
 
       - name: Build Plugin
         run: dotnet build --no-restore -c Release BossMod/BossModReborn.csproj
+
+      # Uploads the built plugin folder so a branch can be tested in game before it is tagged and released:
+      # download it from the Actions tab, unzip somewhere permanent, and point Dev Plugin Locations at it.
+      - name: Upload Plugin Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BossModRewired-${{ github.event.pull_request.head.sha }}
+          path: BossMod/bin/Release/
+          if-no-files-found: error
