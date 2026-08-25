@@ -20,6 +20,9 @@ sealed class EncounterDump : CommonEnumInfo
 
     // A long ultimate can produce tens of thousands of events. The cap keeps the file readable; the true count
     // is always written into the file so a truncated dump never reads as complete.
+    // Below this a pull contains no mechanics at all, only a boss dying mid-cast.
+    private const double TrivialPullSeconds = 15d;
+
     private const int MaxEvents = 5000;
 
     private readonly record struct Event(DateTime Timestamp, int Order, string Text);
@@ -209,6 +212,16 @@ sealed class EncounterDump : CommonEnumInfo
               .Append("Lv").Append(level).Append("  ")
               .AppendLine(p.NameAt(start).name ?? "<unknown>");
         }
+
+        // A pull this short cannot contain a mechanic. Almost always an unrestricted party running old content
+        // at level, where the boss dies during its opening cast, and the export would otherwise look broken
+        // rather than empty for a reason.
+        if (enc.Time.Duration < TrivialPullSeconds)
+        {
+            sb.Append("  This pull lasted ").Append(enc.Time.Duration.ToString("f1"))
+              .AppendLine("s. Nothing lived long enough to use a mechanic, so there is nothing here to learn from.");
+        }
+
         sb.AppendLine();
 
         // The state machine is what a timer bar reads from, so it is dumped even when it is a single trivial phase.
@@ -275,7 +288,7 @@ sealed class EncounterDump : CommonEnumInfo
             // The module declares the real arena, so nothing here is guessed. The estimate runs alongside it
             // anyway: comparing the two is what tells us how far short of the wall a party gets, which is the
             // correction the content with no module to check against has to borrow.
-            var arena = ArenaEstimate.ForFight(enc.OID, party, enc.Time.Start, enc.Time.End);
+            var arena = ArenaEstimate.ForFight(replay, enc.OID, party, enc.Time.Start, enc.Time.End);
 
             PositionAnalysis.Append(sb, replay, party,
                 p => Label(roles[p.ContentID], p),

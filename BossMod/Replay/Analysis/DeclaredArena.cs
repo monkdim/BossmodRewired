@@ -15,7 +15,7 @@ namespace BossMod.ReplayAnalysis;
 /// to be right is the only way to find out how far short of the wall a party actually gets, and that
 /// correction is what makes an estimate trustworthy for the content with no module at all.
 /// </summary>
-sealed record class DeclaredArena(WPos Center, float Radius, float MaxReach, string Shape, bool CenterIsReliable)
+sealed record class DeclaredArena(WPos Center, float Radius, float NearEdge, float MaxReach, string Shape, bool CenterIsReliable)
 {
     // Instantiating a module is not free and an encounter dump asks for the same OID once per pull.
     private static readonly Dictionary<uint, DeclaredArena?> _cache = [];
@@ -42,7 +42,7 @@ sealed record class DeclaredArena(WPos Center, float Radius, float MaxReach, str
                 var center = module.Center;
                 var reliable = center != default;
 
-                res = new(center, bounds.Radius, ReachOf(bounds), Describe(bounds), reliable);
+                res = new(center, bounds.Radius, NearEdgeOf(bounds), ReachOf(bounds), Describe(bounds), reliable);
             }
         }
         catch (Exception e)
@@ -55,6 +55,13 @@ sealed record class DeclaredArena(WPos Center, float Radius, float MaxReach, str
         _cache[oid] = res;
         return res;
     }
+
+    /// <summary>
+    /// How far the nearest wall is. In a square arena people line the walls and stay out of the corners, so
+    /// this is the distance a party's outermost positions actually converge on, and measuring their coverage
+    /// against the corner instead makes a fully explored arena look two thirds explored.
+    /// </summary>
+    private static float NearEdgeOf(BossMod.ArenaBounds bounds) => bounds is ABRect r ? Math.Min(r.HalfWidth, r.HalfHeight) : bounds.Radius;
 
     /// <summary>
     /// How far from the centre it is possible to stand, which is not the radius for anything with corners:
