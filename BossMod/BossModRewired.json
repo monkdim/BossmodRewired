@@ -21,5 +21,6 @@
   "LoadPriority": 0,
   "IsTestingExclusive": false,
   "Punchline": "Boss mechanics, with the positions spelled out",
-  "AcceptsFeedback": false
+  "AcceptsFeedback": false,
+  "IconUrl": "https://raw.githubusercontent.com/monkdim/BossmodRewired/main/Data/PluginIcon.png"
 }

@@ -10,7 +10,7 @@ public sealed class ReplayManagementConfig : ConfigNode
     public bool ImportantDutyAlert = true;
 
     [PropertyDisplay("Auto record replays on duty start/end or outdoor module start/end")]
-    public bool AutoRecord = false;
+    public bool AutoRecord = true;
 
     [PropertyDisplay("Auto record in Duty Recorder replays")]
     public bool AutoARR = false;
