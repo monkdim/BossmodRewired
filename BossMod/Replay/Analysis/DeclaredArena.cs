@@ -22,6 +22,16 @@ sealed record class DeclaredArena(WPos Center, float Radius, float NearEdge, flo
 
     public static DeclaredArena? ForOID(uint oid)
     {
+        // Building a module means running an arbitrary module constructor, and a fair number of the nine
+        // hundred of them touch game memory, which is only safe on the game's own thread. Exports run on the
+        // thread pool, so off that thread this declines rather than risks it and the estimate stands alone.
+        // Ahead of the cache deliberately, so the dictionary is only ever touched from one thread and an
+        // off-thread refusal is never remembered as an answer.
+        if (!Service.Framework.IsInFrameworkUpdateThread)
+        {
+            return null;
+        }
+
         if (_cache.TryGetValue(oid, out var cached))
         {
             return cached;

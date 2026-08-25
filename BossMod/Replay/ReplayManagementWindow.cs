@@ -7,6 +7,7 @@ using Dalamud.Interface.Utility.Raii;
 using Lumina.Excel.Sheets;
 using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 
 namespace BossMod;
 
@@ -143,6 +144,9 @@ public sealed class ReplayManagementWindow : UIWindow
         ImGui.Separator();
         _manager.Draw();
     }
+
+    /// <summary>Stops a folder-wide export and does not return until it has actually stopped.</summary>
+    public Task StopExportingAsync() => _bulkExport.StopAsync();
 
     public bool IsRecording() => _recorder != null;
 
