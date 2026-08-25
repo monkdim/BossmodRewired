@@ -153,7 +153,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
         Service.BossModWindow = _wndBossmod;
         _wndBossmodHints = new(_bossmod, _zonemod);
         _wndZone = new(_zonemod);
-        _wndTimers = new(_bossmod);
+        _wndTimers = new(_ws, _bossmod);
         _divergence = new(_ws, _bossmod);
         _wndDivergence = new(_divergence);
         var config = Service.Config.Get<ReplayManagementConfig>();

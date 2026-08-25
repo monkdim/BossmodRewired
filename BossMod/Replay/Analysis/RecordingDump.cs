@@ -48,13 +48,144 @@ static class RecordingDump
             sb.Append("  ... ").Append(events.Count - MaxEvents).AppendLine(" further events omitted.");
         }
 
+        sb.AppendLine();
+        AppendPositions(sb, replay);
+
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Where everyone stood when each ability resolved, measured from the caster rather than from an arena
+    /// centre. A recording with no module can span several arenas in different parts of the map, so a single
+    /// centre would be meaningless; and "how far from the thing casting it, and in which direction" is the
+    /// question a positional hint answers anyway.
+    /// </summary>
+    private static void AppendPositions(StringBuilder sb, Replay replay)
+    {
+        var involved = Involved(replay);
+        if (involved.Count == 0)
+        {
+            return;
+        }
+
+        // ability -> player -> offsets from the caster at each resolution
+        var byAbility = new Dictionary<ActionID, Dictionary<Replay.Participant, List<WDir>>>();
+        var casterPositions = new Dictionary<ActionID, List<WPos>>();
+
+        foreach (var a in replay.Actions)
+        {
+            if (a.Source.Type == ActorType.Player)
+            {
+                continue;
+            }
+
+            var t = a.Timestamp;
+            var src = a.Source.PosRotAt(t);
+            var origin = new WPos(src.X, src.Z);
+
+            casterPositions.GetOrAdd(a.ID).Add(origin);
+            var perPlayer = byAbility.GetOrAdd(a.ID);
+
+            foreach (var p in involved)
+            {
+                if (p.DeadAt(t))
+                {
+                    continue;
+                }
+
+                var pos = p.PosRotAt(t);
+                perPlayer.GetOrAdd(p).Add(new WPos(pos.X, pos.Z) - origin);
+            }
+        }
+
+        sb.AppendLine("========================================================================");
+        sb.AppendLine("POSITIONS, relative to whatever cast the ability, at the moment it resolved");
+        sb.AppendLine();
+
+        foreach (var (aid, perPlayer) in byAbility)
+        {
+            var casts = casterPositions[aid].Count;
+            sb.Append(aid).Append(" - ").Append(casts).AppendLine(" resolutions");
+
+            foreach (var (p, offsets) in perPlayer)
+            {
+                var (mean, spread) = MeanAndSpread(offsets);
+                var name = p.NameHistory.Count > 0 ? p.NameHistory.Values[0].name : $"{p.InstanceID:X}";
+                sb.Append("  ").Append(name.PadRight(22))
+                  .Append("mean ").Append(Fixed(mean.X)).Append(", ").Append(Fixed(mean.Z))
+                  .Append("  dist ").Append(Fixed(mean.Length()))
+                  .Append("  ").Append(Octant(mean).PadRight(7))
+                  .Append("spread ").Append(Fixed(spread)).AppendLine("y");
+            }
+
+            sb.AppendLine();
+        }
+    }
+
+    private static (WDir Mean, float Spread) MeanAndSpread(List<WDir> offsets)
+    {
+        var count = offsets.Count;
+        var sumX = 0f;
+        var sumZ = 0f;
+        for (var i = 0; i < count; ++i)
+        {
+            sumX += offsets[i].X;
+            sumZ += offsets[i].Z;
+        }
+
+        var mean = new WDir(sumX / count, sumZ / count);
+
+        var spread = 0f;
+        for (var i = 0; i < count; ++i)
+        {
+            spread += (offsets[i] - mean).Length();
+        }
+
+        return (mean, spread / count);
+    }
+
+    private static readonly string[] Octants = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+
+    // FFXIV world axes put north at -Z and east at +X, so a compass bearing is 180 degrees off WDir.ToAngle.
+    private static string Octant(WDir offset)
+    {
+        if (offset.LengthSq() < 0.01f)
+        {
+            return "on top";
+        }
+
+        var bearing = (180f - offset.ToAngle().Deg + 360f) % 360f;
+        return Octants[(int)MathF.Round(bearing / 45f) % 8];
+    }
+
+    private static string Fixed(float v) => v.ToString("f2").PadLeft(7);
+
     private static void AppendPlayers(StringBuilder sb, Replay replay)
     {
-        // Everyone the recording ever saw includes whatever crowd was standing around when it started. Only
-        // players something hostile actually hit were in the fight.
+        var involved = Involved(replay);
+
+        sb.AppendLine("--- PLAYERS IN THE FIGHT ---");
+        if (involved.Count == 0)
+        {
+            sb.AppendLine("  (nobody was hit by anything hostile)");
+        }
+        else
+        {
+            foreach (var p in involved)
+            {
+                sb.Append("  ").AppendLine(p.NameHistory.Count > 0 ? p.NameHistory.Values[0].name : $"{p.InstanceID:X}");
+            }
+        }
+
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Everyone the recording saw includes whatever crowd was standing around when it started, so membership
+    /// is defined by being hit by something hostile rather than by being present.
+    /// </summary>
+    private static HashSet<Replay.Participant> Involved(Replay replay)
+    {
         var involved = new HashSet<Replay.Participant>();
         foreach (var a in replay.Actions)
         {
@@ -72,20 +203,7 @@ static class RecordingDump
             }
         }
 
-        sb.AppendLine("--- PLAYERS IN THE FIGHT ---");
-        if (involved.Count == 0)
-        {
-            sb.AppendLine("  (nobody was hit by anything hostile)");
-        }
-        else
-        {
-            foreach (var p in involved)
-            {
-                sb.Append("  ").AppendLine(p.NameHistory.Count > 0 ? p.NameHistory.Values[0].name : $"{p.InstanceID:X}");
-            }
-        }
-
-        sb.AppendLine();
+        return involved;
     }
 
     private static List<Event> Collect(Replay replay)

@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 
 namespace BossMod;
 
@@ -22,11 +22,14 @@ public sealed class MechanicTimersWindow : UIWindow
 
     private static MechanicTimersConfig Config => Service.Config.Get<MechanicTimersConfig>();
 
+    private readonly WorldState _ws;
     private readonly BossModuleManager _mgr;
     private readonly List<(string Label, float Remaining, float Total)> _bars = [];
+    private int _castBars;
 
-    public MechanicTimersWindow(BossModuleManager mgr) : base("Mechanic timers", false, new(260f, 160f))
+    public MechanicTimersWindow(WorldState ws, BossModuleManager mgr) : base("Mechanic timers", false, new(260f, 160f))
     {
+        _ws = ws;
         _mgr = mgr;
         RespectCloseHotkey = false;
     }
@@ -34,7 +37,27 @@ public sealed class MechanicTimersWindow : UIWindow
     public override void PreOpenCheck()
     {
         var config = Config;
-        IsOpen = config.Enable && _mgr.ActiveModule != null;
+
+        // Bars are collected here rather than in Draw so the window can decide whether it has anything to say.
+        // Gating on an active boss module would have hidden it in every fight without one, which is most of
+        // them, and the cast bars need no module at all.
+        _bars.Clear();
+        if (config.Enable)
+        {
+            if (config.ShowCasts)
+            {
+                CollectCasts();
+            }
+
+            _castBars = _bars.Count;
+
+            if (config.ShowStates)
+            {
+                CollectStates(config.MaxUpcoming);
+            }
+        }
+
+        IsOpen = _bars.Count > 0;
 
         Flags = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse | ImGuiWindowFlags.AlwaysAutoResize;
         if (config.Lock)
@@ -52,33 +75,8 @@ public sealed class MechanicTimersWindow : UIWindow
 
     public override void Draw()
     {
-        var module = _mgr.ActiveModule;
-        if (module == null)
-        {
-            return;
-        }
-
         var config = Config;
-        _bars.Clear();
-
-        if (config.ShowCasts)
-        {
-            CollectCasts(module);
-        }
-
-        var castBars = _bars.Count;
-
-        if (config.ShowStates)
-        {
-            CollectStates(module, config.MaxUpcoming);
-        }
-
-        if (_bars.Count == 0)
-        {
-            ImGui.TextUnformatted("No mechanic in progress.");
-            return;
-        }
-
+        var castBars = _castBars;
         var size = new Vector2(config.BarWidth, config.BarHeight);
         for (var i = 0; i < _bars.Count; ++i)
         {
@@ -101,12 +99,18 @@ public sealed class MechanicTimersWindow : UIWindow
         }
     }
 
-    private void CollectCasts(BossModule module)
+    private void CollectCasts()
     {
-        var player = module.Raid.Player();
-        var origin = player?.Position ?? module.PrimaryActor.Position;
+        // Anchored on the player rather than the boss, since without a module there is no boss to anchor to.
+        var player = _ws.Party.Player();
+        if (player == null)
+        {
+            return;
+        }
 
-        foreach (var actor in module.WorldState.Actors)
+        var origin = player.Position;
+
+        foreach (var actor in _ws.Actors)
         {
             var cast = actor.CastInfo;
             if (cast == null || actor.IsAlly || actor.IsDead)
@@ -140,8 +144,14 @@ public sealed class MechanicTimersWindow : UIWindow
     /// fork the module itself does not know which way the fight goes, and a confidently wrong countdown is
     /// worse than a short list.
     /// </summary>
-    private void CollectStates(BossModule module, int maxUpcoming)
+    private void CollectStates(int maxUpcoming)
     {
+        var module = _mgr.ActiveModule;
+        if (module == null)
+        {
+            return;
+        }
+
         var sm = module.StateMachine;
         var state = sm.ActiveState;
         if (state == null)
