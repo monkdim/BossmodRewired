@@ -14,6 +14,8 @@ module content.
 
 - **Records every duty automatically**, module or not, on by default.
 - **Exports each duty as readable text** to `Downloads/Current Duties` with no interaction.
+- **Exports a whole folder of recordings** in one pass from the replay window, skipping ones already
+  written, for a backlog nobody exported as it happened.
 - **Recordings with no module** fall back to a whole-recording dump, so uncovered content is not lost.
 - **Positions**: where each player stood when every ability resolved, as an offset from whatever cast it,
   with distance, compass direction, and spread across resolutions.

@@ -18,6 +18,7 @@ public sealed class ReplayManagementWindow : UIWindow
     private readonly ReplayManager _manager;
     private readonly EventSubscriptions _subscriptions;
     private readonly BossModuleManager _bmm;
+    private readonly BulkExport _bulkExport = new();
     private ReplayRecorder? _recorder;
 
     /// <summary>Fired with the log path once a recording is closed and the file is complete.</summary>
@@ -64,6 +65,7 @@ public sealed class ReplayManagementWindow : UIWindow
         _recorder?.Dispose();
         _subscriptions.Dispose();
         _manager.Dispose();
+        _bulkExport.Dispose();
         base.Dispose(disposing);
     }
 
@@ -126,12 +128,17 @@ public sealed class ReplayManagementWindow : UIWindow
             _lastErrorMessage = OpenDirectory(_logDir);
         }
 
+        ImGui.SameLine();
+        _bulkExport.DrawButton(_logDir);
+
         if (_lastErrorMessage.Length > 0)
         {
             ImGui.SameLine();
             using var color = ImRaii.PushColor(ImGuiCol.Text, Colors.TextColor3);
             ImGui.TextUnformatted(_lastErrorMessage);
         }
+
+        _bulkExport.DrawProgress();
 
         ImGui.Separator();
         _manager.Draw();
