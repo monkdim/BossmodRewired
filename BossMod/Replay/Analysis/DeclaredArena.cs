@@ -17,24 +17,43 @@ namespace BossMod.ReplayAnalysis;
 /// </summary>
 sealed record class DeclaredArena(WPos Center, float Radius, float NearEdge, float MaxReach, string Shape, bool CenterIsReliable)
 {
-    // Instantiating a module is not free and an encounter dump asks for the same OID once per pull.
-    private static readonly Dictionary<uint, DeclaredArena?> _cache = [];
+    // Concurrent because exports read it from the thread pool. Only the game's own thread ever writes.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, DeclaredArena?> _cache = new();
+
+    /// <summary>
+    /// Records what a module declared while it was actually running, which is both safer and better than
+    /// building one later. Safer because it happens on the game's own thread, where a module constructor is
+    /// allowed to touch game memory. Better because a live module's centre comes from the real boss rather
+    /// than the placeholder actor an offline one is handed, so it never reads as the origin.
+    ///
+    /// This is what puts a declaration in reach of a background export: the fight being exported is the fight
+    /// that was just played, so its module has already been through here.
+    /// </summary>
+    public static void Remember(BossModule module)
+    {
+        if (!Service.Framework.IsInFrameworkUpdateThread)
+        {
+            return;
+        }
+
+        var bounds = module.Bounds;
+        _cache[module.PrimaryActor.OID] = new(module.Center, bounds.Radius, NearEdgeOf(bounds), ReachOf(bounds), Describe(bounds), module.Center != default);
+    }
 
     public static DeclaredArena? ForOID(uint oid)
     {
-        // Building a module means running an arbitrary module constructor, and a fair number of the nine
-        // hundred of them touch game memory, which is only safe on the game's own thread. Exports run on the
-        // thread pool, so off that thread this declines rather than risks it and the estimate stands alone.
-        // Ahead of the cache deliberately, so the dictionary is only ever touched from one thread and an
-        // off-thread refusal is never remembered as an answer.
-        if (!Service.Framework.IsInFrameworkUpdateThread)
-        {
-            return null;
-        }
-
         if (_cache.TryGetValue(oid, out var cached))
         {
             return cached;
+        }
+
+        // Nothing remembered, so it would have to be built, and building one runs an arbitrary module
+        // constructor out of the nine hundred in the tree. A fair number touch game memory, which is only
+        // safe on the game's own thread, and exports run on the thread pool. Off that thread this declines
+        // rather than risks it, without caching the refusal as though it were an answer.
+        if (!Service.Framework.IsInFrameworkUpdateThread)
+        {
+            return null;
         }
 
         DeclaredArena? res = null;
