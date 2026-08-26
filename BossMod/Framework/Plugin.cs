@@ -25,6 +25,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
     private WorldState _ws = null!;
     private AIHints _hints = null!;
     private BossModuleManager _bossmod = null!;
+    private EventSubscription _rememberArenas = null!;
     private ZoneModuleManager _zonemod = null!;
     private AIHintsBuilder _hintsBuilder = null!;
     private MovementOverride _movementOverride = null!;
@@ -137,6 +138,11 @@ public sealed class Plugin : IAsyncDalamudPlugin
         _hints = new();
         _cancelCastTweak = new(_ws, _hints);
         _bossmod = new(_ws);
+
+        // The live manager, which is the only one that ever sees a real module. The replay builder has a
+        // manager of its own, but it is a reconstruction built while parsing a log on a worker thread, so
+        // hooking that one recorded nothing at all.
+        _rememberArenas = _bossmod.ModuleLoaded.Subscribe(ReplayAnalysis.DeclaredArena.Remember);
         _zonemod = new(_ws);
         _hintsBuilder = new(_ws, _bossmod, _zonemod, _rsr);
         _movementOverride = new(_dalamud);
@@ -209,6 +215,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
         _movementOverride.Dispose();
         _hintsBuilder.Dispose();
         _zonemod.Dispose();
+        _rememberArenas.Dispose();
         _bossmod.Dispose();
         _rsr.Dispose();
         Dx11ArenaRenderer.Shutdown();
