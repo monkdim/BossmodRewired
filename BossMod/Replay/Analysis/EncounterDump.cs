@@ -23,6 +23,10 @@ sealed class EncounterDump : CommonEnumInfo
     // Below this a pull contains no mechanics at all, only a boss dying mid-cast.
     private const double TrivialPullSeconds = 15d;
 
+    // How far two pulls' centres can sit apart and still be the same room. Generous, because the estimate
+    // itself moves by a couple of yards between pulls; anything beyond this is a different instance.
+    private const float SameArenaTolerance = 15f;
+
     private const int MaxEvents = 5000;
 
     private readonly record struct Event(DateTime Timestamp, int Order, string Text);
@@ -269,9 +273,34 @@ sealed class EncounterDump : CommonEnumInfo
     /// no reason a fight somebody has written a module for should get the weaker of the two; the only
     /// difference is that roles are known here, so rows are labelled by role rather than by name.
     /// </summary>
+    /// <summary>
+    /// Where the party stood, pooled across every pull of this boss when that is possible.
+    ///
+    /// A mechanic that fires once a pull gives one sample, and one sample cannot show whether a position was
+    /// chosen or stumbled into. Twenty pulls of the same fight can, and a progression session is exactly where
+    /// twenty pulls exist. Pooling them is the difference between "the tank was here" and "the tank was here
+    /// on eighteen of twenty pulls, within a yard", and only the second is worth writing into a module.
+    /// </summary>
     private void AppendPositions(StringBuilder sb, List<Replay> replays)
     {
         var roles = Service.Config.Get<PartyRolesConfig>();
+        string label(Replay.Participant p) => Label(roles[p.ContentID], p);
+
+        var pool = Poolable();
+        if (pool != null)
+        {
+            var (pooled, party, from, to) = pool.Value;
+
+            sb.AppendLine("========================================================================");
+            sb.Append("POSITIONS pooled across all ").Append(_encounters.Count).AppendLine(" pulls");
+            sb.AppendLine("Every pull of this boss together, so a mechanic that fires once per pull still has");
+            sb.AppendLine("enough samples to say whether its position was chosen or incidental.");
+            sb.AppendLine();
+
+            var arena = ArenaEstimate.ForFight(pooled, _oid, party, from, to);
+            PositionAnalysis.Append(sb, pooled, party, label, InAnyPull, arena);
+            return;
+        }
 
         for (var i = 0; i < _encounters.Count; ++i)
         {
@@ -290,11 +319,89 @@ sealed class EncounterDump : CommonEnumInfo
             // correction the content with no module to check against has to borrow.
             var arena = ArenaEstimate.ForFight(replay, enc.OID, party, enc.Time.Start, enc.Time.End);
 
-            PositionAnalysis.Append(sb, replay, party,
-                p => Label(roles[p.ContentID], p),
+            PositionAnalysis.Append(sb, replay, party, label,
                 a => enc.Time.Contains(a.Timestamp),
                 arena);
         }
+    }
+
+    /// <summary>Whether an action happened during any pull, so the gaps between them are left out.</summary>
+    private bool InAnyPull(Replay.Action a)
+    {
+        for (var i = 0; i < _encounters.Count; ++i)
+        {
+            if (_encounters[i].Encounter.Time.Contains(a.Timestamp))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The pulls, the party and the span to pool over, or nothing when pooling would be a lie.
+    ///
+    /// Two things rule it out. Pulls from different recordings cannot be walked as one, since the analysis
+    /// reads actions from a single replay. And pulls in arena instances at different world coordinates cannot
+    /// share a centre, so measuring them all from one would put half of them somewhere nobody stood.
+    /// </summary>
+    private (Replay Replay, List<Replay.Participant> Party, DateTime From, DateTime To)? Poolable()
+    {
+        if (_encounters.Count < 2)
+        {
+            return null;
+        }
+
+        var replay = _encounters[0].Item1;
+        var from = DateTime.MaxValue;
+        var to = DateTime.MinValue;
+        var party = new List<Replay.Participant>();
+        var seen = new HashSet<Replay.Participant>();
+        WPos? centre = null;
+
+        for (var i = 0; i < _encounters.Count; ++i)
+        {
+            var (r, enc) = _encounters[i];
+            if (!ReferenceEquals(r, replay))
+            {
+                return null;
+            }
+
+            var members = new List<Replay.Participant>(enc.PartyMembers.Count);
+            foreach (var (p, _, _) in enc.PartyMembers)
+            {
+                members.Add(p);
+                if (seen.Add(p))
+                {
+                    party.Add(p);
+                }
+            }
+
+            // Each pull's own reading of where it happened. Far apart means separate instances of the arena.
+            var here = ArenaEstimate.Derive(members, enc.Time.Start, enc.Time.End);
+            if (here != null)
+            {
+                if (centre is WPos first && (here.Center - first).Length() > SameArenaTolerance)
+                {
+                    return null;
+                }
+
+                centre ??= here.Center;
+            }
+
+            if (enc.Time.Start < from)
+            {
+                from = enc.Time.Start;
+            }
+
+            if (enc.Time.End > to)
+            {
+                to = enc.Time.End;
+            }
+        }
+
+        return party.Count > 0 && to > from ? (replay, party, from, to) : null;
     }
 
     private static string Label(PartyRolesConfig.Assignment role, Replay.Participant p)

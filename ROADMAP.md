@@ -21,6 +21,8 @@ module content.
   with distance, compass direction, and spread across resolutions.
 - **Mechanic shapes** inferred from what happened: stack, spread, raidwide, light party, probable tank
   buster, hedged where the data cannot decide.
+- **Pulls pooled per boss**, so a mechanic that fires once a pull still has enough samples across a
+  progression session to say whether its position was chosen or incidental.
 - **Where to stand, per role**, for every ability that hit somebody: distance and direction from the caster
   and from the arena centre, taken at the moment the cast begins, with a plain statement of how firmly each
   spot was held across casts.
