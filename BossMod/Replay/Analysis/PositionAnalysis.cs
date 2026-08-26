@@ -50,6 +50,8 @@ static class PositionAnalysis
         // SpreadLockon and ShareMulti among them, which are precisely the ones a positional hint is for.
         // Kept apart from the cast-bar count so the detail section can still say an ability had no cast bar,
         // which stays true of one that announced itself with a marker instead.
+        // Rounded resolution moments per ability, for spotting the ones that always go off together.
+        var moments = new Dictionary<ActionID, HashSet<long>>();
         var marked = new HashSet<ActionID>();
         var markers = new Dictionary<Replay.Participant, List<DateTime>>();
         foreach (var icon in replay.Icons)
@@ -99,6 +101,7 @@ static class PositionAnalysis
             var castAt = CastStart(a.Source, a.ID, hitAt);
 
             resolutions[a.ID] = resolutions.GetValueOrDefault(a.ID) + 1;
+            moments.GetOrAdd(a.ID).Add(a.Timestamp.Ticks / PairingTicks);
             if (castAt != hitAt)
             {
                 telegraphed[a.ID] = telegraphed.GetValueOrDefault(a.ID) + 1;
@@ -206,7 +209,7 @@ static class PositionAnalysis
             sb.AppendLine();
         }
 
-        AppendHints(sb, byAbility, resolutions, telegraphed, marked, landed, grouped, shapes, label, arena);
+        AppendHints(sb, byAbility, resolutions, telegraphed, marked, landed, grouped, shapes, moments, label, arena);
     }
 
     // A cast-time spread this tight means the position was chosen rather than stumbled into, and is the line
@@ -235,6 +238,7 @@ static class PositionAnalysis
         HashSet<ActionID> landed,
         HashSet<ActionID> grouped,
         Dictionary<ActionID, (string Text, bool Positional)> shapes,
+        Dictionary<ActionID, HashSet<long>> moments,
         Func<Replay.Participant, string> label,
         ArenaEstimate? arena)
     {
@@ -326,6 +330,17 @@ static class PositionAnalysis
 
             ++shown;
             sb.Append(aid.ToString()).Append("  (").Append(shape.Text).AppendLine(")");
+
+            // Two mechanics that always fire together produce identical arena positions and caster distances
+            // that differ by however far apart their casters stand, which reads as the same rows twice with
+            // one column changed. Saying they are one mechanic is quicker than working that out.
+            var partner = PartnerOf(aid, moments);
+            if (partner != null)
+            {
+                sb.Append("  fires together with ").Append(partner.Value.ToString())
+                  .AppendLine(", so measure from the centre rather than from either caster");
+            }
+
             foreach (var row in rows)
             {
                 sb.AppendLine(row);
@@ -348,6 +363,47 @@ static class PositionAnalysis
               .Append(skippedUnheld).AppendLine(" where nobody held a position.");
             sb.AppendLine();
         }
+    }
+
+    // Resolutions within this of each other count as the same moment. Half a second, which is longer than
+    // the jitter between two casts started on the same server tick and shorter than any real gap.
+    private const long PairingTicks = TimeSpan.TicksPerSecond / 2;
+
+    /// <summary>
+    /// Another ability that resolves whenever this one does. Savage pairs its mechanics constantly, and a pair
+    /// reported separately looks like one mechanic listed twice with the distances inexplicably changed.
+    /// </summary>
+    private static ActionID? PartnerOf(ActionID aid, Dictionary<ActionID, HashSet<long>> moments)
+    {
+        if (!moments.TryGetValue(aid, out var mine) || mine.Count < 2)
+        {
+            return null;
+        }
+
+        foreach (var (other, theirs) in moments)
+        {
+            if (other == aid || theirs.Count < 2)
+            {
+                continue;
+            }
+
+            var shared = 0;
+            foreach (var t in mine)
+            {
+                if (theirs.Contains(t))
+                {
+                    ++shared;
+                }
+            }
+
+            // Nearly every resolution of the smaller one, so an ability that merely overlaps once is not a pair.
+            if (shared >= (int)(Math.Min(mine.Count, theirs.Count) * 0.8f) && shared >= 2)
+            {
+                return other;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>How much weight a single row deserves, which one cast cannot earn however tidy it looks.</summary>
