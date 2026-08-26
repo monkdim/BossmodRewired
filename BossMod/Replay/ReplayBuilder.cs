@@ -520,7 +520,13 @@ public sealed class ReplayBuilder : IDisposable
         }
     }
 
-    private void ModuleLoaded(BossModule module) => _modules.TryAdd(module.PrimaryActor.InstanceID, new(module, new(module.PrimaryActor.InstanceID, module.PrimaryActor.OID, _ws.CurrentZone)));
+    private void ModuleLoaded(BossModule module)
+    {
+        // Take the arena it declares while it is here to ask. Later, from a background export, the only way
+        // to get one is to build a module off the game's thread, which is not safe to do.
+        ReplayAnalysis.DeclaredArena.Remember(module);
+        _modules.TryAdd(module.PrimaryActor.InstanceID, new(module, new(module.PrimaryActor.InstanceID, module.PrimaryActor.OID, _ws.CurrentZone)));
+    }
 
     private void ModuleUnloaded(BossModule module)
     {
