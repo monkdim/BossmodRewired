@@ -110,7 +110,7 @@ static class PositionAnalysis
         }
 
         // Cached because both sections below want it and working it out walks every action in the replay.
-        var shapes = new Dictionary<ActionID, string>();
+        var shapes = new Dictionary<ActionID, (string Text, bool Positional)>();
         foreach (var aid in byAbility.Keys)
         {
             shapes[aid] = Classify(replay, aid, involved.Count, inScope);
@@ -135,7 +135,7 @@ static class PositionAnalysis
         {
             var casts = resolutions[aid];
             sb.Append(aid.ToString()).Append(" - ").Append(casts).AppendLine(" resolutions");
-            sb.Append("  looks like: ").AppendLine(shapes[aid]);
+            sb.Append("  looks like: ").AppendLine(shapes[aid].Text);
 
             if (telegraphed.GetValueOrDefault(aid) == 0)
             {
@@ -212,7 +212,7 @@ static class PositionAnalysis
         Dictionary<ActionID, int> telegraphed,
         HashSet<ActionID> landed,
         HashSet<ActionID> grouped,
-        Dictionary<ActionID, string> shapes,
+        Dictionary<ActionID, (string Text, bool Positional)> shapes,
         Func<Replay.Participant, string> label,
         ArenaEstimate? arena)
     {
@@ -237,6 +237,19 @@ static class PositionAnalysis
             if (telegraphed.GetValueOrDefault(aid) == 0)
             {
                 ++skippedInstant;
+                continue;
+            }
+
+            var shape = shapes.GetValueOrDefault(aid);
+
+            // An ability that caught everyone wherever they were has no position to take, and printing one
+            // next to a line saying position did not matter is a contradiction the reader has to resolve.
+            if (!shape.Positional)
+            {
+                ++shown;
+                sb.Append(aid.ToString()).Append("  (").Append(shape.Text).AppendLine(")");
+                sb.AppendLine("  nothing to position for: everyone was caught wherever they stood");
+                sb.AppendLine();
                 continue;
             }
 
@@ -289,7 +302,7 @@ static class PositionAnalysis
             }
 
             ++shown;
-            sb.Append(aid.ToString()).Append("  (").Append(shapes.GetValueOrDefault(aid) ?? "").AppendLine(")");
+            sb.Append(aid.ToString()).Append("  (").Append(shape.Text).AppendLine(")");
             foreach (var row in rows)
             {
                 sb.AppendLine(row);
@@ -410,7 +423,7 @@ static class PositionAnalysis
     /// The labels hedge where the data genuinely cannot decide. A raidwide that happens to land while everyone
     /// is stacked looks exactly like a stack, and saying so is more useful than picking one.
     /// </summary>
-    private static string Classify(Replay replay, ActionID aid, int partySize, Func<Replay.Action, bool> inScope)
+    private static (string Text, bool Positional) Classify(Replay replay, ActionID aid, int partySize, Func<Replay.Action, bool> inScope)
     {
         var hits = new List<int>();
         var spans = new List<float>();
@@ -465,7 +478,7 @@ static class PositionAnalysis
 
         if (hits.Count == 0)
         {
-            return "hit nobody, so it was either dodged every time or does not target players";
+            return ("hit nobody, so it was either dodged every time or does not target players", false);
         }
 
         var avgHit = hits.Average();
@@ -477,34 +490,34 @@ static class PositionAnalysis
             // Every cast hit one person, but not the same person, so listing the roles it touched reads as a
             // contradiction: "single target, hitting tank and ranged and healer". It picked somebody.
             var role = roles.Count == 1 ? roles.First() : Role.None;
-            return role switch
+            return (role switch
             {
                 Role.Tank => "single target on a tank every time, so probably a tank buster",
                 Role.Healer => "single target on a healer every time",
                 _ => $"single target, picking a different player from cast to cast ({Describe(roles)} caught at least once)"
-            };
+            }, true);
         }
 
         // Everyone caught, spread across the arena: position made no difference.
         if (avgHit >= partySize - 0.5f && avgSpan > 12f)
         {
-            return $"raidwide, everyone hit wherever they stood (up to {avgSpan:f1}y apart)";
+            return ($"raidwide, everyone hit wherever they stood (up to {avgSpan:f1}y apart)", false);
         }
 
         if (avgSpan <= 6f)
         {
             var who = avgHit >= partySize - 0.5f ? "full party" : avgHit <= 4.5f ? "light party" : "part of the party";
-            return $"{who} stack, {avgHit:f1} players within {avgSpan:f1}y of each other";
+            return ($"{who} stack, {avgHit:f1} players within {avgSpan:f1}y of each other", true);
         }
 
         if (avgClosest >= 8f)
         {
-            return $"spread, {avgHit:f1} players with nobody closer than {avgClosest:f1}y";
+            return ($"spread, {avgHit:f1} players with nobody closer than {avgClosest:f1}y", true);
         }
 
         return avgHit >= partySize - 0.5f
-            ? $"everyone hit, {avgSpan:f1}y apart, so a raidwide or a loose stack"
-            : $"{avgHit:f1} players hit, {avgSpan:f1}y apart, hitting {Describe(roles)}";
+            ? ($"everyone hit, {avgSpan:f1}y apart, so a raidwide or a loose stack", true)
+            : ($"{avgHit:f1} players hit, {avgSpan:f1}y apart, hitting {Describe(roles)}", true);
     }
 
     private static string Describe(HashSet<Role> roles)
