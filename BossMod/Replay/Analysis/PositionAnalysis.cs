@@ -44,6 +44,22 @@ static class PositionAnalysis
         // avoidable, so the hints below are built from the ones that connected at least once.
         var landed = new HashSet<ActionID>();
 
+        // When a headmarker last appeared on each player. A cast bar is not the only way a mechanic announces
+        // itself: savage marks its targets and resolves instantly, and filtering the hints to cast bars alone
+        // threw those away. A first real savage export left out seven abilities that way, headmarkers named
+        // SpreadLockon and ShareMulti among them, which are precisely the ones a positional hint is for.
+        // Kept apart from the cast-bar count so the detail section can still say an ability had no cast bar,
+        // which stays true of one that announced itself with a marker instead.
+        var marked = new HashSet<ActionID>();
+        var markers = new Dictionary<Replay.Participant, List<DateTime>>();
+        foreach (var icon in replay.Icons)
+        {
+            if (icon.Target != null)
+            {
+                markers.GetOrAdd(icon.Target).Add(icon.Timestamp);
+            }
+        }
+
         // Whether an ability ever caught more than one person at once. A mechanic that gathers or scatters the
         // party is worth a hint from a single cast; one that picks somebody at random is not.
         var grouped = new HashSet<ActionID>();
@@ -72,6 +88,11 @@ static class PositionAnalysis
             if (playersHit > 1)
             {
                 grouped.Add(a.ID);
+            }
+
+            if (WasMarked(markers, a))
+            {
+                marked.Add(a.ID);
             }
 
             var hitAt = a.Timestamp;
@@ -185,7 +206,7 @@ static class PositionAnalysis
             sb.AppendLine();
         }
 
-        AppendHints(sb, byAbility, resolutions, telegraphed, landed, grouped, shapes, label, arena);
+        AppendHints(sb, byAbility, resolutions, telegraphed, marked, landed, grouped, shapes, label, arena);
     }
 
     // A cast-time spread this tight means the position was chosen rather than stumbled into, and is the line
@@ -210,6 +231,7 @@ static class PositionAnalysis
         Dictionary<ActionID, Dictionary<Replay.Participant, List<Sample>>> byAbility,
         Dictionary<ActionID, int> resolutions,
         Dictionary<ActionID, int> telegraphed,
+        HashSet<ActionID> marked,
         HashSet<ActionID> landed,
         HashSet<ActionID> grouped,
         Dictionary<ActionID, (string Text, bool Positional)> shapes,
@@ -218,7 +240,8 @@ static class PositionAnalysis
     {
         sb.AppendLine("========================================================================");
         sb.AppendLine("WHERE TO STAND, per role, at the moment each cast begins");
-        sb.AppendLine("Only telegraphed abilities that hit somebody, and only positions that were actually held.");
+        sb.AppendLine("Only abilities that hit somebody and announced themselves first, by cast bar or headmarker,");
+        sb.AppendLine("and only positions that were actually held.");
         sb.AppendLine("Anything a player wandered around is left out: a mean position with a wide spread behind it");
         sb.AppendLine("reads as a place to stand, and is not one.");
         sb.AppendLine();
@@ -234,7 +257,7 @@ static class PositionAnalysis
                 continue;
             }
 
-            if (telegraphed.GetValueOrDefault(aid) == 0)
+            if (telegraphed.GetValueOrDefault(aid) == 0 && !marked.Contains(aid))
             {
                 ++skippedInstant;
                 continue;
@@ -321,7 +344,7 @@ static class PositionAnalysis
         // Said out loud so a short section does not read as data having gone missing.
         if (skippedInstant > 0 || skippedUnheld > 0)
         {
-            sb.Append("Left out: ").Append(skippedInstant).Append(" ability(s) with no cast bar, and ")
+            sb.Append("Left out: ").Append(skippedInstant).Append(" ability(s) with no warning at all, and ")
               .Append(skippedUnheld).AppendLine(" where nobody held a position.");
             sb.AppendLine();
         }
@@ -370,6 +393,33 @@ static class PositionAnalysis
         var d = offset.Length();
         var fraction = radius > 0f ? d / radius : 0f;
         return $"{d,6:f2}y {Octant(offset),-8}({fraction:f2}r)";
+    }
+
+    // How long a headmarker can precede its resolution and still be its warning. Long enough for the spread
+    // markers that sit on people for most of a mechanic, short enough not to claim the previous one's.
+    private const double MarkerWarning = 15d;
+
+    /// <summary>Whether anybody this ability hit was wearing a headmarker in the seconds before it landed.</summary>
+    private static bool WasMarked(Dictionary<Replay.Participant, List<DateTime>> markers, Replay.Action a)
+    {
+        foreach (var t in a.Targets)
+        {
+            if (t.Target.Type != ActorType.Player || !markers.TryGetValue(t.Target, out var times))
+            {
+                continue;
+            }
+
+            for (var i = 0; i < times.Count; ++i)
+            {
+                var lead = (a.Timestamp - times[i]).TotalSeconds;
+                if (lead >= 0d && lead <= MarkerWarning)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
