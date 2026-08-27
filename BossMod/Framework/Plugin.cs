@@ -51,6 +51,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
     private BossModuleHintsWindow _wndBossmodHints = null!;
     private ZoneModuleWindow _wndZone = null!;
     private Timelines.TimelineTracker _timelines = null!;
+    private SetupWizard _wndSetup = null!;
     private MechanicTimersWindow _wndTimers = null!;
     private MechanicDivergenceTracker _divergence = null!;
     private MechanicDivergenceWindow _wndDivergence = null!;
@@ -177,6 +178,10 @@ public sealed class Plugin : IAsyncDalamudPlugin
         _wndRotation = new(_rotation, _amex, () => OpenConfigUI("Autorotation presets"));
         _wndDebug = new(_ws, _rotation, _zonemod, _amex, _movementOverride, _hintsBuilder, _dalamud, _rsr);
 
+        // Last, so everything it can point at already exists. It opens itself only when it has not been
+        // through, which is once per install rather than once per launch.
+        _wndSetup = new(() => OpenConfigUI());
+
         _dalamud.UiBuilder.DisableAutomaticUiHide = true;
         _dalamud.UiBuilder.Draw += DrawUI;
         _dalamud.UiBuilder.OpenMainUi += () => OpenConfigUI();
@@ -205,6 +210,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
         _wndDutyExport.Dispose();
         _wndDivergence.Dispose();
         _divergence.Dispose();
+        _wndSetup.Dispose();
         _wndTimers.Dispose();
         _timelines.Dispose();
         _wndZone.Dispose();
