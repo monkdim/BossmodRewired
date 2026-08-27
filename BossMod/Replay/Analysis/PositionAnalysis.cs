@@ -41,7 +41,7 @@ static class PositionAnalysis
         => p.Type is not (ActorType.Player or ActorType.Pet or ActorType.Chocobo or ActorType.Buddy);
 
     /// <summary>Where each player stood at one moment, both relative to the caster and in the world.</summary>
-    private readonly record struct Sample(WDir AtCast, WDir AtHit, WDir Settled, WPos CastWorld, WPos HitWorld, WPos SettledWorld, double Elapsed);
+    private readonly record struct Sample(WDir AtCast, WDir AtHit, WDir Settled, WPos CastWorld, WPos HitWorld, WPos SettledWorld, double Elapsed, DateTime When);
 
     /// <summary>
     /// Where everyone stood when each ability resolved, measured from the caster: "how far from the thing
@@ -173,7 +173,7 @@ static class PositionAnalysis
                 var settledWorld = new WPos(settled.X, settled.Z);
                 perPlayer.GetOrAdd(p).Add(new(
                     castWorld - castOrigin, hitWorld - hitOrigin, settledWorld - hitOrigin,
-                    castWorld, hitWorld, settledWorld, elapsed?.Invoke(hitAt) ?? 0d));
+                    castWorld, hitWorld, settledWorld, elapsed?.Invoke(hitAt) ?? 0d, hitAt));
             }
         }
 
@@ -370,6 +370,7 @@ static class PositionAnalysis
             // pull stays separate.
             var occurrences = Cluster(perPlayer, haveElapsed);
             var printed = new List<string>();
+            var quietOccurrences = 0;
 
             for (var occ = 0; occ < occurrences.Count; ++occ)
             {
@@ -379,10 +380,19 @@ static class PositionAnalysis
 
                 foreach (var (p, all) in perPlayer)
                 {
+                    // One moment is one observation, however many records it produced. An ability aimed at
+                    // eight people is eight actions at the same instant, and each one was adding a sample for
+                    // every player at a position they could only be standing in once. Seven copies of one
+                    // moment came out as "held to within 0.0y across 7 of 7 casts", which is not a tight
+                    // position, it is the same position counted seven times.
+                    //
+                    // Deduplicating on the absolute moment rather than on time into the pull is deliberate:
+                    // the same moment in seven different pulls is seven real observations and has to survive.
                     var samples = new List<Sample>();
+                    var moments = new HashSet<DateTime>();
                     foreach (var sample in all)
                     {
-                        if (sample.Elapsed >= window.From && sample.Elapsed <= window.To)
+                        if (sample.Elapsed >= window.From && sample.Elapsed <= window.To && moments.Add(sample.When))
                         {
                             samples.Add(sample);
                         }
@@ -436,6 +446,7 @@ static class PositionAnalysis
 
                 if (rows.Count == 0)
                 {
+                    ++quietOccurrences;
                     continue;
                 }
 
@@ -468,6 +479,14 @@ static class PositionAnalysis
             {
                 sb.Append("  fires together with ").Append(partner.Value.ToString())
                   .AppendLine(", so measure from the centre rather than from either caster");
+            }
+
+            // A mechanic can be prescribed the third time it fires and not the first. Saying so beats printing
+            // two occurrences out of four and leaving the reader to assume that is all of them.
+            if (quietOccurrences > 0)
+            {
+                printed.Add($"  {quietOccurrences} other time(s) it fired, nobody held a position");
+                printed.Add("");
             }
 
             foreach (var line in printed)
