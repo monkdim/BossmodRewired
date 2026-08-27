@@ -314,7 +314,7 @@ sealed class EncounterDump : CommonEnumInfo
             sb.AppendLine();
 
             var arena = ArenaEstimate.ForFight(pooled, _oid, party, from, to);
-            merge(PositionAnalysis.Append(sb, pooled, party, label, InAnyPull, arena));
+            merge(PositionAnalysis.Append(sb, pooled, party, label, InAnyPull, arena, ElapsedIntoPull));
             AppendCoverage(sb, coverage);
             return;
         }
@@ -338,7 +338,7 @@ sealed class EncounterDump : CommonEnumInfo
 
             merge(PositionAnalysis.Append(sb, replay, party, label,
                 a => enc.Time.Contains(a.Timestamp),
-                arena));
+                arena, ElapsedIntoPull));
         }
 
         AppendCoverage(sb, coverage);
@@ -354,6 +354,27 @@ sealed class EncounterDump : CommonEnumInfo
         }
 
         TimelineCoverage.Append(sb, TimelineCoverage.Observe(windows), coverage);
+    }
+
+    /// <summary>
+    /// How far into its own pull a moment falls.
+    ///
+    /// This is what lets the position analysis pool seven pulls and still tell one use of an ability from
+    /// another. Wall-clock time would put every pull in a bucket of its own, which is the opposite of pooling;
+    /// time into the pull puts the same moment from all seven together and keeps a later moment apart.
+    /// </summary>
+    private double ElapsedIntoPull(DateTime t)
+    {
+        for (var i = 0; i < _encounters.Count; ++i)
+        {
+            var time = _encounters[i].Encounter.Time;
+            if (time.Contains(t))
+            {
+                return (t - time.Start).TotalSeconds;
+            }
+        }
+
+        return 0d;
     }
 
     /// <summary>Whether an action happened during any pull, so the gaps between them are left out.</summary>
