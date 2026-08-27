@@ -181,7 +181,7 @@ static class PositionAnalysis
                 // conclusions cannot check them.
                 if (export != null && a.ID.Type == ActionType.Spell)
                 {
-                    export.Add(new(a.ID.ID, label(p), hitAt, into, castWorld, hitWorld, settledWorld, castOrigin));
+                    export.Add(a.ID.ID, label(p), p.Class, SlotOf(p), hitAt, into, castWorld, hitWorld, settledWorld, castOrigin);
                 }
             }
         }
@@ -408,6 +408,11 @@ static class PositionAnalysis
                 var castsHere = 0;
                 var staleReads = 0;
 
+                // Gathered rather than learned on the spot, because a slot may be several people. Whether they
+                // agree is only knowable once they have all been measured, and a slot whose members disagree
+                // has no place to teach.
+                var candidates = new Dictionary<string, List<(WDir FromCentre, LearnedPositions.Spot Spot)>>();
+
                 foreach (var (p, all) in perPlayer)
                 {
                     // One moment is one observation, however many records it produced. An ability aimed at
@@ -510,13 +515,15 @@ static class PositionAnalysis
                         // happen; a hint may not prescribe for it, since it never involved anybody.
                         if (learned != null && aid.Type == ActionType.Spell && mean.Length() <= WithinTheFight)
                         {
-                            learned.Learn(aid.ID, RoleOf(p), new(fraction, Bearing(fromCentre), mean.Length(),
-                                samples.Count, castsHere, spread, avoided));
+                            candidates.GetOrAdd(SlotOf(p)).Add((fromCentre, new(fraction, Bearing(fromCentre), mean.Length(),
+                                samples.Count, castsHere, spread, avoided)));
                         }
                     }
 
                     rows.Add(row.Append(Confidence(samples.Count, castsHere, spread, avoided)).ToString());
                 }
+
+                Teach(learned, aid, candidates);
 
                 if (rows.Count == 0)
                 {
@@ -954,9 +961,129 @@ static class PositionAnalysis
     /// <summary>The compass bearing an offset points along, in degrees, with north at zero.</summary>
     private static float Bearing(WDir offset) => (180f - offset.ToAngle().Deg + 360f) % 360f;
 
+    /// <summary>
+    /// Which participant is the person who made the recording.
+    ///
+    /// Worked out from the log rather than asked of the game, so it still answers when an old recording is
+    /// re-exported months later on a different character, or on a machine that never played it.
+    ///
+    /// The signal is client-side action data. A log carries the request the client itself sent for an action,
+    /// and it can only carry that for the player whose client wrote the file. Everyone else is observed from
+    /// the outside and has no such record, so the one participant with any is the recorder.
+    /// </summary>
+    public static Replay.Participant? WhoRecorded(Replay replay)
+    {
+        foreach (var a in replay.Actions)
+        {
+            if (a.ClientAction != null)
+            {
+                return a.Source;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Whether that person was actually in a fight, rather than elsewhere in the same instance.</summary>
+    public static bool WasThere(Replay replay, Replay.Participant? me, DateTime from, DateTime to)
+    {
+        if (me == null)
+        {
+            return false;
+        }
+
+        foreach (var a in replay.Actions)
+        {
+            if (a.Timestamp < from || a.Timestamp > to)
+            {
+                continue;
+            }
+
+            if (a.Source == me)
+            {
+                return true;
+            }
+
+            foreach (var t in a.Targets)
+            {
+                if (t.Target == me)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Which slot a participant holds, so a learned spot is filed under the role and not the player.</summary>
-    private static PartyRolesConfig.Assignment RoleOf(Replay.Participant p)
-        => Service.Config.Get<PartyRolesConfig>()[p.ContentID];
+    private static string SlotOf(Replay.Participant p) => LearnedPositions.SlotOf(p.Class, p.ContentID);
+
+    // How far two people filed under the same slot may stand apart before the slot stops describing a place.
+    // An assigned slot is one person and never trips this; a job slot can be eight melees, and eight melees
+    // spread around a boss have no shared position to teach even though each of them held theirs perfectly.
+    private const float SameSpot = 3f;
+
+    /// <summary>
+    /// Files one occurrence's findings, keeping only the slots that describe somewhere.
+    ///
+    /// An assigned slot is one person, so it arrives with a single reading and goes straight in. A job slot
+    /// can be everybody who happens to play that role, and those are two different situations wearing the same
+    /// name: four healers stacked on the boss have a position to teach, four melees spread around it do not,
+    /// even though each of the four held their own spot perfectly. Averaging the second case would invent a
+    /// place nobody stood and hand it to somebody mid-pull as advice.
+    ///
+    /// So the members have to agree before anything is learned, and the best-supported reading among them is
+    /// what gets kept. Disagreement is silence rather than a guess.
+    /// </summary>
+    private static void Teach(LearnedPositions? learned, ActionID aid, Dictionary<string, List<(WDir FromCentre, LearnedPositions.Spot Spot)>> candidates)
+    {
+        if (learned == null)
+        {
+            return;
+        }
+
+        foreach (var (slot, found) in candidates)
+        {
+            if (found.Count == 0)
+            {
+                continue;
+            }
+
+            var best = found[0];
+            var centre = new WDir();
+            for (var i = 0; i < found.Count; ++i)
+            {
+                centre += found[i].FromCentre;
+                if (i > 0 && Better(found[i].Spot, best.Spot))
+                {
+                    best = found[i];
+                }
+            }
+
+            centre /= found.Count;
+
+            var agreed = true;
+            foreach (var (from, _) in found)
+            {
+                if ((from - centre).Length() > SameSpot)
+                {
+                    agreed = false;
+                    break;
+                }
+            }
+
+            if (agreed)
+            {
+                learned.Learn(aid.ID, slot, best.Spot);
+            }
+        }
+    }
+
+    // The same preference the file uses when it already holds a reading: more casts behind it wins, and at
+    // equal support the tighter one does.
+    private static bool Better(LearnedPositions.Spot a, LearnedPositions.Spot b)
+        => a.Samples != b.Samples ? a.Samples > b.Samples : a.Spread < b.Spread;
 
     private static string Octant(WDir offset)
     {
