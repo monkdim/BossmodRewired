@@ -382,17 +382,32 @@ static class PositionAnalysis
                 {
                     // One moment is one observation, however many records it produced. An ability aimed at
                     // eight people is eight actions at the same instant, and each one was adding a sample for
-                    // every player at a position they could only be standing in once. Seven copies of one
-                    // moment came out as "held to within 0.0y across 7 of 7 casts", which is not a tight
-                    // position, it is the same position counted seven times.
+                    // every player at a position they could only be standing in once. Eighteen copies of one
+                    // moment came out as "held to within 0.0y across 18 of 18 casts", which is not a tight
+                    // position, it is the same position counted eighteen times.
                     //
-                    // Deduplicating on the absolute moment rather than on time into the pull is deliberate:
-                    // the same moment in seven different pulls is seven real observations and has to survive.
-                    var samples = new List<Sample>();
-                    var distinct = new HashSet<DateTime>();
+                    // The records are not stamped identically, which is why matching them exactly did not
+                    // work: they come from separate caster actors and land a few milliseconds apart. Anything
+                    // inside OneMoment is the same instant. Nobody crosses a room in a quarter of a second,
+                    // so collapsing genuinely distinct casts that close together costs nothing either.
+                    //
+                    // Working in absolute time rather than time into the pull is deliberate: the same moment
+                    // in seven different pulls is seven real observations and has to survive.
+                    var inWindow = new List<Sample>();
                     foreach (var sample in all)
                     {
-                        if (sample.Elapsed >= window.From && sample.Elapsed <= window.To && distinct.Add(sample.When))
+                        if (sample.Elapsed >= window.From && sample.Elapsed <= window.To)
+                        {
+                            inWindow.Add(sample);
+                        }
+                    }
+
+                    inWindow.Sort((x, y) => x.When.CompareTo(y.When));
+
+                    var samples = new List<Sample>(inWindow.Count);
+                    foreach (var sample in inWindow)
+                    {
+                        if (samples.Count == 0 || (sample.When - samples[^1].When).Ticks > OneMoment)
                         {
                             samples.Add(sample);
                         }
@@ -551,6 +566,11 @@ static class PositionAnalysis
 
         return null;
     }
+
+    // Records this close together describe one instant. Simultaneous casts are stamped a few milliseconds
+    // apart because they come from separate actors, and a quarter of a second is far longer than that jitter
+    // and far shorter than the time it takes anybody to stand somewhere else.
+    private const long OneMoment = TimeSpan.TicksPerSecond / 4;
 
     // Two uses of one ability this far apart in a pull are two different mechanics, whatever they share an ID
     // with. Comfortably longer than the gap between the casts of one staggered mechanic and far shorter than
