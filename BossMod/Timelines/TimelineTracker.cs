@@ -12,7 +12,8 @@ namespace BossMod.Timelines;
 public sealed class TimelineTracker : IDisposable
 {
     /// <summary>What the timeline says is coming, and how long until it does.</summary>
-    public readonly record struct Upcoming(string Name, float In);
+    /// <summary>What is coming, when, and the abilities it is made of, which is what a learned spot is keyed on.</summary>
+    public readonly record struct Upcoming(string Name, float In, uint[] Abilities);
 
     // How far from the current estimate an ability can be and still be taken as the same one. An ability used
     // in two phases appears twice in the timeline, so the nearer occurrence is the one meant; this only has to
@@ -85,7 +86,7 @@ public sealed class TimelineTracker : IDisposable
                 continue;
             }
 
-            into.Add(new(entry.Name, until));
+            into.Add(new(entry.Name, until, entry.Abilities));
             if (into.Count >= max)
             {
                 return;

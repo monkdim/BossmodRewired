@@ -102,7 +102,8 @@ sealed class EncounterDump : CommonEnumInfo
     private void Export()
     {
         var export = new PositionExport();
-        var text = BuildAll(export);
+        var learned = new LearnedPositions();
+        var text = BuildAll(export, learned);
         var name = $"encounter-{_moduleName}-{_oid:X}.txt";
 
         try
@@ -115,6 +116,10 @@ sealed class EncounterDump : CommonEnumInfo
             try
             {
                 File.WriteAllText(Path.ChangeExtension(path, ".json"), export.Build());
+                LearnedPositions.Merge(Path.Combine(TargetDirectory(), LearnedPositions.FileName), learned);
+
+                // So the next pull uses what this export just learned, without restarting the game.
+                MechanicTimersWindow.ForgetLearned();
             }
             catch (Exception inner)
             {
@@ -189,14 +194,16 @@ sealed class EncounterDump : CommonEnumInfo
         return documents.Length > 0 && Directory.Exists(documents) ? documents : Path.GetTempPath();
     }
 
-    public string BuildAll() => BuildAll(null);
+    public string BuildAll() => BuildAll(null, null);
+
+    public string BuildAll(PositionExport? export) => BuildAll(export, null);
 
     /// <summary>
     /// The text export, and optionally the same analysis collected as data on the way past.
     ///
     /// One pass produces both, so the two can never disagree about what was seen.
     /// </summary>
-    public string BuildAll(PositionExport? export)
+    public string BuildAll(PositionExport? export, LearnedPositions? learned)
     {
         if (export != null)
         {
@@ -222,7 +229,7 @@ sealed class EncounterDump : CommonEnumInfo
             BuildOne(sb, replay, enc, i + 1);
         }
 
-        AppendPositions(sb, _replays, export);
+        AppendPositions(sb, _replays, export, learned);
         return sb.ToString();
     }
 
@@ -312,7 +319,7 @@ sealed class EncounterDump : CommonEnumInfo
     /// twenty pulls exist. Pooling them is the difference between "the tank was here" and "the tank was here
     /// on eighteen of twenty pulls, within a yard", and only the second is worth writing into a module.
     /// </summary>
-    private void AppendPositions(StringBuilder sb, List<Replay> replays, PositionExport? export)
+    private void AppendPositions(StringBuilder sb, List<Replay> replays, PositionExport? export, LearnedPositions? learned)
     {
         var roles = Service.Config.Get<PartyRolesConfig>();
         string label(Replay.Participant p) => Label(roles[p.ContentID], p);
@@ -346,7 +353,7 @@ sealed class EncounterDump : CommonEnumInfo
 
             var arena = ArenaEstimate.ForFight(pooled, _oid, party, from, to);
             Record(export, arena);
-            merge(PositionAnalysis.Append(sb, pooled, party, label, InAnyPull, arena, ElapsedIntoPull, export));
+            merge(PositionAnalysis.Append(sb, pooled, party, label, InAnyPull, arena, ElapsedIntoPull, export, learned));
             AppendCoverage(sb, coverage, export);
             return;
         }
@@ -375,7 +382,7 @@ sealed class EncounterDump : CommonEnumInfo
 
             merge(PositionAnalysis.Append(sb, replay, party, label,
                 a => enc.Time.Contains(a.Timestamp),
-                arena, ElapsedIntoPull, export));
+                arena, ElapsedIntoPull, export, learned));
         }
 
         AppendCoverage(sb, coverage, export);

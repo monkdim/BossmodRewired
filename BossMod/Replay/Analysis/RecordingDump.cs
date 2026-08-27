@@ -52,13 +52,15 @@ static class RecordingDump
         public bool WorthAnalysing => Seconds >= MinFightSeconds && Actions >= MinFightActions;
     }
 
-    public static string Build(Replay replay) => Build(replay, null);
+    public static string Build(Replay replay) => Build(replay, null, null);
+
+    public static string Build(Replay replay, PositionExport? export) => Build(replay, export, null);
 
     /// <summary>
     /// The text export, and optionally the same analysis collected as data on the way past. Content with no
     /// module is exactly the content nothing else has numbers for, so it wants the data form most of all.
     /// </summary>
-    public static string Build(Replay replay, PositionExport? export)
+    public static string Build(Replay replay, PositionExport? export, LearnedPositions? learned)
     {
         var involved = Involved(replay);
         var events = Collect(replay, involved);
@@ -149,7 +151,7 @@ static class RecordingDump
 
             var coverage = PositionAnalysis.Append(sb, replay, involved, Label,
                 a => a.Timestamp >= fight.Start && a.Timestamp <= fight.End, arena,
-                t => (t - fight.Start).TotalSeconds, export);
+                t => (t - fight.Start).TotalSeconds, export, learned);
 
             // Per fight rather than per recording, since a recording is a night of several different ones and
             // each has a timeline of its own.

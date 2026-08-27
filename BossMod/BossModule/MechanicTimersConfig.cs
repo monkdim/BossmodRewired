@@ -15,6 +15,9 @@ public sealed class MechanicTimersConfig : ConfigNode
     [PropertyDisplay("Show upcoming mechanics from cactbot timelines", tooltip: "Works in any fight cactbot has a timeline for, including ones with no boss module. Names come from cactbot.")]
     public bool ShowTimeline = true;
 
+    [PropertyDisplay("Show where you stood last time", tooltip: "Adds the position your role held for a mechanic, learned from your own exported recordings. Only mechanics somebody actually held a spot for have anything to show.")]
+    public bool ShowLearned = true;
+
     [PropertyDisplay("How many upcoming mechanics to list")]
     [PropertySlider(1, 10)]
     public int MaxUpcoming = 4;
