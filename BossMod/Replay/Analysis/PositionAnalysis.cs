@@ -653,12 +653,21 @@ static class PositionAnalysis
             : "the only cast, so this is where they were rather than where to be",
         _ => (spread < FixedSpot, avoided) switch
         {
-            (true, true) => $"safe from within {spread:f1}y across {samples} of {casts} casts, none of which hit anybody",
-            (true, false) => $"held to within {spread:f1}y across {samples} of {casts} casts",
-            (false, true) => $"safe from roughly here, {spread:f1}y across {samples} of {casts} casts, none of which hit anybody",
-            _ => $"roughly held, {spread:f1}y across {samples} of {casts} casts"
+            (true, true) => $"safe from within {Tight(spread)} across {samples} of {casts} casts, none of which hit anybody",
+            (true, false) => $"held to within {Tight(spread)} across {samples} of {casts} casts",
+            (false, true) => $"safe from roughly here, {Tight(spread)} across {samples} of {casts} casts, none of which hit anybody",
+            _ => $"roughly held, {Tight(spread)} across {samples} of {casts} casts"
         }
     };
+
+    /// <summary>
+    /// A spread, never written as zero.
+    ///
+    /// Rounding a real but very small number to one decimal turns it into a claim nobody should believe: a
+    /// party held a spot to within no distance at all. Readings that genuinely repeat are dropped before they
+    /// reach here, so anything this small is honest data that only needs saying honestly.
+    /// </summary>
+    private static string Tight(float spread) => spread < 0.05f ? "under 0.1y" : $"{spread:f1}y";
 
     /// <summary>
     /// The same three moments again, measured from the arena centre. Caster-relative says a knockback moved
