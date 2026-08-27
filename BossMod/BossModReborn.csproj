@@ -125,6 +125,13 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Pathfinding\ObstacleMaps\*" />
+
+    <!-- Third-party: cactbot's fight timelines, Apache 2.0, see THIRD-PARTY-NOTICES.md. LogicalName is set
+         explicitly rather than left to derive from RootNamespace, so the lookup prefix in TimelineLibrary
+         cannot drift if the namespace is ever renamed the way the assembly already has been. -->
+    <EmbeddedResource Include="Timelines\Cactbot\*.txt" Exclude="Timelines\Cactbot\LICENSE.txt">
+      <LogicalName>BossMod.Timelines.Cactbot.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <Target Name="CleanupOutput" AfterTargets="Build" BeforeTargets="DalamudPackage">

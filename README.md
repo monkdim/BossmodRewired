@@ -27,3 +27,13 @@ BossmodReborn is a community-driven fork of the original Bossmod plugin for Fina
 - A fork for players on the CN client can be found on https://github.com/44451516-ff14/BossmodRebornCN.
 - It is not directly supported by the Combat Reborn Team, so any bugs exclusive to that fork need to be fixed by the fork maintainer.
 - Bugs that likely affect both BossmodReborn and the CN fork can still be reported to the Combat Reborn Team.
+
+## Licence and third-party material
+
+This plugin is BSD 3-Clause licensed, inherited from upstream BossMod (see `LICENSE`).
+
+It also bundles fight timelines from [cactbot](https://github.com/OverlayPlugin/cactbot),
+which are Apache 2.0 licensed and remain cactbot's work. They describe what each fight does
+and in what order, which is knowledge no amount of recording can derive. Full terms, the
+upstream commit the copies were taken from, and a statement of what was changed are in
+`THIRD-PARTY-NOTICES.md`.
