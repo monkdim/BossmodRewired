@@ -15,6 +15,9 @@ public sealed class SetupConfig : ConfigNode
     [PropertyDisplay("Share anonymised fight data", tooltip: "Sends the position summaries your exports already produce, with handles instead of names. Asked during setup; changeable here whenever you like.")]
     public bool ShareFightData = false;
 
+    [PropertyDisplay("Relay address", tooltip: "The relay that receives shared exports. Leave empty to use whatever address this build ships with, if any.")]
+    public string ShareEndpoint = "";
+
     /// <summary>
     /// Whether the question has ever actually been answered.
     ///
@@ -201,6 +204,14 @@ public sealed class SetupWizard : UIWindow
         ImGui.TextWrapped("What is sent: the position summaries above, after a fight ends. Not chat, not your name, not who you played with, not anything outside a duty.");
         ImGui.Spacing();
         ImGui.TextWrapped("Either answer is a normal answer, and you can change it later in the settings under Sharing.");
+
+        // Said plainly rather than hidden, because a yes that quietly does nothing is worse than a no.
+        if (ExportUploader.Endpoint.Length == 0)
+        {
+            ImGui.Spacing();
+            ImGui.TextDisabled("This build has no relay set, so yes will not send anything until an address is filled in under Sharing.");
+        }
+
         ImGui.Separator();
 
         // Deliberately identical buttons. The moment one of them is the obvious one to press, this stops being

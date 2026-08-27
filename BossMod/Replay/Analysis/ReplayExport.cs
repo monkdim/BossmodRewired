@@ -69,6 +69,10 @@ static class ReplayExport
             File.WriteAllText(Path.Combine(dir, DataFileName(replay.Path)), export.Build());
             LearnedPositions.Merge(Path.Combine(dir, LearnedPositions.FileName), learned);
 
+            // Only the data file, and only if somebody asked. The text is written for a person to read and
+            // says nothing the data does not.
+            ExportUploader.Send(Path.Combine(dir, DataFileName(replay.Path)));
+
             // So the next pull uses what this export just learned, without restarting the game.
             MechanicTimersWindow.ForgetLearned();
         }
