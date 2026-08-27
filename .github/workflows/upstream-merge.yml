@@ -1,0 +1,131 @@
+name: Upstream merge
+
+# Pulls BossMod Reborn's changes in. Nothing here ever writes to upstream: their repository is only ever
+# fetched from, and the only credential this job holds is scoped to this repository.
+#
+# The result is always a pull request rather than a commit on main. An upstream week can carry a hundred
+# module changes, and the point of a fork that adds analysis is that its own behaviour keeps working after
+# they land, which is a thing to look at rather than assume.
+
+on:
+  schedule:
+    # Monday morning UTC. Weekly rather than daily because a merge nobody has time to review is worse than
+    # one that waits: the branch goes stale, the conflicts pile up, and the habit becomes ignoring it.
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  Merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # Full history, because a merge needs a common ancestor and a shallow clone has none.
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/FFXIV-CombatReborn/BossmodReborn.git
+          git fetch upstream main
+
+      - name: Check whether there is anything to take
+        id: check
+        run: |
+          behind=$(git rev-list --count HEAD..upstream/main)
+          echo "behind=$behind" >> "$GITHUB_OUTPUT"
+          echo "$behind upstream commit(s) not in this fork"
+
+      - name: Attempt the merge
+        if: steps.check.outputs.behind != '0'
+        id: merge
+        run: |
+          branch="upstream/merge-$(date -u +%Y-%m-%d)"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+          git config user.name monkdim
+          git config user.email cdimaggio2@gmail.com
+          git checkout -b "$branch"
+
+          if git merge --no-edit upstream/main; then
+            echo "clean=true" >> "$GITHUB_OUTPUT"
+          else
+            # Captured before aborting, since the list only exists while the merge is in progress.
+            {
+              echo 'conflicts<<EOF'
+              git diff --name-only --diff-filter=U
+              echo EOF
+            } >> "$GITHUB_OUTPUT"
+            echo "clean=false" >> "$GITHUB_OUTPUT"
+            git merge --abort
+          fi
+
+      - name: Open the pull request
+        if: steps.check.outputs.behind != '0' && steps.merge.outputs.clean == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git push origin "${{ steps.merge.outputs.branch }}"
+
+          gh pr create \
+            --base main \
+            --head "${{ steps.merge.outputs.branch }}" \
+            --title "Merge upstream BossMod Reborn" \
+            --body "$(cat <<'BODY'
+          ${{ steps.check.outputs.behind }} commit(s) from
+          [BossMod Reborn](https://github.com/FFXIV-CombatReborn/BossmodReborn) that this fork did not have.
+          Merged without conflicts.
+
+          Worth a look before merging, in roughly this order:
+
+          - Anything under `BossMod/Replay/` or `BossMod/BossModule/`, where this fork's own work lives and
+            an upstream change is most likely to quietly alter what the analysis sees.
+          - Encounter modules for fights currently being recorded, since a changed arena or a renamed
+            ability changes what the exports mean.
+          - `BossMod/Framework/Plugin.cs`, which carries the guard against loading beside BossMod Reborn.
+
+          Opened automatically. Nothing was sent upstream.
+          BODY
+          )"
+
+      - name: Say so when it needs hands
+        if: steps.check.outputs.behind != '0' && steps.merge.outputs.clean == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # One issue, not one a week. The job runs on a schedule and the conflict persists until somebody
+          # resolves it, so re-reporting would bury the original under its own copies.
+          if [ -n "$(gh issue list --state open --search 'Upstream merge needs hands in:title' --json number --jq '.[].number')" ]; then
+            echo "already reported, leaving it alone"
+            exit 0
+          fi
+
+          gh issue create \
+            --title "Upstream merge needs hands" \
+            --body "$(cat <<'BODY'
+          ${{ steps.check.outputs.behind }} commit(s) from
+          [BossMod Reborn](https://github.com/FFXIV-CombatReborn/BossmodReborn) do not merge cleanly, so no
+          branch was pushed. These files conflict:
+
+          ```
+          ${{ steps.merge.outputs.conflicts }}
+          ```
+
+          To do it locally:
+
+          ```
+          git remote add upstream https://github.com/FFXIV-CombatReborn/BossmodReborn.git
+          git fetch upstream main
+          git checkout -b upstream/merge main
+          git merge upstream/main
+          ```
+
+          Resolve, push the branch, and open a pull request. Closing this issue without merging means the
+          next run opens a fresh one, since the conflict is still there.
+          BODY
+          )"

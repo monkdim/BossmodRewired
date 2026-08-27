@@ -38,41 +38,30 @@ module content.
 - **Mechanic timer bars** for enemy casts in any fight, plus upcoming states where a module defines them.
 - **Unknown mechanic alerts** when a fight does something its module has never seen.
 - **Refuses to load** alongside upstream BossMod Reborn, which crashes the game.
+- **Structured export** alongside the text: every sample in world coordinates with the ability, the pull,
+  the job and the slot it belongs to, for consumers that are not a person reading prose.
+- **Names stripped at export**, not at recording. A player reads as a short salted hash of their account
+  ID, consistent within one person's files and meaningless outside them, so roles still resolve and
+  recordings stay useful.
+- **Optional sharing** through a relay, asked outright during first-run setup with no default, so exports
+  from several people can be pooled into one pile of evidence.
+- **Positions learned for everybody**, not only for players somebody configured. An unassigned player is
+  filed by job, and a slot only teaches a position when the people in it agree on one.
+- **Per-role positional hints on the timer bars**, which was the end goal above.
 
 ## Being considered
 
-### Automatic upload of exports
+### What good play looks like, per level and per fight
 
-Send exports somewhere central after each duty, so people capturing on someone else's behalf never have to
-send files by hand.
+The recordings already hold every action anybody took, with timings, levels and jobs, and the damage that
+followed. Exports currently throw all of it away, because the question so far has been where to stand.
 
-A Discord webhook is the obvious mechanism: no server, no accounts, revocable, and roughly forty lines. The
-URL belongs in config rather than in the repository, defaulting to empty, so the plugin does nothing unusual
-for anyone who has not set one.
+There are two different questions worth asking of it, and conflating them would answer neither. One is
+throughput: what a job actually puts out at a given level, measured rather than assumed. The other is
+whether a rotation suited the fight it was used in, which is a different thing entirely, since the best
+sequence on a dummy is regularly the wrong one during a mechanic.
 
-The hard part is not technical. **Recordings contain the names of every random player in the party**, and
-they have not agreed to anything. Two ways out:
-
-- The existing anonymize option, which scrambles names and content IDs but also breaks role resolution, and
-  role resolution is most of what makes the data useful.
-- A name-stripping export mode that keeps roles, jobs and positions but replaces people with their role slot.
-  Not built. This is the better answer, since the names were never the useful part.
-
-If this is built, it should be the webhook and the name-stripping mode together.
-
-### Structured export for other tools
-
-The text export is shaped for reading. Rotation analysis wants a table: action, timestamp, GCD or oGCD,
-buffs active, target. A JSON export alongside the text would serve consumers that are not a person reading
-prose, including the HealAssist side of this project.
-
-The recording already contains all of it; only the projection is missing.
-
-### Per-role positional hints
-
-The end goal. Take the measured positions above, decide which are prescribed by the mechanic rather than
-incidental, and render them as the arena hints a player actually follows. The spread figure already
-separates a fixed spot from somebody who happened to be standing there.
+Both need a lot more recordings than one person produces, which is what the sharing work above is for.
 
 ### Timelines for fights that lack them
 
