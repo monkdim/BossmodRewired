@@ -43,11 +43,11 @@ public static class ExportUploader
     /// credential of its own, and cannot be read back through. The token that lets it file anything lives in
     /// the relay's own secrets, which is the entire reason the relay exists.
     ///
-    /// Empty means a build sends nowhere no matter what anybody answers during setup. That is the correct
-    /// state for a fork with no relay of its own, and it is the state this repository is in until somebody
-    /// deploys one and puts its address here.
+    /// Empty means a build sends nowhere no matter what anybody answers during setup, which is the correct
+    /// state for a fork that has not deployed a relay of its own. Anybody forking this should replace it or
+    /// clear it rather than quietly posting somebody else's fights at somebody else's storage.
     /// </summary>
-    public const string DefaultEndpoint = "";
+    public const string DefaultEndpoint = "https://bossmod-rewired-relay.dimaggio-colby.workers.dev";
 
     private static SetupConfig Config => Service.Config.Get<SetupConfig>();
 
