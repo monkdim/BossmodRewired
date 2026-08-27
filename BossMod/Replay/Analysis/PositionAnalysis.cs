@@ -279,6 +279,12 @@ static class PositionAnalysis
         return outcomes;
     }
 
+    // Beyond this, a caster and a player are not in the same fight. The same figure the timer window uses to
+    // decide whose problem a cast is, for the same reason: no arena in the game is this wide, so a distance
+    // like it means another room entirely. Real data sits far below it, the worst genuine reading across a
+    // week of recordings being forty-two yards.
+    private const float WithinTheFight = 60f;
+
     // A cast-time spread this tight means the position was chosen rather than stumbled into, and is the line
     // between a spot worth writing into a module and where somebody happened to be standing.
     private const float FixedSpot = 1.5f;
@@ -497,7 +503,12 @@ static class PositionAnalysis
                         // The same conclusion, kept rather than only printed. A report is read afterwards; this
                         // is what the timer window can say while the cast bar is still filling. Only rows that
                         // reached this point are recorded, so nothing a player wandered through is shown live.
-                        if (learned != null && aid.Type == ActionType.Spell)
+                        // Not one this player was ever part of. A mining trip past Rrax Yitya learned a
+                        // position for a boss averaging four hundred and fifty-four yards away, which nobody
+                        // walked to and nothing hit them from; a second trip would have turned it into two
+                        // observations and put it on a bar. The report may describe such a cast, since it did
+                        // happen; a hint may not prescribe for it, since it never involved anybody.
+                        if (learned != null && aid.Type == ActionType.Spell && mean.Length() <= WithinTheFight)
                         {
                             learned.Learn(aid.ID, RoleOf(p), new(fraction, Bearing(fromCentre), mean.Length(),
                                 samples.Count, castsHere, spread, avoided));
