@@ -53,8 +53,12 @@ export default {
 
     const name = fileName(payload);
 
-    if (!env.GITHUB_TOKEN || !env.GITHUB_REPO) {
-      return text(500, "relay has nowhere to file this");
+    // Named rather than lumped together, because the two ways to get this wrong (a secret never added, and a
+    // secret added under a slightly different name) look identical from the outside and are fixed differently.
+    // Saying which one is absent gives away nothing: these are the names, not the values.
+    const missing = ["GITHUB_TOKEN", "GITHUB_REPO"].filter((key) => !env[key]);
+    if (missing.length > 0) {
+      return text(500, `relay has nowhere to file this, cannot see ${missing.join(" or ")}`);
     }
 
     try {
