@@ -124,13 +124,63 @@ public sealed class MechanicTimersWindow : UIWindow
         _fromTimeline.Clear();
         _timeline.CollectUpcoming(_fromTimeline, max, TimelineHorizon);
 
-        foreach (var (name, seconds) in _fromTimeline)
+        var role = MyRole();
+        foreach (var (name, seconds, abilities) in _fromTimeline)
         {
             // Filled proportionally over the horizon rather than a real duration: the timeline says when a
             // mechanic lands, not how long it has been coming.
-            _bars.Add((name, seconds, TimelineHorizon));
+            _bars.Add((Label(name, abilities, role), seconds, TimelineHorizon));
         }
     }
+
+    /// <summary>
+    /// The mechanic, and where this player stood for it last time, if that was ever worth recording.
+    ///
+    /// This is the whole point of the fork. Everything else here says a mechanic is coming, which the game
+    /// mostly manages on its own; this says where to be for it, in the seconds when that is still actionable.
+    /// </summary>
+    private string Label(string name, uint[] abilities, PartyRolesConfig.Assignment role)
+    {
+        if (role == PartyRolesConfig.Assignment.Unassigned || !Config.ShowLearned)
+        {
+            return name;
+        }
+
+        // A mechanic is often several abilities; the best-supported reading among them wins, since they
+        // describe the same moment and one of them may simply have been seen more often.
+        LearnedPositions.Spot? best = null;
+        foreach (var id in abilities)
+        {
+            var spot = Learned.For(id, role);
+            if (spot is LearnedPositions.Spot s && (best is not LearnedPositions.Spot b || s.Samples > b.Samples))
+            {
+                best = s;
+            }
+        }
+
+        // A thin reading is marked rather than hidden. Somewhere to start beats nothing when a cast bar is
+        // filling, as long as it does not pretend to be more than it is.
+        return best is LearnedPositions.Spot found
+            ? $"{name}  {found.Where}{(found.Confident ? "" : "?")}"
+            : name;
+    }
+
+    /// <summary>Which slot this player holds, which is what a learned position is filed under.</summary>
+    private PartyRolesConfig.Assignment MyRole()
+    {
+        var member = _ws.Party.Members[PartyState.PlayerSlot];
+        return member.ContentId != 0
+            ? Service.Config.Get<PartyRolesConfig>()[member.ContentId]
+            : PartyRolesConfig.Assignment.Unassigned;
+    }
+
+    // Loaded once and kept, since this is read every frame and rewritten only when somebody exports. The
+    // reload button in the replay window is what picks up a fresh export without a restart.
+    private static LearnedPositions? _learned;
+    public static LearnedPositions Learned => _learned ??= LearnedPositions.Load(
+        System.IO.Path.Combine(ReplayAnalysis.EncounterDump.TargetDirectory(), LearnedPositions.FileName));
+
+    public static void ForgetLearned() => _learned = null;
 
     private void CollectCasts()
     {

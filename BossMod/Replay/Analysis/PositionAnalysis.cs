@@ -55,7 +55,7 @@ static class PositionAnalysis
     /// Also returns what it managed to say about each ability, which is what the coverage report reads to work
     /// out which of a fight's named mechanics this export still has nothing useful to say about.
     /// </remarks>
-    public static Dictionary<uint, Coverage> Append(StringBuilder sb, Replay replay, IReadOnlyCollection<Replay.Participant> involved, Func<Replay.Participant, string> label, Func<Replay.Action, bool> inScope, ArenaEstimate? arena = null, Func<DateTime, double>? elapsed = null, PositionExport? export = null)
+    public static Dictionary<uint, Coverage> Append(StringBuilder sb, Replay replay, IReadOnlyCollection<Replay.Participant> involved, Func<Replay.Participant, string> label, Func<Replay.Action, bool> inScope, ArenaEstimate? arena = null, Func<DateTime, double>? elapsed = null, PositionExport? export = null, LearnedPositions? learned = null)
     {
         var outcomes = new Dictionary<uint, Coverage>();
         if (involved.Count == 0)
@@ -275,7 +275,7 @@ static class PositionAnalysis
             sb.AppendLine();
         }
 
-        AppendHints(sb, byAbility, resolutions, telegraphed, marked, landed, grouped, shapes, moments, label, arena, outcomes, elapsed != null);
+        AppendHints(sb, byAbility, resolutions, telegraphed, marked, landed, grouped, shapes, moments, label, arena, outcomes, elapsed != null, learned);
         return outcomes;
     }
 
@@ -309,7 +309,8 @@ static class PositionAnalysis
         Func<Replay.Participant, string> label,
         ArenaEstimate? arena,
         Dictionary<uint, Coverage> outcomes,
-        bool haveElapsed)
+        bool haveElapsed,
+        LearnedPositions? learned)
     {
         // Only spells, and only the best outcome for one that appears twice. Everything that joins against a
         // cactbot timeline joins on the spell ID, and nothing else has one.
@@ -492,6 +493,15 @@ static class PositionAnalysis
                         var (fromCentre, _) = MeanAndSpread(centre);
                         var fraction = arena.Scale > 0f ? fromCentre.Length() / arena.Scale : 0f;
                         row.Append("from centre ").Append(fraction.ToString("f2")).Append("r ").Append(Octant(fromCentre).PadRight(8));
+
+                        // The same conclusion, kept rather than only printed. A report is read afterwards; this
+                        // is what the timer window can say while the cast bar is still filling. Only rows that
+                        // reached this point are recorded, so nothing a player wandered through is shown live.
+                        if (learned != null && aid.Type == ActionType.Spell)
+                        {
+                            learned.Learn(aid.ID, RoleOf(p), new(fraction, Bearing(fromCentre), mean.Length(),
+                                samples.Count, castsHere, spread, avoided));
+                        }
                     }
 
                     rows.Add(row.Append(Confidence(samples.Count, castsHere, spread, avoided)).ToString());
@@ -930,6 +940,13 @@ static class PositionAnalysis
     private static readonly string[] Octants = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 
     // FFXIV world axes put north at -Z and east at +X, so a compass bearing is 180 degrees off WDir.ToAngle.
+    /// <summary>The compass bearing an offset points along, in degrees, with north at zero.</summary>
+    private static float Bearing(WDir offset) => (180f - offset.ToAngle().Deg + 360f) % 360f;
+
+    /// <summary>Which slot a participant holds, so a learned spot is filed under the role and not the player.</summary>
+    private static PartyRolesConfig.Assignment RoleOf(Replay.Participant p)
+        => Service.Config.Get<PartyRolesConfig>()[p.ContentID];
+
     private static string Octant(WDir offset)
     {
         if (offset.LengthSq() < 0.01f)

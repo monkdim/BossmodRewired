@@ -15,7 +15,9 @@ static class ReplayExport
     public static string DataFileName(string logPath) => $"{Path.GetFileNameWithoutExtension(logPath)}.json";
 
     /// <summary>Everything worth reading about one recording, and a one-line description of what that was.</summary>
-    public static (string Text, string Summary) Build(Replay replay) => Build(replay, null);
+    public static (string Text, string Summary) Build(Replay replay) => Build(replay, null, null);
+
+    public static (string Text, string Summary) Build(Replay replay, PositionExport? export) => Build(replay, export, null);
 
     /// <summary>
     /// The same, collecting the positions as data on the way past when asked.
@@ -24,7 +26,7 @@ static class ReplayExport
     /// carry the ability they belong to and a reader can split them far more easily than it could stitch
     /// several files back together.
     /// </summary>
-    public static (string Text, string Summary) Build(Replay replay, PositionExport? export)
+    public static (string Text, string Summary) Build(Replay replay, PositionExport? export, LearnedPositions? learned)
     {
         var sb = new StringBuilder();
 
@@ -32,7 +34,7 @@ static class ReplayExport
         {
             // Encounters only exist where a module activated, so content nobody has covered yet produces none.
             // That is the content most worth capturing, so it gets dumped wholesale rather than skipped.
-            sb.Append(RecordingDump.Build(replay, export));
+            sb.Append(RecordingDump.Build(replay, export, learned));
             return (sb.ToString(), "no boss module for this duty, exported the whole recording");
         }
 
@@ -42,7 +44,7 @@ static class ReplayExport
         {
             if (oids.Add(enc.OID))
             {
-                sb.Append(new EncounterDump(replays, enc.OID).BuildAll(export));
+                sb.Append(new EncounterDump(replays, enc.OID).BuildAll(export, learned));
                 sb.AppendLine();
             }
         }
@@ -54,7 +56,8 @@ static class ReplayExport
     public static string Write(Replay replay)
     {
         var export = new PositionExport();
-        var (text, summary) = Build(replay, export);
+        var learned = new LearnedPositions();
+        var (text, summary) = Build(replay, export, learned);
         var dir = EncounterDump.TargetDirectory();
         var target = Path.Combine(dir, FileName(replay.Path));
         File.WriteAllText(target, text);
@@ -64,6 +67,10 @@ static class ReplayExport
         try
         {
             File.WriteAllText(Path.Combine(dir, DataFileName(replay.Path)), export.Build());
+            LearnedPositions.Merge(Path.Combine(dir, LearnedPositions.FileName), learned);
+
+            // So the next pull uses what this export just learned, without restarting the game.
+            MechanicTimersWindow.ForgetLearned();
         }
         catch (Exception e)
         {
