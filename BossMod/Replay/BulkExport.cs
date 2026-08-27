@@ -185,7 +185,7 @@ public sealed class BulkExport : IDisposable
 
             try
             {
-                if (skipExisting && File.Exists(Path.Combine(target, ReplayAnalysis.ReplayExport.FileName(log.FullName))))
+                if (skipExisting && ReplayAnalysis.ReplayExport.AlreadyCurrent(target, log.FullName))
                 {
                     ++_skipped;
                 }

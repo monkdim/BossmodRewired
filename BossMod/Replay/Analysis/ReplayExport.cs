@@ -11,6 +11,17 @@ namespace BossMod.ReplayAnalysis;
 /// </summary>
 static class ReplayExport
 {
+    /// <summary>
+    /// Bumped when an export made by an older build is worth redoing rather than keeping.
+    ///
+    /// Version 2 is the first that never writes a character name: before it, handles were the player's actual
+    /// name, so every export made by an earlier build is fine to keep and unsafe to hand anybody. It is also
+    /// the first to measure each fight against its own arena and to record which duty it came from.
+    /// </summary>
+    public const int FormatVersion = 2;
+
+    private static string Stamp => $"Export format {FormatVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)}.";
+
     public static string FileName(string logPath) => $"{Path.GetFileNameWithoutExtension(logPath)}.txt";
     public static string DataFileName(string logPath) => $"{Path.GetFileNameWithoutExtension(logPath)}.json";
 
@@ -29,6 +40,11 @@ static class ReplayExport
     public static (string Text, string Summary) Build(Replay replay, PositionExport? export, LearnedPositions? learned)
     {
         var sb = new StringBuilder();
+
+        // First line, so deciding whether a file needs redoing costs one read of a few bytes rather than a
+        // parse of the recording behind it.
+        sb.AppendLine(Stamp);
+        sb.AppendLine();
 
         if (replay.Encounters.Count == 0)
         {
@@ -50,6 +66,34 @@ static class ReplayExport
         }
 
         return (sb.ToString(), $"{oids.Count} encounter(s)");
+    }
+
+    /// <summary>
+    /// Whether an export for this recording already exists and was made by this build.
+    ///
+    /// The bulk pass used to ask only whether a file was there, which is the wrong question after an upgrade:
+    /// the exports most worth redoing are exactly the ones that already exist. Anything older, or with no
+    /// stamp at all, is treated as needing another pass.
+    /// </summary>
+    public static bool AlreadyCurrent(string dir, string logPath)
+    {
+        try
+        {
+            var target = Path.Combine(dir, FileName(logPath));
+            if (!File.Exists(target))
+            {
+                return false;
+            }
+
+            using var reader = new StreamReader(target);
+            return reader.ReadLine()?.StartsWith(Stamp, StringComparison.Ordinal) == true;
+        }
+        catch (Exception)
+        {
+            // Unreadable is not current. Redoing one file needlessly costs a parse; skipping one wrongly
+            // leaves a stale export in place indefinitely.
+            return false;
+        }
     }
 
     /// <summary>Writes the export next to the others and returns a line describing where it went.</summary>
