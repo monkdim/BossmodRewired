@@ -134,7 +134,7 @@ static class TimelineCoverage
             {
                 unreached.Add(m);
             }
-            else if (m.Best is PositionAnalysis.Coverage.Prescribed or PositionAnalysis.Coverage.Incidental)
+            else if (m.Best is PositionAnalysis.Coverage.Avoided or PositionAnalysis.Coverage.Prescribed or PositionAnalysis.Coverage.Incidental)
             {
                 taught.Add(m);
             }
@@ -165,8 +165,9 @@ static class TimelineCoverage
 
         Section(sb, taught,
             "COVERED, and now under the name people say out loud",
-            "A position was found for these, or they were established as catching everyone wherever they stood.",
-            "The sections above give the numbers; this says which mechanic each of them is.");
+            "A position was found for these, or the party dodged them outright, or they were established as",
+            "catching everyone wherever they stood. The sections above give the numbers; this says which",
+            "mechanic each of them is.");
     }
 
     private static void Section(StringBuilder sb, List<Mechanic> mechanics, string heading, params string[] blurb)
@@ -198,10 +199,11 @@ static class TimelineCoverage
         ? "not in this recording"
         : m.Best switch
         {
+            PositionAnalysis.Coverage.Avoided => "dodged clean, so the spot is proven safe",
             PositionAnalysis.Coverage.Prescribed => "position found",
             PositionAnalysis.Coverage.Incidental => "position does not matter",
             PositionAnalysis.Coverage.Unheld => "nobody held a position",
             PositionAnalysis.Coverage.Unannounced => "hit with no warning, nothing to position for in advance",
-            _ => "cast, but it touched nobody",
+            _ => "no cast bar and it touched nobody, so probably not a mechanic",
         };
 }

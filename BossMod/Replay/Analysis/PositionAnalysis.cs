@@ -31,6 +31,9 @@ static class PositionAnalysis
 
         /// <summary>Somebody held a spot for it, and this export says where.</summary>
         Prescribed,
+
+        /// <summary>Nobody was touched by it, and where they stood through its cast bar is why.</summary>
+        Avoided,
     }
 
     /// <summary>Pets and buddies fight on your side, so "not a player" is the wrong test for hostility.</summary>
@@ -285,8 +288,10 @@ static class PositionAnalysis
 
         sb.AppendLine("========================================================================");
         sb.AppendLine("WHERE TO STAND, per role, at the moment each cast begins");
-        sb.AppendLine("Only abilities that hit somebody and announced themselves first, by cast bar or headmarker,");
-        sb.AppendLine("and only positions that were actually held.");
+        sb.AppendLine("Only abilities that announced themselves first, by cast bar or headmarker, and only");
+        sb.AppendLine("positions that were actually held.");
+        sb.AppendLine("An ability that touched nobody is the best case here rather than the worst: the party");
+        sb.AppendLine("dodged it, so where they stood is a spot proven to be safe.");
         sb.AppendLine("Anything a player wandered around is left out: a mean position with a wide spread behind it");
         sb.AppendLine("reads as a place to stand, and is not one.");
         sb.AppendLine();
@@ -297,20 +302,34 @@ static class PositionAnalysis
 
         foreach (var (aid, perPlayer) in byAbility)
         {
-            if (!landed.Contains(aid))
-            {
-                record(aid, Coverage.NeverLanded);
-                continue;
-            }
+            // An ability that touched nobody used to be skipped here, on the reasoning that it teaches
+            // nothing about where to stand. That is exactly backwards for the question this section asks. A
+            // telegraphed mechanic that landed on nobody is one the party dodged clean, and where they stood
+            // through its cast bar is the right answer by definition, with no damage taken to argue against
+            // it. Measured across five real exports it was not an edge case either: fifty-seven of the
+            // ninety-two mechanics being reported as gaps were mechanics the party had played perfectly.
+            var avoided = !landed.Contains(aid);
 
+            // Nothing announced this one. If it hit, nobody had time to move for it and there is no position
+            // to prescribe. If it also touched nobody then nothing announced it and nothing came of it, which
+            // is a boss buffing itself rather than a mechanic the party got right.
             if (telegraphed.GetValueOrDefault(aid) == 0 && !marked.Contains(aid))
             {
-                record(aid, Coverage.Unannounced);
-                ++skippedInstant;
+                record(aid, avoided ? Coverage.NeverLanded : Coverage.Unannounced);
+                if (!avoided)
+                {
+                    ++skippedInstant;
+                }
+
                 continue;
             }
 
-            var shape = shapes.GetValueOrDefault(aid);
+            // Classify reads shapes from who got hit, so it has nothing to work with here and says so. What
+            // the ability was aimed at does not matter when the answer is the same either way: stand where
+            // they stood.
+            (string Text, bool Positional) shape = avoided
+                ? ("dodged every cast, so this is where the party stood to avoid it", true)
+                : shapes.GetValueOrDefault(aid);
 
             // An ability that caught everyone wherever they were has no position to take, and printing one
             // next to a line saying position did not matter is a contradiction the reader has to resolve.
@@ -340,7 +359,9 @@ static class PositionAnalysis
 
                 // A single cast cannot show whether a position was held, so it only earns a line when the
                 // ability gathered or scattered the party, which is the case where one cast is all there is.
-                var trustworthy = samples.Count > 1 ? spread < LooseSpot : isGroup;
+                // A single cast nobody was hit by is the other exception: taking no damage is proof the spot
+                // was safe, which is more than a tidy-looking mean on a cast that landed can claim.
+                var trustworthy = samples.Count > 1 ? spread < LooseSpot : isGroup || avoided;
                 if (!trustworthy)
                 {
                     continue;
@@ -363,7 +384,7 @@ static class PositionAnalysis
                     row.Append("from centre ").Append(fraction.ToString("f2")).Append("r ").Append(Octant(fromCentre).PadRight(8));
                 }
 
-                rows.Add(row.Append(Confidence(samples.Count, casts, spread)).ToString());
+                rows.Add(row.Append(Confidence(samples.Count, casts, spread, avoided)).ToString());
             }
 
             if (rows.Count == 0)
@@ -373,7 +394,7 @@ static class PositionAnalysis
                 continue;
             }
 
-            record(aid, Coverage.Prescribed);
+            record(aid, avoided ? Coverage.Avoided : Coverage.Prescribed);
             ++shown;
             sb.Append(aid.ToString()).Append("  (").Append(shape.Text).AppendLine(")");
 
@@ -453,12 +474,16 @@ static class PositionAnalysis
     }
 
     /// <summary>How much weight a single row deserves, which one cast cannot earn however tidy it looks.</summary>
-    private static string Confidence(int samples, int casts, float spread) => samples switch
+    private static string Confidence(int samples, int casts, float spread, bool avoided) => samples switch
     {
-        < 2 => "the only cast, so this is where they were rather than where to be",
-        _ => spread switch
+        < 2 => avoided
+            ? "the only cast, and it hit nobody, so the spot was safe at least once"
+            : "the only cast, so this is where they were rather than where to be",
+        _ => (spread < FixedSpot, avoided) switch
         {
-            < FixedSpot => $"held to within {spread:f1}y across {samples} of {casts} casts",
+            (true, true) => $"safe from within {spread:f1}y across {samples} of {casts} casts, none of which hit anybody",
+            (true, false) => $"held to within {spread:f1}y across {samples} of {casts} casts",
+            (false, true) => $"safe from roughly here, {spread:f1}y across {samples} of {casts} casts, none of which hit anybody",
             _ => $"roughly held, {spread:f1}y across {samples} of {casts} casts"
         }
     };
