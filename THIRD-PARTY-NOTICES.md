@@ -19,6 +19,12 @@ cactbot keeps them in nested directories under `ui/raidboss/data`, and here thos
 flattened into the file name, so `07-dt/raid/r10s.txt` becomes `07-dt_raid_r10s.txt`. No
 line of any timeline has been altered, added or removed.
 
+One file in that directory is ours rather than cactbot's: `ZoneTimelines.txt`, which says
+which timeline belongs to which zone. Cactbot holds the same pairing across two places, its
+`resources/zone_id.ts` and the `zoneId` and `timelineFile` declared by each trigger file
+under `ui/raidboss/data`, so the table here is derived from cactbot's data by joining those
+two. The pairings are cactbot's; the file format is ours.
+
 cactbot ships no NOTICE file, so there is none to reproduce here.
 
 ### What they are used for

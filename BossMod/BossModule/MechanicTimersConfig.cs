@@ -12,6 +12,9 @@ public sealed class MechanicTimersConfig : ConfigNode
     [PropertyDisplay("Show upcoming mechanics from the module's timeline", tooltip: "Only fights whose module defines timed states have anything to show here. Most dungeon and normal raid modules do not.")]
     public bool ShowStates = true;
 
+    [PropertyDisplay("Show upcoming mechanics from cactbot timelines", tooltip: "Works in any fight cactbot has a timeline for, including ones with no boss module. Names come from cactbot.")]
+    public bool ShowTimeline = true;
+
     [PropertyDisplay("How many upcoming mechanics to list")]
     [PropertySlider(1, 10)]
     public int MaxUpcoming = 4;
