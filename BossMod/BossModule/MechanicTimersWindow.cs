@@ -152,14 +152,14 @@ public sealed class MechanicTimersWindow : UIWindow
         foreach (var id in abilities)
         {
             var spot = Learned.For(id, role);
-            if (spot is LearnedPositions.Spot s && (best is not LearnedPositions.Spot b || s.Samples > b.Samples))
+            if (spot is LearnedPositions.Spot s && s.Worth && (best is not LearnedPositions.Spot b || s.Samples > b.Samples))
             {
                 best = s;
             }
         }
 
-        // A thin reading is marked rather than hidden. Somewhere to start beats nothing when a cast bar is
-        // filling, as long as it does not pretend to be more than it is.
+        // Two observations is thin and says so with a question mark; three or more that agree drops it. One is
+        // not shown at all, so the mark means something rather than sitting on every line.
         return best is LearnedPositions.Spot found
             ? $"{name}  {found.Where}{(found.Confident ? "" : "?")}"
             : name;

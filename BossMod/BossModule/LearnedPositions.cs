@@ -23,6 +23,20 @@ public sealed class LearnedPositions
         /// <summary>The compass point, named as the reports name it.</summary>
         public string Where => Fraction < 0.06f ? "middle" : $"{Compass(Bearing)} {Fraction:f2}r";
 
+        /// <summary>
+        /// Whether this is worth showing during a fight at all.
+        ///
+        /// One observation is where somebody happened to be, and the reports say exactly that: "the only
+        /// cast, so this is where they were rather than where to be". A hint on a bar cannot carry that
+        /// sentence, and is acted on rather than weighed, so the live path has to be stricter than the report
+        /// rather than looser. Measured on a real export, twenty of twenty-one learned spots came from a
+        /// single cast, so without this the window would have been almost entirely guesses.
+        ///
+        /// The file still keeps them. A second run of the same duty turns a guess into evidence, and that is
+        /// the behaviour worth encouraging.
+        /// </summary>
+        public bool Worth => Samples > 1;
+
         /// <summary>How much this deserves to be believed, so a thin reading can be shown as one.</summary>
         public bool Confident => Samples > 2 && Spread < 1.5f;
     }
