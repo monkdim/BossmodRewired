@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO;
+using System.Text.Json;
 
 namespace BossMod;
 
@@ -22,6 +23,20 @@ public sealed class LearnedPositions
     {
         /// <summary>The compass point, named as the reports name it.</summary>
         public string Where => Fraction < 0.06f ? "middle" : $"{Compass(Bearing)} {Fraction:f2}r";
+
+        /// <summary>
+        /// Whether this is worth showing during a fight at all.
+        ///
+        /// One observation is where somebody happened to be, and the reports say exactly that: "the only
+        /// cast, so this is where they were rather than where to be". A hint on a bar cannot carry that
+        /// sentence, and is acted on rather than weighed, so the live path has to be stricter than the report
+        /// rather than looser. Measured on a real export, twenty of twenty-one learned spots came from a
+        /// single cast, so without this the window would have been almost entirely guesses.
+        ///
+        /// The file still keeps them. A second run of the same duty turns a guess into evidence, and that is
+        /// the behaviour worth encouraging.
+        /// </summary>
+        public bool Worth => Samples > 1;
 
         /// <summary>How much this deserves to be believed, so a thin reading can be shown as one.</summary>
         public bool Confident => Samples > 2 && Spread < 1.5f;
@@ -161,74 +176,49 @@ public sealed class LearnedPositions
     }
 
     /// <summary>
-    /// A reader for exactly the shape Build writes, rather than a general one.
+    /// Reads the shape Build writes, with a real parser.
     ///
-    /// The file is ours at both ends and its shape is fixed, so a scanner that looks for the two things it
-    /// needs is smaller than a parser and cannot be surprised by anything except a file it should ignore.
+    /// The first version scanned for quote pairs by hand and recovered nothing at all from its own output: it
+    /// walked the gaps between the keys rather than the keys. Load silently returned empty, so Merge had
+    /// nothing to merge into and every export overwrote the file with only its own findings.
+    ///
+    /// Writing still goes through StringBuilder, because a serializer honouring the machine's locale would
+    /// write coordinates with a decimal comma. Reading has no such hazard: JSON numbers are invariant by
+    /// specification, so a real parser is both safer and shorter than being clever here.
     /// </summary>
     private static IEnumerable<(uint Ability, PartyRolesConfig.Assignment Role, Spot Spot)> Parse(string text)
     {
-        var i = text.IndexOf("\"abilities\"", StringComparison.Ordinal);
-        if (i < 0)
+        using var doc = JsonDocument.Parse(text);
+        if (!doc.RootElement.TryGetProperty("abilities", out var abilities) || abilities.ValueKind != JsonValueKind.Object)
         {
             yield break;
         }
 
-        while (true)
+        foreach (var byAbility in abilities.EnumerateObject())
         {
-            var open = text.IndexOf('"', i + 1);
-            if (open < 0)
-            {
-                yield break;
-            }
-
-            var close = text.IndexOf('"', open + 1);
-            if (close < 0)
-            {
-                yield break;
-            }
-
-            var key = text[(open + 1)..close];
-            i = close + 1;
-            if (!uint.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ability))
+            if (!uint.TryParse(byAbility.Name, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ability) || byAbility.Value.ValueKind != JsonValueKind.Object)
             {
                 continue;
             }
 
-            var braceEnd = text.IndexOf('}', i);
-            if (braceEnd < 0)
+            foreach (var byRole in byAbility.Value.EnumerateObject())
             {
-                yield break;
+                if (!Enum.TryParse<PartyRolesConfig.Assignment>(byRole.Name, out var role) || byRole.Value.ValueKind != JsonValueKind.Array)
+                {
+                    continue;
+                }
+
+                var n = new List<float>(7);
+                foreach (var v in byRole.Value.EnumerateArray())
+                {
+                    n.Add(v.ValueKind == JsonValueKind.Number && v.TryGetSingle(out var f) ? f : 0f);
+                }
+
+                if (n.Count >= 7)
+                {
+                    yield return (ability, role, new(n[0], n[1], n[2], (int)n[3], (int)n[4], n[5], n[6] > 0.5f));
+                }
             }
-
-            var body = text[i..braceEnd];
-            foreach (var part in body.Split(']'))
-            {
-                var q1 = part.IndexOf('"');
-                var q2 = q1 < 0 ? -1 : part.IndexOf('"', q1 + 1);
-                var br = part.IndexOf('[');
-                if (q1 < 0 || q2 < 0 || br < 0)
-                {
-                    continue;
-                }
-
-                if (!Enum.TryParse<PartyRolesConfig.Assignment>(part[(q1 + 1)..q2], out var role))
-                {
-                    continue;
-                }
-
-                var nums = part[(br + 1)..].Split(',');
-                if (nums.Length < 7)
-                {
-                    continue;
-                }
-
-                yield return (ability, role, new(P(nums[0]), P(nums[1]), P(nums[2]), (int)P(nums[3]), (int)P(nums[4]), P(nums[5]), P(nums[6]) > 0.5f));
-            }
-
-            i = braceEnd + 1;
         }
     }
-
-    private static float P(string s) => float.TryParse(s.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0f;
 }
