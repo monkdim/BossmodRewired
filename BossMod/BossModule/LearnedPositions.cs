@@ -5,9 +5,9 @@ using System.Text.Json;
 namespace BossMod;
 
 /// <summary>
-/// Where each role stood, learned from recordings and kept for the next pull.
+/// Where each slot stood, learned from recordings and kept for the next pull.
 ///
-/// The analysis has always been able to work out where a role should be, and has always written it into a
+/// The analysis has always been able to work out where a slot should be, and has always written it into a
 /// report nobody can read while a mechanic is landing on them. This is the same answer in a form the plugin can
 /// hold: keyed on the ability, so the timer window can look up what is coming and say where to go.
 ///
@@ -18,7 +18,7 @@ public sealed class LearnedPositions
 {
     public const string FileName = "learned-positions.json";
 
-    /// <summary>One role's place for one ability, measured the way the export measures it.</summary>
+    /// <summary>One slot's place for one ability, measured the way the export measures it.</summary>
     public readonly record struct Spot(float Fraction, float Bearing, float FromCaster, int Samples, int Casts, float Spread, bool Avoided)
     {
         /// <summary>The compass point, named as the reports name it.</summary>
