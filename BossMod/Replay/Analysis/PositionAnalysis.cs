@@ -389,10 +389,10 @@ static class PositionAnalysis
                     // Deduplicating on the absolute moment rather than on time into the pull is deliberate:
                     // the same moment in seven different pulls is seven real observations and has to survive.
                     var samples = new List<Sample>();
-                    var moments = new HashSet<DateTime>();
+                    var distinct = new HashSet<DateTime>();
                     foreach (var sample in all)
                     {
-                        if (sample.Elapsed >= window.From && sample.Elapsed <= window.To && moments.Add(sample.When))
+                        if (sample.Elapsed >= window.From && sample.Elapsed <= window.To && distinct.Add(sample.When))
                         {
                             samples.Add(sample);
                         }
