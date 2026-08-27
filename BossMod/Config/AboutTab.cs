@@ -10,7 +10,6 @@ public sealed class AboutTab(DirectoryInfo? replayDir)
     private static readonly Color TitleColor = Color.FromComponents(255u, 165u, default);
     private static readonly Color SectionBgColor = Color.FromComponents(38u, 38u, 38u);
     private static readonly Color BorderColor = Color.FromComponents(178u, 178u, 178u, 204u);
-    private static readonly Color DiscordColor = Color.FromComponents(88u, 101u, 242u);
 
     private string _lastErrorMessage = "";
 
@@ -64,18 +63,11 @@ public sealed class AboutTab(DirectoryInfo? replayDir)
         ImGui.Spacing();
         ImGui.Spacing();
 
-        using (ImRaii.PushColor(ImGuiCol.Button, DiscordColor.ABGR))
+        // This fork first, then the two projects it is built on. The order used to be the other way round,
+        // which sent anybody looking for help here to somebody else's issue tracker.
+        if (ImGui.Button("BossMod Rewired GitHub", new(220, 0)))
         {
-            if (ImGui.Button("Combat Reborn Discord", new(220, 0)))
-            {
-                _lastErrorMessage = OpenLink("https://discord.gg/p54TZMPnC9");
-            }
-        }
-
-        ImGui.SameLine();
-        if (ImGui.Button("BossModReborn GitHub", new(220, 0)))
-        {
-            _lastErrorMessage = OpenLink("https://github.com/FFXIV-CombatReborn/BossmodReborn");
+            _lastErrorMessage = OpenLink("https://github.com/monkdim/BossmodRewired");
         }
 
         ImGui.SameLine();
@@ -89,6 +81,10 @@ public sealed class AboutTab(DirectoryInfo? replayDir)
         {
             _lastErrorMessage = OpenDirectory(replayDir);
         }
+
+        ImGui.Spacing();
+        ImGui.TextDisabled("A fork of BossMod Reborn, itself a fork of awgil's BossMod. Encounter modules are largely");
+        ImGui.TextDisabled("their work; module bugs are worth reporting upstream so everybody gets the fix.");
 
         if (_lastErrorMessage.Length > 0)
         {
