@@ -102,7 +102,11 @@ Everything lands through a pull request with the build green. There is no local 
 loop; CI is the compiler.
 
 [ROADMAP.md](ROADMAP.md) has what is done, what is being considered, and what is deliberately out of
-scope. [CONTRIBUTING.md](CONTRIBUTING.md) has the house rules for code, inherited from upstream.
+scope. [CONTRIBUTING.md](CONTRIBUTING.md) has the house rules, including the two that matter most: modules
+are tested in a real duty rather than in a replay, and AI-generated pull requests are not accepted.
+
+Recordings are a contribution too, and often a more useful one than code. This fork can only describe
+fights it has seen enough of.
 
 ## Credit
 
@@ -119,8 +123,13 @@ This fork exists because two much larger bodies of work already existed.
   describe what each fight does and in what order, which is knowledge no amount of recording can
   derive.
 
-Bugs in an encounter module very likely came from upstream and are worth reporting there so everyone
-benefits. Anything about positions, exports, recording or sharing is this fork's, and belongs in
+Upstream changes are pulled in on a weekly schedule, as a pull request rather than straight onto main, so
+module fixes made over there reach this fork's users without anybody remembering to go and look. Nothing is
+sent the other way automatically.
+
+Bugs in an encounter module very likely came from upstream. Reporting them there fixes it for everybody and
+the fix arrives here on the next merge, which is a better outcome than patching around it locally. Anything
+about positions, exports, recording or sharing is this fork's, and belongs in
 [issues here](https://github.com/monkdim/BossmodRewired/issues).
 
 ## Licence

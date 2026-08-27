@@ -3,6 +3,12 @@ on:
   pull_request:
     branches:
       - main
+  # The upstream merge job opens its pull request with the workflow token, and GitHub deliberately does not
+  # fire pull_request workflows for those. Without this the one pull request that most needs a build, a
+  # hundred upstream module changes landing at once, would arrive with no build at all.
+  push:
+    branches:
+      - 'upstream/**'
 jobs:
   Build:
     runs-on: windows-latest
