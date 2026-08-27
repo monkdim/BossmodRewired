@@ -85,25 +85,42 @@ function fileName(payload) {
 
 // Committed through the contents API, which is one request and needs no tree building. The token should be
 // fine-grained, scoped to this one repository, and allowed nothing beyond writing contents.
+//
+// Retried on conflict, because the contents API commits against the branch head and two people finishing a
+// duty at the same second are two writes racing for it. The loser is told 409 and simply needs to go again
+// with the head that now exists; the file names cannot collide, so nothing is overwritten by trying twice.
 async function toGitHub(env, name, body) {
   const path = `data/${name}`;
-  const res = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/contents/${path}`, {
-    method: "PUT",
-    headers: {
-      authorization: `Bearer ${env.GITHUB_TOKEN}`,
-      accept: "application/vnd.github+json",
-      "user-agent": "bossmod-rewired-relay",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      message: `export: ${name}`,
-      content: base64(body),
-      branch: env.GITHUB_BRANCH || "main",
-    }),
-  });
+  const content = base64(body);
 
-  if (!res.ok) {
-    throw new Error(`github ${res.status} ${(await res.text()).slice(0, 200)}`);
+  for (let attempt = 0; ; ++attempt) {
+    const res = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/contents/${path}`, {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${env.GITHUB_TOKEN}`,
+        accept: "application/vnd.github+json",
+        "user-agent": "bossmod-rewired-relay",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        message: `export: ${name}`,
+        content,
+        branch: env.GITHUB_BRANCH || "main",
+      }),
+    });
+
+    if (res.ok) {
+      return;
+    }
+
+    const text = (await res.text()).slice(0, 200);
+    if ((res.status !== 409 && res.status !== 422) || attempt >= 4) {
+      throw new Error(`github ${res.status} ${text}`);
+    }
+
+    // Backing off a little rather than hammering, and staggered by attempt so two losers do not collide again
+    // on the retry the way they collided on the write.
+    await new Promise((done) => setTimeout(done, 250 * (attempt + 1)));
   }
 }
 

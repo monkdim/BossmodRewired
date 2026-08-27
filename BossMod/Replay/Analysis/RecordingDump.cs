@@ -122,6 +122,14 @@ static class RecordingDump
             return sb.ToString();
         }
 
+        // Worked out once. Both of these are scans over the whole action list, and there are as many fights in
+        // a night as there are rooms in the instance.
+        var me = PositionAnalysis.WhoRecorded(replay);
+        if (export != null)
+        {
+            export.Zone = ZoneOf(involved);
+        }
+
         for (var i = 0; i < fights.Count; ++i)
         {
             var fight = fights[i];
@@ -140,13 +148,9 @@ static class RecordingDump
             {
                 export.Boss = fight.Label;
                 export.OID = fight.OID;
-                export.Pulls.Add((i + 1, fight.OID, fight.Label, fight.Start, fight.End));
-                if (arena != null)
-                {
-                    export.ArenaCenter = arena.Reference;
-                    export.ArenaScale = arena.Scale;
-                    export.ArenaShape = arena.Shape;
-                }
+                export.BeginPull(i + 1, fight.OID, fight.Label, fight.Start, fight.End,
+                    arena?.Reference, arena?.Scale ?? 0f, arena?.Shape,
+                    PositionAnalysis.WasThere(replay, me, fight.Start, fight.End));
             }
 
             var coverage = PositionAnalysis.Append(sb, replay, involved, Label,
@@ -293,6 +297,42 @@ static class RecordingDump
         }
 
         return last > first ? (float)(last - first).TotalSeconds : 0f;
+    }
+
+    /// <summary>
+    /// Which zone this happened in.
+    ///
+    /// An encounter carries its own zone, but an encounter only exists where a module activated, and this path
+    /// runs precisely when none did. So it comes off the participants instead, who each remember the zone they
+    /// were last seen in. The commonest answer wins, since a recording that spans a return to a hub has a
+    /// stray reading or two in it.
+    ///
+    /// Without this every module-less export claimed zone zero, which is how a file could describe a duty and
+    /// still leave nobody able to say which duty it was.
+    /// </summary>
+    private static ushort ZoneOf(IReadOnlyCollection<Replay.Participant> involved)
+    {
+        var counts = new Dictionary<uint, int>();
+        foreach (var p in involved)
+        {
+            if (p.ZoneID != 0)
+            {
+                counts[p.ZoneID] = counts.GetValueOrDefault(p.ZoneID) + 1;
+            }
+        }
+
+        var best = 0u;
+        var bestCount = 0;
+        foreach (var (zone, count) in counts)
+        {
+            if (count > bestCount)
+            {
+                best = zone;
+                bestCount = count;
+            }
+        }
+
+        return (ushort)best;
     }
 
     /// <summary>

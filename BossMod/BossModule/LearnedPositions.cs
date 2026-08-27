@@ -5,9 +5,9 @@ using System.Text.Json;
 namespace BossMod;
 
 /// <summary>
-/// Where each role stood, learned from recordings and kept for the next pull.
+/// Where each slot stood, learned from recordings and kept for the next pull.
 ///
-/// The analysis has always been able to work out where a role should be, and has always written it into a
+/// The analysis has always been able to work out where a slot should be, and has always written it into a
 /// report nobody can read while a mechanic is landing on them. This is the same answer in a form the plugin can
 /// hold: keyed on the ability, so the timer window can look up what is coming and say where to go.
 ///
@@ -18,7 +18,7 @@ public sealed class LearnedPositions
 {
     public const string FileName = "learned-positions.json";
 
-    /// <summary>One role's place for one ability, measured the way the export measures it.</summary>
+    /// <summary>One slot's place for one ability, measured the way the export measures it.</summary>
     public readonly record struct Spot(float Fraction, float Bearing, float FromCaster, int Samples, int Casts, float Spread, bool Avoided)
     {
         /// <summary>The compass point, named as the reports name it.</summary>
@@ -45,19 +45,51 @@ public sealed class LearnedPositions
     private static readonly string[] Points = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
     public static string Compass(float bearing) => Points[(int)MathF.Round(((bearing % 360f) + 360f) % 360f / 45f) % 8];
 
-    // ability -> role -> where that role stood. Abilities rather than mechanic names, because an ID is the one
-    // thing cactbot, the game and this analysis all agree on without a translation table.
-    private readonly Dictionary<uint, Dictionary<PartyRolesConfig.Assignment, Spot>> _spots = [];
+    /// <summary>
+    /// What a position gets filed under.
+    ///
+    /// An assigned slot is the better answer and wins whenever there is one, because "OT" is a specific person
+    /// with a specific job to do and the position that follows from it. But a slot is only assigned by somebody
+    /// who went and configured it, which in practice means a static. Every duty finder party, every alliance
+    /// raid, every piece of levelling content has eight or twenty-four people the config has never seen.
+    ///
+    /// So the job answers when the config does not. It is coarser, and it is available for everybody without
+    /// anybody doing anything, which is the difference between learning from one player in a full alliance and
+    /// learning from all of them. Casters and physical ranged are kept apart rather than lumped as "Ranged",
+    /// since where they stand is one of the things they do not share.
+    /// </summary>
+    public static string SlotOf(Class cls, ulong contentID)
+    {
+        var role = Service.Config.Get<PartyRolesConfig>()[contentID];
+        return role != PartyRolesConfig.Assignment.Unassigned ? role.ToString() : SlotOf(cls);
+    }
+
+    /// <summary>The job's own answer, with no configuration behind it.</summary>
+    public static string SlotOf(Class cls) => cls.GetClassCategory() switch
+    {
+        ClassCategory.Tank => "Tank",
+        ClassCategory.Healer => "Healer",
+        ClassCategory.Melee => "Melee",
+        ClassCategory.PhysRanged => "PhysRanged",
+        ClassCategory.Caster => "Caster",
+        _ => ""
+    };
+
+    // ability -> slot -> where that slot stood. Abilities rather than mechanic names, because an ID is the one
+    // thing cactbot, the game and this analysis all agree on without a translation table. Slots are strings
+    // rather than the roles enum because half of them are jobs, and a file anybody may read is better off
+    // saying "Healer" than carrying a second enum nobody outside this build can resolve.
+    private readonly Dictionary<uint, Dictionary<string, Spot>> _spots = [];
 
     public int Count => _spots.Count;
 
-    public IEnumerable<(uint Ability, PartyRolesConfig.Assignment Role, Spot Spot)> All()
+    public IEnumerable<(uint Ability, string Slot, Spot Spot)> All()
     {
-        foreach (var (ability, byRole) in _spots)
+        foreach (var (ability, bySlot) in _spots)
         {
-            foreach (var (role, spot) in byRole)
+            foreach (var (slot, spot) in bySlot)
             {
-                yield return (ability, role, spot);
+                yield return (ability, slot, spot);
             }
         }
     }
@@ -71,16 +103,16 @@ public sealed class LearnedPositions
     public static void Merge(string path, LearnedPositions fresh)
     {
         var all = Load(path);
-        foreach (var (ability, role, spot) in fresh.All())
+        foreach (var (ability, slot, spot) in fresh.All())
         {
-            all.Learn(ability, role, spot);
+            all.Learn(ability, slot, spot);
         }
 
         File.WriteAllText(path, all.Build());
     }
 
-    public Spot? For(uint ability, PartyRolesConfig.Assignment role)
-        => _spots.TryGetValue(ability, out var byRole) && byRole.TryGetValue(role, out var spot) ? spot : null;
+    public Spot? For(uint ability, string slot)
+        => slot.Length > 0 && _spots.TryGetValue(ability, out var bySlot) && bySlot.TryGetValue(slot, out var spot) ? spot : null;
 
     /// <summary>
     /// Remembers a spot, keeping the better-supported of the two when one is already known.
@@ -88,17 +120,17 @@ public sealed class LearnedPositions
     /// Exporting the same fight twice must not make the answer worse, and a night with more pulls in it should
     /// win over a night with fewer.
     /// </summary>
-    public void Learn(uint ability, PartyRolesConfig.Assignment role, Spot spot)
+    public void Learn(uint ability, string slot, Spot spot)
     {
-        if (role == PartyRolesConfig.Assignment.Unassigned)
+        if (slot.Length == 0)
         {
             return;
         }
 
-        var byRole = _spots.GetOrAdd(ability);
-        if (!byRole.TryGetValue(role, out var prev) || Better(spot, prev))
+        var bySlot = _spots.GetOrAdd(ability);
+        if (!bySlot.TryGetValue(slot, out var prev) || Better(spot, prev))
         {
-            byRole[role] = spot;
+            bySlot[slot] = spot;
         }
     }
 
@@ -110,7 +142,7 @@ public sealed class LearnedPositions
         var sb = new StringBuilder();
         sb.Append("{\n  \"schema\": 1,\n  \"abilities\": {\n");
         var first = true;
-        foreach (var (ability, byRole) in _spots)
+        foreach (var (ability, bySlot) in _spots)
         {
             if (!first)
             {
@@ -119,16 +151,16 @@ public sealed class LearnedPositions
 
             first = false;
             sb.Append("    \"").Append(ability.ToString(CultureInfo.InvariantCulture)).Append("\": {");
-            var firstRole = true;
-            foreach (var (role, s) in byRole)
+            var firstSlot = true;
+            foreach (var (slot, s) in bySlot)
             {
-                if (!firstRole)
+                if (!firstSlot)
                 {
                     sb.Append(", ");
                 }
 
-                firstRole = false;
-                sb.Append('"').Append(role.ToString()).Append("\": [")
+                firstSlot = false;
+                sb.Append('"').Append(slot).Append("\": [")
                   .Append(F(s.Fraction)).Append(',').Append(F(s.Bearing)).Append(',').Append(F(s.FromCaster)).Append(',')
                   .Append(s.Samples.ToString(CultureInfo.InvariantCulture)).Append(',')
                   .Append(s.Casts.ToString(CultureInfo.InvariantCulture)).Append(',')
@@ -162,9 +194,9 @@ public sealed class LearnedPositions
             }
 
             var text = File.ReadAllText(path);
-            foreach (var (ability, role, spot) in Parse(text))
+            foreach (var (ability, slot, spot) in Parse(text))
             {
-                res.Learn(ability, role, spot);
+                res.Learn(ability, slot, spot);
             }
         }
         catch (Exception e)
@@ -186,7 +218,7 @@ public sealed class LearnedPositions
     /// write coordinates with a decimal comma. Reading has no such hazard: JSON numbers are invariant by
     /// specification, so a real parser is both safer and shorter than being clever here.
     /// </summary>
-    private static IEnumerable<(uint Ability, PartyRolesConfig.Assignment Role, Spot Spot)> Parse(string text)
+    private static IEnumerable<(uint Ability, string Slot, Spot Spot)> Parse(string text)
     {
         using var doc = JsonDocument.Parse(text);
         if (!doc.RootElement.TryGetProperty("abilities", out var abilities) || abilities.ValueKind != JsonValueKind.Object)
@@ -201,22 +233,22 @@ public sealed class LearnedPositions
                 continue;
             }
 
-            foreach (var byRole in byAbility.Value.EnumerateObject())
+            foreach (var bySlot in byAbility.Value.EnumerateObject())
             {
-                if (!Enum.TryParse<PartyRolesConfig.Assignment>(byRole.Name, out var role) || byRole.Value.ValueKind != JsonValueKind.Array)
+                if (bySlot.Name.Length == 0 || bySlot.Value.ValueKind != JsonValueKind.Array)
                 {
                     continue;
                 }
 
                 var n = new List<float>(7);
-                foreach (var v in byRole.Value.EnumerateArray())
+                foreach (var v in bySlot.Value.EnumerateArray())
                 {
                     n.Add(v.ValueKind == JsonValueKind.Number && v.TryGetSingle(out var f) ? f : 0f);
                 }
 
                 if (n.Count >= 7)
                 {
-                    yield return (ability, role, new(n[0], n[1], n[2], (int)n[3], (int)n[4], n[5], n[6] > 0.5f));
+                    yield return (ability, bySlot.Name, new(n[0], n[1], n[2], (int)n[3], (int)n[4], n[5], n[6] > 0.5f));
                 }
             }
         }

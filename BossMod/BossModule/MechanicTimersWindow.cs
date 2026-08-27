@@ -124,12 +124,12 @@ public sealed class MechanicTimersWindow : UIWindow
         _fromTimeline.Clear();
         _timeline.CollectUpcoming(_fromTimeline, max, TimelineHorizon);
 
-        var role = MyRole();
+        var slot = MySlot();
         foreach (var (name, seconds, abilities) in _fromTimeline)
         {
             // Filled proportionally over the horizon rather than a real duration: the timeline says when a
             // mechanic lands, not how long it has been coming.
-            _bars.Add((Label(name, abilities, role), seconds, TimelineHorizon));
+            _bars.Add((Label(name, abilities, slot), seconds, TimelineHorizon));
         }
     }
 
@@ -139,9 +139,9 @@ public sealed class MechanicTimersWindow : UIWindow
     /// This is the whole point of the fork. Everything else here says a mechanic is coming, which the game
     /// mostly manages on its own; this says where to be for it, in the seconds when that is still actionable.
     /// </summary>
-    private string Label(string name, uint[] abilities, PartyRolesConfig.Assignment role)
+    private string Label(string name, uint[] abilities, string slot)
     {
-        if (role == PartyRolesConfig.Assignment.Unassigned || !Config.ShowLearned)
+        if (slot.Length == 0 || !Config.ShowLearned)
         {
             return name;
         }
@@ -151,7 +151,7 @@ public sealed class MechanicTimersWindow : UIWindow
         LearnedPositions.Spot? best = null;
         foreach (var id in abilities)
         {
-            var spot = Learned.For(id, role);
+            var spot = Learned.For(id, slot);
             if (spot is LearnedPositions.Spot s && s.Worth && (best is not LearnedPositions.Spot b || s.Samples > b.Samples))
             {
                 best = s;
@@ -165,13 +165,18 @@ public sealed class MechanicTimersWindow : UIWindow
             : name;
     }
 
-    /// <summary>Which slot this player holds, which is what a learned position is filed under.</summary>
-    private PartyRolesConfig.Assignment MyRole()
+    /// <summary>
+    /// Which slot this player holds, which is what a learned position is filed under.
+    ///
+    /// An assigned slot wins where there is one. Otherwise the job answers, which is what makes this work at
+    /// all outside a static: nobody in a duty finder party has configured anything, and a healer is still a
+    /// healer whether or not somebody told the plugin so.
+    /// </summary>
+    private string MySlot()
     {
         var member = _ws.Party.Members[PartyState.PlayerSlot];
-        return member.ContentId != 0
-            ? Service.Config.Get<PartyRolesConfig>()[member.ContentId]
-            : PartyRolesConfig.Assignment.Unassigned;
+        var job = _ws.Party.Player()?.Class ?? Class.None;
+        return member.ContentId != 0 ? LearnedPositions.SlotOf(job, member.ContentId) : LearnedPositions.SlotOf(job);
     }
 
     // Loaded once and kept, since this is read every frame and rewritten only when somebody exports. The

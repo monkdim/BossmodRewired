@@ -209,13 +209,16 @@ sealed class EncounterDump : CommonEnumInfo
         {
             export.Boss = _moduleName;
             export.OID = _oid;
-            for (var i = 0; i < _encounters.Count; ++i)
+            if (_encounters.Count > 0)
             {
-                var enc = _encounters[i].Encounter;
-                export.Zone = enc.Zone;
-                export.Pulls.Add((i + 1, _oid, _moduleName, enc.Time.Start, enc.Time.End));
+                export.Zone = _encounters[0].Encounter.Zone;
             }
         }
+
+        // Pulls are registered where their arena is worked out rather than here, so that each one carries the
+        // arena its own positions were measured against. Registering them up front meant the arena could only
+        // be a single field at the top of the file, and a recording that crosses rooms then described one room
+        // and misplaced every other.
 
         var sb = new StringBuilder();
         sb.Append("Encounter dump for ").Append(_moduleName).Append(" (OID ").Append($"{_oid:X}").AppendLine(")");
@@ -352,7 +355,22 @@ sealed class EncounterDump : CommonEnumInfo
             sb.AppendLine();
 
             var arena = ArenaEstimate.ForFight(pooled, _oid, party, from, to);
-            Record(export, arena);
+
+            // Pooling measures every pull against one arena, which is correct here because they are pulls of
+            // the same boss in the same room. Each still gets its own entry, carrying that shared arena, so a
+            // reader never has to know which path produced the file.
+            if (export != null)
+            {
+                var me = PositionAnalysis.WhoRecorded(pooled);
+                for (var i = 0; i < _encounters.Count; ++i)
+                {
+                    var enc = _encounters[i].Encounter;
+                    export.BeginPull(export.Pulls.Count + 1, _oid, _moduleName, enc.Time.Start, enc.Time.End,
+                        arena?.Reference, arena?.Scale ?? 0f, arena?.Shape,
+                        PositionAnalysis.WasThere(pooled, me, enc.Time.Start, enc.Time.End));
+                }
+            }
+
             merge(PositionAnalysis.Append(sb, pooled, party, label, InAnyPull, arena, ElapsedIntoPull, export, learned));
             AppendCoverage(sb, coverage, export);
             return;
@@ -375,9 +393,11 @@ sealed class EncounterDump : CommonEnumInfo
             // correction the content with no module to check against has to borrow.
             var arena = ArenaEstimate.ForFight(replay, enc.OID, party, enc.Time.Start, enc.Time.End);
 
-            if (i == 0)
+            if (export != null)
             {
-                Record(export, arena);
+                export.BeginPull(export.Pulls.Count + 1, _oid, _moduleName, enc.Time.Start, enc.Time.End,
+                    arena?.Reference, arena?.Scale ?? 0f, arena?.Shape,
+                    PositionAnalysis.WasThere(replay, PositionAnalysis.WhoRecorded(replay), enc.Time.Start, enc.Time.End));
             }
 
             merge(PositionAnalysis.Append(sb, replay, party, label,
@@ -386,17 +406,6 @@ sealed class EncounterDump : CommonEnumInfo
         }
 
         AppendCoverage(sb, coverage, export);
-    }
-
-    /// <summary>The arena the positions are measured against, so a reader can put them on a map.</summary>
-    private static void Record(PositionExport? export, ArenaEstimate? arena)
-    {
-        if (export != null && arena != null)
-        {
-            export.ArenaCenter = arena.Reference;
-            export.ArenaScale = arena.Scale;
-            export.ArenaShape = arena.Shape;
-        }
     }
 
     /// <summary>What this boss is known to do, against what the pulls above managed to teach.</summary>

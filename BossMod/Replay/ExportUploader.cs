@@ -36,6 +36,13 @@ public static class ExportUploader
     // exhaust sockets, and a raid night is a lot of uploads.
     private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
 
+    // Sends run one after another rather than all at once. A duty finishing produces a single export and would
+    // not care either way, but exporting a folder of recordings produces a hundred within a few seconds, and a
+    // hundred at once is both a burst nobody asked the relay to absorb and a pile of writes racing each other
+    // for the same branch. A queue costs nothing here: nothing is waiting on the result.
+    private static readonly object _gate = new();
+    private static Task _chain = Task.CompletedTask;
+
     /// <summary>
     /// The relay a build ships pointed at, used when nobody has set one by hand.
     ///
@@ -68,7 +75,9 @@ public static class ExportUploader
     /// Sends one export, on a thread that is not the game's.
     ///
     /// Fire and forget on purpose. The caller has already written the file, which is the part that matters;
-    /// whether it also reached a server is not something worth making anybody wait for.
+    /// whether it also reached a server is not something worth making anybody wait for. It joins a queue
+    /// rather than starting immediately, so exporting a folder of recordings arrives as a hundred sends in a
+    /// row instead of a hundred at once.
     /// </summary>
     public static void Send(string path)
     {
@@ -78,31 +87,36 @@ public static class ExportUploader
         }
 
         var endpoint = Submit(Endpoint);
-        _ = Task.Run(async () =>
+        lock (_gate)
         {
-            try
-            {
-                var json = await File.ReadAllTextAsync(path);
-                using var content = new StringContent(json, Encoding.UTF8, "application/json");
-                using var res = await _http.PostAsync(endpoint, content);
-                var reply = await res.Content.ReadAsStringAsync();
+            _chain = _chain.ContinueWith(_ => SendOne(path, endpoint), TaskScheduler.Default).Unwrap();
+        }
+    }
 
-                if (res.IsSuccessStatusCode)
-                {
-                    Service.Log($"[upload] sent {Path.GetFileName(path)}: {reply}");
-                }
-                else
-                {
-                    Service.Log($"[upload] {Path.GetFileName(path)} refused with {(int)res.StatusCode}: {reply}");
-                }
-            }
-            catch (Exception e)
+    private static async Task SendOne(string path, string endpoint)
+    {
+        try
+        {
+            var json = await File.ReadAllTextAsync(path);
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            using var res = await _http.PostAsync(endpoint, content);
+            var reply = await res.Content.ReadAsStringAsync();
+
+            if (res.IsSuccessStatusCode)
             {
-                // Never surfaced in game. The file is still on disk, so nothing has been lost that cannot be
-                // sent again, and a raid is the worst possible moment to be told about a network error.
-                Service.Log($"[upload] could not send {Path.GetFileName(path)}: {e.Message}");
+                Service.Log($"[upload] sent {Path.GetFileName(path)}: {reply}");
             }
-        });
+            else
+            {
+                Service.Log($"[upload] {Path.GetFileName(path)} refused with {(int)res.StatusCode}: {reply}");
+            }
+        }
+        catch (Exception e)
+        {
+            // Never surfaced in game. The file is still on disk, so nothing has been lost that cannot be
+            // sent again, and a raid is the worst possible moment to be told about a network error.
+            Service.Log($"[upload] could not send {Path.GetFileName(path)}: {e.Message}");
+        }
     }
 
     /// <summary>
