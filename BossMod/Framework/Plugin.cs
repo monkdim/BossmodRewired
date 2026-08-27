@@ -157,6 +157,10 @@ public sealed class Plugin : IAsyncDalamudPlugin
         _mbox = new(_rotation, _ws);
         _partyRoles = new(_ws);
         _timelines = new(_ws);
+
+        // Settled here rather than the first time an export asks for it. Generating a salt writes the config,
+        // and analysis runs on a worker thread; doing it once on this one keeps that off the parsing path.
+        Service.Config.Get<SharingConfig>().EffectiveSalt();
         _wndBossmod = new(_bossmod, _zonemod);
         Service.BossModWindow = _wndBossmod;
         _wndBossmodHints = new(_bossmod, _zonemod);
