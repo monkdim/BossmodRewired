@@ -101,13 +101,25 @@ sealed class EncounterDump : CommonEnumInfo
 
     private void Export()
     {
-        var text = BuildAll();
+        var export = new PositionExport();
+        var text = BuildAll(export);
         var name = $"encounter-{_moduleName}-{_oid:X}.txt";
 
         try
         {
             var path = Path.Combine(TargetDirectory(), name);
             File.WriteAllText(path, text);
+
+            // Alongside rather than instead: the text is what a person reads, this is what anything else does,
+            // and losing the second must not cost the first.
+            try
+            {
+                File.WriteAllText(Path.ChangeExtension(path, ".json"), export.Build());
+            }
+            catch (Exception inner)
+            {
+                Service.Log($"[EncounterDump] positions written to text but not to data: {inner.Message}");
+            }
 
             // The path is the whole point of exporting rather than copying, so it goes to chat where it can be
             // read without digging through logs.
@@ -177,8 +189,27 @@ sealed class EncounterDump : CommonEnumInfo
         return documents.Length > 0 && Directory.Exists(documents) ? documents : Path.GetTempPath();
     }
 
-    public string BuildAll()
+    public string BuildAll() => BuildAll(null);
+
+    /// <summary>
+    /// The text export, and optionally the same analysis collected as data on the way past.
+    ///
+    /// One pass produces both, so the two can never disagree about what was seen.
+    /// </summary>
+    public string BuildAll(PositionExport? export)
     {
+        if (export != null)
+        {
+            export.Boss = _moduleName;
+            export.OID = _oid;
+            for (var i = 0; i < _encounters.Count; ++i)
+            {
+                var enc = _encounters[i].Encounter;
+                export.Zone = enc.Zone;
+                export.Pulls.Add((i + 1, _oid, _moduleName, enc.Time.Start, enc.Time.End));
+            }
+        }
+
         var sb = new StringBuilder();
         sb.Append("Encounter dump for ").Append(_moduleName).Append(" (OID ").Append($"{_oid:X}").AppendLine(")");
         sb.Append(_encounters.Count).AppendLine(" recorded pull(s).");
@@ -191,7 +222,7 @@ sealed class EncounterDump : CommonEnumInfo
             BuildOne(sb, replay, enc, i + 1);
         }
 
-        AppendPositions(sb, _replays);
+        AppendPositions(sb, _replays, export);
         return sb.ToString();
     }
 
@@ -281,7 +312,7 @@ sealed class EncounterDump : CommonEnumInfo
     /// twenty pulls exist. Pooling them is the difference between "the tank was here" and "the tank was here
     /// on eighteen of twenty pulls, within a yard", and only the second is worth writing into a module.
     /// </summary>
-    private void AppendPositions(StringBuilder sb, List<Replay> replays)
+    private void AppendPositions(StringBuilder sb, List<Replay> replays, PositionExport? export)
     {
         var roles = Service.Config.Get<PartyRolesConfig>();
         string label(Replay.Participant p) => Label(roles[p.ContentID], p);
@@ -314,8 +345,9 @@ sealed class EncounterDump : CommonEnumInfo
             sb.AppendLine();
 
             var arena = ArenaEstimate.ForFight(pooled, _oid, party, from, to);
-            merge(PositionAnalysis.Append(sb, pooled, party, label, InAnyPull, arena, ElapsedIntoPull));
-            AppendCoverage(sb, coverage);
+            Record(export, arena);
+            merge(PositionAnalysis.Append(sb, pooled, party, label, InAnyPull, arena, ElapsedIntoPull, export));
+            AppendCoverage(sb, coverage, export);
             return;
         }
 
@@ -336,16 +368,32 @@ sealed class EncounterDump : CommonEnumInfo
             // correction the content with no module to check against has to borrow.
             var arena = ArenaEstimate.ForFight(replay, enc.OID, party, enc.Time.Start, enc.Time.End);
 
+            if (i == 0)
+            {
+                Record(export, arena);
+            }
+
             merge(PositionAnalysis.Append(sb, replay, party, label,
                 a => enc.Time.Contains(a.Timestamp),
-                arena, ElapsedIntoPull));
+                arena, ElapsedIntoPull, export));
         }
 
-        AppendCoverage(sb, coverage);
+        AppendCoverage(sb, coverage, export);
+    }
+
+    /// <summary>The arena the positions are measured against, so a reader can put them on a map.</summary>
+    private static void Record(PositionExport? export, ArenaEstimate? arena)
+    {
+        if (export != null && arena != null)
+        {
+            export.ArenaCenter = arena.Reference;
+            export.ArenaScale = arena.Scale;
+            export.ArenaShape = arena.Shape;
+        }
     }
 
     /// <summary>What this boss is known to do, against what the pulls above managed to teach.</summary>
-    private void AppendCoverage(StringBuilder sb, Dictionary<uint, PositionAnalysis.Coverage> coverage)
+    private void AppendCoverage(StringBuilder sb, Dictionary<uint, PositionAnalysis.Coverage> coverage, PositionExport? export)
     {
         var windows = new List<(Replay, Replay.TimeRange)>(_encounters.Count);
         foreach (var (replay, enc) in _encounters)
@@ -353,7 +401,13 @@ sealed class EncounterDump : CommonEnumInfo
             windows.Add((replay, enc.Time));
         }
 
-        TimelineCoverage.Append(sb, TimelineCoverage.Observe(windows), coverage);
+        var observed = TimelineCoverage.Observe(windows);
+        if (export != null)
+        {
+            export.Timeline = Timelines.TimelineLibrary.Best(observed)?.Name;
+        }
+
+        TimelineCoverage.Append(sb, observed, coverage);
     }
 
     /// <summary>

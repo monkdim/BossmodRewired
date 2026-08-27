@@ -52,7 +52,13 @@ static class RecordingDump
         public bool WorthAnalysing => Seconds >= MinFightSeconds && Actions >= MinFightActions;
     }
 
-    public static string Build(Replay replay)
+    public static string Build(Replay replay) => Build(replay, null);
+
+    /// <summary>
+    /// The text export, and optionally the same analysis collected as data on the way past. Content with no
+    /// module is exactly the content nothing else has numbers for, so it wants the data form most of all.
+    /// </summary>
+    public static string Build(Replay replay, PositionExport? export)
     {
         var involved = Involved(replay);
         var events = Collect(replay, involved);
@@ -128,14 +134,33 @@ static class RecordingDump
             // No encounter means no module activated, but the registry is still worth asking: a module that
             // exists and failed to start still declares the arena, and a declaration beats an estimate.
             var arena = ArenaEstimate.ForFight(replay, fight.OID, involved, fight.Start, fight.End);
+            if (export != null)
+            {
+                export.Boss = fight.Label;
+                export.OID = fight.OID;
+                export.Pulls.Add((i + 1, fight.OID, fight.Label, fight.Start, fight.End));
+                if (arena != null)
+                {
+                    export.ArenaCenter = arena.Reference;
+                    export.ArenaScale = arena.Scale;
+                    export.ArenaShape = arena.Shape;
+                }
+            }
+
             var coverage = PositionAnalysis.Append(sb, replay, involved, Label,
                 a => a.Timestamp >= fight.Start && a.Timestamp <= fight.End, arena,
-                t => (t - fight.Start).TotalSeconds);
+                t => (t - fight.Start).TotalSeconds, export);
 
             // Per fight rather than per recording, since a recording is a night of several different ones and
             // each has a timeline of its own.
             var window = new Replay.TimeRange(fight.Start, fight.End);
-            TimelineCoverage.Append(sb, TimelineCoverage.Observe([(replay, window)]), coverage);
+            var observed = TimelineCoverage.Observe([(replay, window)]);
+            if (export != null)
+            {
+                export.Timeline ??= Timelines.TimelineLibrary.Best(observed)?.Name;
+            }
+
+            TimelineCoverage.Append(sb, observed, coverage);
         }
 
         return sb.ToString();
