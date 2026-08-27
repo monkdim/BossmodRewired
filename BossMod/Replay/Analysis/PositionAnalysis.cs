@@ -377,6 +377,7 @@ static class PositionAnalysis
                 var window = occurrences[occ];
                 var rows = new List<string>();
                 var castsHere = 0;
+                var staleReads = 0;
 
                 foreach (var (p, all) in perPlayer)
                 {
@@ -428,6 +429,21 @@ static class PositionAnalysis
 
                     var (mean, spread) = MeanAndSpread(castOffsets);
 
+                    // Identical to the last decimal, more than once, is not a tight position. A player's
+                    // recorded position only changes when the game says it changed, and PosRotAt answers every
+                    // query with the last entry at or before it, with no interpolation and no limit on how
+                    // stale that entry may be. So a span with no update in it answers every question with the
+                    // same reading, and mean absolute deviation of a repeated reading is exactly zero.
+                    //
+                    // Whether the player truly stood still or simply went untracked, these are one observation
+                    // read many times rather than many observations, which is the same error #39 and #40 fixed
+                    // for duplicate records, reached here by a different route.
+                    if (samples.Count > 1 && spread <= 0f)
+                    {
+                        ++staleReads;
+                        continue;
+                    }
+
                     // A single cast cannot show whether a position was held, so it only earns a line when the
                     // ability gathered or scattered the party, which is the case where one cast is all there
                     // is. A single cast nobody was hit by is the other exception: taking no damage is proof
@@ -463,6 +479,11 @@ static class PositionAnalysis
                 {
                     ++quietOccurrences;
                     continue;
+                }
+
+                if (staleReads > 0)
+                {
+                    rows.Add($"  {staleReads} more never had a position update recorded here, so there was nothing to measure");
                 }
 
                 // Only worth naming which occurrence this is when there is more than one to tell apart.
