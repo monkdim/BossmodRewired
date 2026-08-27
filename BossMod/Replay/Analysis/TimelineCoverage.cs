@@ -126,6 +126,7 @@ static class TimelineCoverage
         var taught = new List<Mechanic>();
         var blind = new List<Mechanic>();
         var unreached = new List<Mechanic>();
+        var inert = 0;
 
         foreach (var name in order)
         {
@@ -137,6 +138,13 @@ static class TimelineCoverage
             else if (m.Best is PositionAnalysis.Coverage.Avoided or PositionAnalysis.Coverage.Prescribed or PositionAnalysis.Coverage.Incidental)
             {
                 taught.Add(m);
+            }
+            else if (m.Best == PositionAnalysis.Coverage.NeverLanded)
+            {
+                // No cast bar, no marker, no tether, and it touched nobody. Two bosses acting on each other,
+                // or an ability with no player-facing part. Counted rather than listed: there is nothing to
+                // learn about it, so putting it on a list of work to do would be inventing work.
+                ++inert;
             }
             else
             {
@@ -162,6 +170,14 @@ static class TimelineCoverage
             "NEVER REACHED in this recording",
             "The timeline lists these and the recording contains no sign of them. A gap in the pull rather than",
             "in the tooling: wiped before them, or the phase was never entered. Nothing to fix except get further.");
+
+        if (inert > 0)
+        {
+            sb.Append("Not counted anywhere below: ").Append(inert).AppendLine(" named in the timeline that announced");
+            sb.AppendLine("themselves in no way and touched nobody, which is the bosses acting on each other rather");
+            sb.AppendLine("than a mechanic anybody has to play around.");
+            sb.AppendLine();
+        }
 
         Section(sb, taught,
             "COVERED, and now under the name people say out loud",

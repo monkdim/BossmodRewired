@@ -76,12 +76,12 @@ static class PositionAnalysis
         // avoidable, so the hints below are built from the ones that connected at least once.
         var landed = new HashSet<ActionID>();
 
-        // When a headmarker last appeared on each player. A cast bar is not the only way a mechanic announces
+        // When each player was last marked or tethered. A cast bar is not the only way a mechanic announces
         // itself: savage marks its targets and resolves instantly, and filtering the hints to cast bars alone
         // threw those away. A first real savage export left out seven abilities that way, headmarkers named
         // SpreadLockon and ShareMulti among them, which are precisely the ones a positional hint is for.
         // Kept apart from the cast-bar count so the detail section can still say an ability had no cast bar,
-        // which stays true of one that announced itself with a marker instead.
+        // which stays true of one that announced itself with a marker or a tether instead.
         // Rounded resolution moments per ability, for spotting the ones that always go off together.
         var moments = new Dictionary<ActionID, HashSet<long>>();
         var marked = new HashSet<ActionID>();
@@ -92,6 +92,18 @@ static class PositionAnalysis
             {
                 markers.GetOrAdd(icon.Target).Add(icon.Timestamp);
             }
+        }
+
+        // A tether announces a mechanic every bit as plainly as a headmarker, and this analysis was blind to
+        // the whole channel. One M2 Savage pull carries forty-seven of them against fifty-one headmarkers, and
+        // the mechanics they announce were being reported as hitting with no warning at all: the flame floater
+        // tethers a player two seconds before it lands on them, which is the entire point of the tether.
+        // Both ends go in, since a tether between the boss and a player is a warning to that player and a
+        // tether between two players is a warning to both.
+        foreach (var tether in replay.Tethers)
+        {
+            markers.GetOrAdd(tether.Target).Add(tether.Time.Start);
+            markers.GetOrAdd(tether.Source).Add(tether.Time.Start);
         }
 
         // Whether an ability ever caught more than one person at once. A mechanic that gathers or scatters the
@@ -288,8 +300,8 @@ static class PositionAnalysis
 
         sb.AppendLine("========================================================================");
         sb.AppendLine("WHERE TO STAND, per role, at the moment each cast begins");
-        sb.AppendLine("Only abilities that announced themselves first, by cast bar or headmarker, and only");
-        sb.AppendLine("positions that were actually held.");
+        sb.AppendLine("Only abilities that announced themselves first, by cast bar, headmarker or tether, and");
+        sb.AppendLine("only positions that were actually held.");
         sb.AppendLine("An ability that touched nobody is the best case here rather than the worst: the party");
         sb.AppendLine("dodged it, so where they stood is a spot proven to be safe.");
         sb.AppendLine("Anything a player wandered around is left out: a mean position with a wide spread behind it");
@@ -522,11 +534,12 @@ static class PositionAnalysis
         return $"{d,6:f2}y {Octant(offset),-8}({fraction:f2}r)";
     }
 
-    // How long a headmarker can precede its resolution and still be its warning. Long enough for the spread
-    // markers that sit on people for most of a mechanic, short enough not to claim the previous one's.
+    // How long a headmarker or tether can precede its resolution and still be its warning. Long enough for
+    // the spread markers that sit on people for most of a mechanic, short enough not to claim the previous
+    // one's.
     private const double MarkerWarning = 15d;
 
-    /// <summary>Whether anybody this ability hit was wearing a headmarker in the seconds before it landed.</summary>
+    /// <summary>Whether anybody this ability hit was marked or tethered in the seconds before it landed.</summary>
     private static bool WasMarked(Dictionary<Replay.Participant, List<DateTime>> markers, Replay.Action a)
     {
         foreach (var t in a.Targets)
