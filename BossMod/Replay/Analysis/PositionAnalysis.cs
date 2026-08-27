@@ -9,6 +9,30 @@ namespace BossMod.ReplayAnalysis;
 /// </summary>
 static class PositionAnalysis
 {
+    /// <summary>
+    /// How much this analysis managed to say about where to stand for one ability, worst outcome first.
+    ///
+    /// Ordered so that merging two pulls is a maximum. A mechanic nobody held a spot for in one pull and did
+    /// in the next is covered, and the pull that taught nothing should not be able to argue otherwise.
+    /// </summary>
+    public enum Coverage
+    {
+        /// <summary>It resolved, but touched nobody, so there was nothing to be standing away from.</summary>
+        NeverLanded,
+
+        /// <summary>It hit, with no cast bar and no headmarker. Nothing announced it in time to move.</summary>
+        Unannounced,
+
+        /// <summary>It announced itself and it hit, and nobody held a position for it worth reporting.</summary>
+        Unheld,
+
+        /// <summary>Position genuinely did not matter: it caught everyone wherever they stood.</summary>
+        Incidental,
+
+        /// <summary>Somebody held a spot for it, and this export says where.</summary>
+        Prescribed,
+    }
+
     /// <summary>Pets and buddies fight on your side, so "not a player" is the wrong test for hostility.</summary>
     private static bool IsHostile(Replay.Participant p)
         => p.Type is not (ActorType.Player or ActorType.Pet or ActorType.Chocobo or ActorType.Buddy);
@@ -24,11 +48,16 @@ static class PositionAnalysis
     /// is usually standing in the middle of it, so when the caller can name an arena the same positions are
     /// reported from its centre as well.
     /// </summary>
-    public static void Append(StringBuilder sb, Replay replay, IReadOnlyCollection<Replay.Participant> involved, Func<Replay.Participant, string> label, Func<Replay.Action, bool> inScope, ArenaEstimate? arena = null)
+    /// <remarks>
+    /// Also returns what it managed to say about each ability, which is what the coverage report reads to work
+    /// out which of a fight's named mechanics this export still has nothing useful to say about.
+    /// </remarks>
+    public static Dictionary<uint, Coverage> Append(StringBuilder sb, Replay replay, IReadOnlyCollection<Replay.Participant> involved, Func<Replay.Participant, string> label, Func<Replay.Action, bool> inScope, ArenaEstimate? arena = null)
     {
+        var outcomes = new Dictionary<uint, Coverage>();
         if (involved.Count == 0)
         {
-            return;
+            return outcomes;
         }
 
         // A knockback lands its damage first and moves people a moment later, so a sample taken at the
@@ -209,7 +238,8 @@ static class PositionAnalysis
             sb.AppendLine();
         }
 
-        AppendHints(sb, byAbility, resolutions, telegraphed, marked, landed, grouped, shapes, moments, label, arena);
+        AppendHints(sb, byAbility, resolutions, telegraphed, marked, landed, grouped, shapes, moments, label, arena, outcomes);
+        return outcomes;
     }
 
     // A cast-time spread this tight means the position was chosen rather than stumbled into, and is the line
@@ -240,8 +270,19 @@ static class PositionAnalysis
         Dictionary<ActionID, (string Text, bool Positional)> shapes,
         Dictionary<ActionID, HashSet<long>> moments,
         Func<Replay.Participant, string> label,
-        ArenaEstimate? arena)
+        ArenaEstimate? arena,
+        Dictionary<uint, Coverage> outcomes)
     {
+        // Only spells, and only the best outcome for one that appears twice. Everything that joins against a
+        // cactbot timeline joins on the spell ID, and nothing else has one.
+        void record(ActionID aid, Coverage c)
+        {
+            if (aid.Type == ActionType.Spell && (!outcomes.TryGetValue(aid.ID, out var prev) || c > prev))
+            {
+                outcomes[aid.ID] = c;
+            }
+        }
+
         sb.AppendLine("========================================================================");
         sb.AppendLine("WHERE TO STAND, per role, at the moment each cast begins");
         sb.AppendLine("Only abilities that hit somebody and announced themselves first, by cast bar or headmarker,");
@@ -258,11 +299,13 @@ static class PositionAnalysis
         {
             if (!landed.Contains(aid))
             {
+                record(aid, Coverage.NeverLanded);
                 continue;
             }
 
             if (telegraphed.GetValueOrDefault(aid) == 0 && !marked.Contains(aid))
             {
+                record(aid, Coverage.Unannounced);
                 ++skippedInstant;
                 continue;
             }
@@ -273,6 +316,7 @@ static class PositionAnalysis
             // next to a line saying position did not matter is a contradiction the reader has to resolve.
             if (!shape.Positional)
             {
+                record(aid, Coverage.Incidental);
                 ++shown;
                 sb.Append(aid.ToString()).Append("  (").Append(shape.Text).AppendLine(")");
                 sb.AppendLine("  nothing to position for: everyone was caught wherever they stood");
@@ -324,10 +368,12 @@ static class PositionAnalysis
 
             if (rows.Count == 0)
             {
+                record(aid, Coverage.Unheld);
                 ++skippedUnheld;
                 continue;
             }
 
+            record(aid, Coverage.Prescribed);
             ++shown;
             sb.Append(aid.ToString()).Append("  (").Append(shape.Text).AppendLine(")");
 

@@ -128,8 +128,13 @@ static class RecordingDump
             // No encounter means no module activated, but the registry is still worth asking: a module that
             // exists and failed to start still declares the arena, and a declaration beats an estimate.
             var arena = ArenaEstimate.ForFight(replay, fight.OID, involved, fight.Start, fight.End);
-            PositionAnalysis.Append(sb, replay, involved, Label,
+            var coverage = PositionAnalysis.Append(sb, replay, involved, Label,
                 a => a.Timestamp >= fight.Start && a.Timestamp <= fight.End, arena);
+
+            // Per fight rather than per recording, since a recording is a night of several different ones and
+            // each has a timeline of its own.
+            var window = new Replay.TimeRange(fight.Start, fight.End);
+            TimelineCoverage.Append(sb, TimelineCoverage.Observe([(replay, window)]), coverage);
         }
 
         return sb.ToString();
