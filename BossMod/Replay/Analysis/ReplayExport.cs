@@ -12,9 +12,19 @@ namespace BossMod.ReplayAnalysis;
 static class ReplayExport
 {
     public static string FileName(string logPath) => $"{Path.GetFileNameWithoutExtension(logPath)}.txt";
+    public static string DataFileName(string logPath) => $"{Path.GetFileNameWithoutExtension(logPath)}.json";
 
     /// <summary>Everything worth reading about one recording, and a one-line description of what that was.</summary>
-    public static (string Text, string Summary) Build(Replay replay)
+    public static (string Text, string Summary) Build(Replay replay) => Build(replay, null);
+
+    /// <summary>
+    /// The same, collecting the positions as data on the way past when asked.
+    ///
+    /// A recording with several bosses in it produces one data file rather than one per boss, since the samples
+    /// carry the ability they belong to and a reader can split them far more easily than it could stitch
+    /// several files back together.
+    /// </summary>
+    public static (string Text, string Summary) Build(Replay replay, PositionExport? export)
     {
         var sb = new StringBuilder();
 
@@ -22,7 +32,7 @@ static class ReplayExport
         {
             // Encounters only exist where a module activated, so content nobody has covered yet produces none.
             // That is the content most worth capturing, so it gets dumped wholesale rather than skipped.
-            sb.Append(RecordingDump.Build(replay));
+            sb.Append(RecordingDump.Build(replay, export));
             return (sb.ToString(), "no boss module for this duty, exported the whole recording");
         }
 
@@ -32,7 +42,7 @@ static class ReplayExport
         {
             if (oids.Add(enc.OID))
             {
-                sb.Append(new EncounterDump(replays, enc.OID).BuildAll());
+                sb.Append(new EncounterDump(replays, enc.OID).BuildAll(export));
                 sb.AppendLine();
             }
         }
@@ -43,9 +53,23 @@ static class ReplayExport
     /// <summary>Writes the export next to the others and returns a line describing where it went.</summary>
     public static string Write(Replay replay)
     {
-        var (text, summary) = Build(replay);
-        var target = Path.Combine(EncounterDump.TargetDirectory(), FileName(replay.Path));
+        var export = new PositionExport();
+        var (text, summary) = Build(replay, export);
+        var dir = EncounterDump.TargetDirectory();
+        var target = Path.Combine(dir, FileName(replay.Path));
         File.WriteAllText(target, text);
+
+        // The data file is written alongside rather than instead. The text is what a person reads; this is what
+        // anything else reads, and a failure to write it must not cost the export that was already produced.
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, DataFileName(replay.Path)), export.Build());
+        }
+        catch (Exception e)
+        {
+            Service.Log($"[ReplayExport] positions written to text but not to data: {e.Message}");
+        }
+
         return $"Exported {summary} to {target}";
     }
 }

@@ -55,7 +55,7 @@ static class PositionAnalysis
     /// Also returns what it managed to say about each ability, which is what the coverage report reads to work
     /// out which of a fight's named mechanics this export still has nothing useful to say about.
     /// </remarks>
-    public static Dictionary<uint, Coverage> Append(StringBuilder sb, Replay replay, IReadOnlyCollection<Replay.Participant> involved, Func<Replay.Participant, string> label, Func<Replay.Action, bool> inScope, ArenaEstimate? arena = null, Func<DateTime, double>? elapsed = null)
+    public static Dictionary<uint, Coverage> Append(StringBuilder sb, Replay replay, IReadOnlyCollection<Replay.Participant> involved, Func<Replay.Participant, string> label, Func<Replay.Action, bool> inScope, ArenaEstimate? arena = null, Func<DateTime, double>? elapsed = null, PositionExport? export = null)
     {
         var outcomes = new Dictionary<uint, Coverage>();
         if (involved.Count == 0)
@@ -171,9 +171,18 @@ static class PositionAnalysis
                 var castWorld = new WPos(atCast.X, atCast.Z);
                 var hitWorld = new WPos(atHit.X, atHit.Z);
                 var settledWorld = new WPos(settled.X, settled.Z);
+                var into = elapsed?.Invoke(hitAt) ?? 0d;
                 perPlayer.GetOrAdd(p).Add(new(
                     castWorld - castOrigin, hitWorld - hitOrigin, settledWorld - hitOrigin,
-                    castWorld, hitWorld, settledWorld, elapsed?.Invoke(hitAt) ?? 0d, hitAt));
+                    castWorld, hitWorld, settledWorld, into, hitAt));
+
+                // Recorded before any of the filtering below, deliberately. The text export exists to say what
+                // is worth acting on; this exists to say what was seen, and a reader that only ever gets the
+                // conclusions cannot check them.
+                if (export != null && a.ID.Type == ActionType.Spell)
+                {
+                    export.Add(new(a.ID.ID, label(p), hitAt, into, castWorld, hitWorld, settledWorld, castOrigin));
+                }
             }
         }
 
@@ -182,6 +191,19 @@ static class PositionAnalysis
         foreach (var aid in byAbility.Keys)
         {
             shapes[aid] = Classify(replay, aid, involved.Count, inScope);
+        }
+
+        if (export != null)
+        {
+            foreach (var (aid, shape) in shapes)
+            {
+                if (aid.Type == ActionType.Spell)
+                {
+                    export.Describe(new(aid.ID, aid.Name(), shape.Text, shape.Positional,
+                        resolutions.GetValueOrDefault(aid), telegraphed.GetValueOrDefault(aid) > 0,
+                        marked.Contains(aid), landed.Contains(aid)));
+                }
+            }
         }
 
         sb.AppendLine("========================================================================");
