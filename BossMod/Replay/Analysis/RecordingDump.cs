@@ -306,8 +306,17 @@ static class RecordingDump
         return role != PartyRolesConfig.Assignment.Unassigned ? $"{role} {p.Class}" : $"{p.Class} {Name(p)}";
     }
 
+    /// <summary>
+    /// What to call a player in a file somebody else may read.
+    ///
+    /// Never their name. A role when one is assigned, since that is what the report is about anyway, and
+    /// otherwise their job beside a handle that stays the same throughout the file and means nothing outside
+    /// it. Recordings keep the real names; exports are the thing that travels.
+    /// </summary>
     private static string Name(Replay.Participant p)
-        => p.NameHistory.Count > 0 ? p.NameHistory.Values[0].name : $"{p.InstanceID:X}";
+        => p.Type == ActorType.Player
+            ? SharedIdentity.Handle(p.ContentID)
+            : p.NameHistory.Count > 0 ? p.NameHistory.Values[0].name : $"{p.InstanceID:X}";
 
     private static void AppendFightList(StringBuilder sb, List<Fight> fights)
     {

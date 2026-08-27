@@ -517,11 +517,14 @@ sealed class EncounterDump : CommonEnumInfo
         return party.Count > 0 && to > from ? (replay, party, from, to) : null;
     }
 
+    /// <summary>
+    /// What to call a player in a file somebody else may read. Their role where one is assigned, and their job
+    /// beside a handle where none is. Never their name: the recording keeps that, the export travels.
+    /// </summary>
     private static string Label(PartyRolesConfig.Assignment role, Replay.Participant p)
-    {
-        var name = p.NameHistory.Count > 0 ? p.NameHistory.Values[0].name : $"{p.InstanceID:X}";
-        return role != PartyRolesConfig.Assignment.Unassigned ? $"{role} {p.Class}" : $"{p.Class} {name}";
-    }
+        => role != PartyRolesConfig.Assignment.Unassigned
+            ? $"{role} {p.Class}"
+            : $"{p.Class} {SharedIdentity.Handle(p.ContentID)}";
 
     private List<Event> CollectEvents(Replay replay, Replay.Encounter enc)
     {
@@ -621,7 +624,10 @@ sealed class EncounterDump : CommonEnumInfo
     {
         if (p.Type == ActorType.Player)
         {
-            return p.NameAt(t).name ?? "player";
+            // The timeline names whoever a mechanic hit, hundreds of times over a pull, and a name there
+            // would undo everything the labels above are careful about.
+            var role = Service.Config.Get<PartyRolesConfig>()[p.ContentID];
+            return role != PartyRolesConfig.Assignment.Unassigned ? role.ToString() : SharedIdentity.Handle(p.ContentID);
         }
 
         var name = _oidType?.GetEnumName(p.OID);
