@@ -286,6 +286,22 @@ sealed class EncounterDump : CommonEnumInfo
         var roles = Service.Config.Get<PartyRolesConfig>();
         string label(Replay.Participant p) => Label(roles[p.ContentID], p);
 
+        // Coverage is worked out across every pull whatever happens below, and merged rather than printed per
+        // pull. Positions have to be pooled carefully, since pulls in different arena instances cannot share a
+        // centre, but whether a mechanic was ever reached has nothing to do with where the room was: a
+        // mechanic seen on one pull out of seven is covered, and saying so six more times is noise.
+        var coverage = new Dictionary<uint, PositionAnalysis.Coverage>();
+        void merge(Dictionary<uint, PositionAnalysis.Coverage> from)
+        {
+            foreach (var (id, c) in from)
+            {
+                if (!coverage.TryGetValue(id, out var prev) || c > prev)
+                {
+                    coverage[id] = c;
+                }
+            }
+        }
+
         var pool = Poolable();
         if (pool != null)
         {
@@ -298,7 +314,8 @@ sealed class EncounterDump : CommonEnumInfo
             sb.AppendLine();
 
             var arena = ArenaEstimate.ForFight(pooled, _oid, party, from, to);
-            PositionAnalysis.Append(sb, pooled, party, label, InAnyPull, arena);
+            merge(PositionAnalysis.Append(sb, pooled, party, label, InAnyPull, arena));
+            AppendCoverage(sb, coverage);
             return;
         }
 
@@ -319,10 +336,24 @@ sealed class EncounterDump : CommonEnumInfo
             // correction the content with no module to check against has to borrow.
             var arena = ArenaEstimate.ForFight(replay, enc.OID, party, enc.Time.Start, enc.Time.End);
 
-            PositionAnalysis.Append(sb, replay, party, label,
+            merge(PositionAnalysis.Append(sb, replay, party, label,
                 a => enc.Time.Contains(a.Timestamp),
-                arena);
+                arena));
         }
+
+        AppendCoverage(sb, coverage);
+    }
+
+    /// <summary>What this boss is known to do, against what the pulls above managed to teach.</summary>
+    private void AppendCoverage(StringBuilder sb, Dictionary<uint, PositionAnalysis.Coverage> coverage)
+    {
+        var windows = new List<(Replay, Replay.TimeRange)>(_encounters.Count);
+        foreach (var (replay, enc) in _encounters)
+        {
+            windows.Add((replay, enc.Time));
+        }
+
+        TimelineCoverage.Append(sb, TimelineCoverage.Observe(windows), coverage);
     }
 
     /// <summary>Whether an action happened during any pull, so the gaps between them are left out.</summary>
