@@ -50,6 +50,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
     private BossModuleMainWindow _wndBossmod = null!;
     private BossModuleHintsWindow _wndBossmodHints = null!;
     private ZoneModuleWindow _wndZone = null!;
+    private Timelines.TimelineTracker _timelines = null!;
     private MechanicTimersWindow _wndTimers = null!;
     private MechanicDivergenceTracker _divergence = null!;
     private MechanicDivergenceWindow _wndDivergence = null!;
@@ -155,11 +156,12 @@ public sealed class Plugin : IAsyncDalamudPlugin
         _dtr = new(_rotation, _ai);
         _mbox = new(_rotation, _ws);
         _partyRoles = new(_ws);
+        _timelines = new(_ws);
         _wndBossmod = new(_bossmod, _zonemod);
         Service.BossModWindow = _wndBossmod;
         _wndBossmodHints = new(_bossmod, _zonemod);
         _wndZone = new(_zonemod);
-        _wndTimers = new(_ws, _bossmod);
+        _wndTimers = new(_ws, _bossmod, _timelines);
         _divergence = new(_ws, _bossmod);
         _wndDivergence = new(_divergence);
         var config = Service.Config.Get<ReplayManagementConfig>();
@@ -200,6 +202,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
         _wndDivergence.Dispose();
         _divergence.Dispose();
         _wndTimers.Dispose();
+        _timelines.Dispose();
         _wndZone.Dispose();
         _wndBossmodHints.Dispose();
         _wndBossmod.Dispose();
@@ -348,6 +351,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
         Camera.Instance?.Update();
         _wsSync.Update(_prevUpdateTime);
         _partyRoles.Update();
+        _timelines.Update();
         _bossmod.Update();
         _zonemod.ActiveModule?.Update();
         _hintsBuilder.Update(_hints, PartyState.PlayerSlot, moveImminent);

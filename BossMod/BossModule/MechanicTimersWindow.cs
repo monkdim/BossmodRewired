@@ -9,6 +9,10 @@ namespace BossMod;
 /// phase and therefore have no timeline at all. Upcoming states come from the module's state machine, which
 /// already predicts the next mechanic and the seconds until it fires; until this window existed that
 /// prediction was only ever rendered as two lines of debug text.
+///
+/// The third source is a cactbot timeline, which covers three hundred fights whether or not a module exists
+/// for them and names each mechanic as raiders do. Between them: a cast bar tells you what is happening, a
+/// state tells you what a module predicts, and the timeline tells you what the fight does next.
 /// </summary>
 [SkipLocalsInit]
 public sealed class MechanicTimersWindow : UIWindow
@@ -20,17 +24,23 @@ public sealed class MechanicTimersWindow : UIWindow
     // Casts further away than this are somebody else's problem, or another pack entirely.
     private const float RelevantRange = 60f;
 
+    // How far ahead a timeline is worth reading. Beyond this a bar is barely moving and says little.
+    private const float TimelineHorizon = 30f;
+
     private static MechanicTimersConfig Config => Service.Config.Get<MechanicTimersConfig>();
 
     private readonly WorldState _ws;
     private readonly BossModuleManager _mgr;
+    private readonly Timelines.TimelineTracker _timeline;
+    private readonly List<Timelines.TimelineTracker.Upcoming> _fromTimeline = [];
     private readonly List<(string Label, float Remaining, float Total)> _bars = [];
     private int _castBars;
 
-    public MechanicTimersWindow(WorldState ws, BossModuleManager mgr) : base("Mechanic timers", false, new(260f, 160f))
+    public MechanicTimersWindow(WorldState ws, BossModuleManager mgr, Timelines.TimelineTracker timeline) : base("Mechanic timers", false, new(260f, 160f))
     {
         _ws = ws;
         _mgr = mgr;
+        _timeline = timeline;
         RespectCloseHotkey = false;
     }
 
@@ -54,6 +64,11 @@ public sealed class MechanicTimersWindow : UIWindow
             if (config.ShowStates)
             {
                 CollectStates(config.MaxUpcoming);
+            }
+
+            if (config.ShowTimeline)
+            {
+                CollectTimeline(config.MaxUpcoming);
             }
         }
 
@@ -96,6 +111,24 @@ public sealed class MechanicTimersWindow : UIWindow
             {
                 ImGui.Separator();
             }
+        }
+    }
+
+    /// <summary>
+    /// What the fight itself does next, named as raiders name it. Unlike the other two sources this needs no
+    /// module and no cast to have started, so it is the only one that can warn about a mechanic before the
+    /// game gives any sign of it.
+    /// </summary>
+    private void CollectTimeline(int max)
+    {
+        _fromTimeline.Clear();
+        _timeline.CollectUpcoming(_fromTimeline, max, TimelineHorizon);
+
+        foreach (var (name, seconds) in _fromTimeline)
+        {
+            // Filled proportionally over the horizon rather than a real duration: the timeline says when a
+            // mechanic lands, not how long it has been coming.
+            _bars.Add((name, seconds, TimelineHorizon));
         }
     }
 

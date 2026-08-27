@@ -4,12 +4,15 @@ using System.Reflection;
 namespace BossMod.Timelines;
 
 /// <summary>
-/// Every bundled timeline, and the means to work out which one describes a given recording.
+/// Every bundled timeline, and two ways of picking the one that describes a fight.
 ///
-/// Deliberately not keyed on zone or duty name. Cactbot files it's timelines by expansion and content type
-/// under names of its own, and any table mapping those to our zones would be another thing to maintain and
-/// another thing to be wrong. The abilities are the identity: a fight that used forty of a timeline's ability
-/// IDs is that fight, whatever either side chose to call it.
+/// By zone, for anything live: cactbot pairs zone to timeline itself, and `ZoneTimelines.txt`
+/// carries that pairing over, so the right timeline is known the moment the zone loads. That matters because
+/// the opening of a fight is exactly the part somebody wants a countdown for.
+///
+/// By abilities, for a finished recording: a fight that used forty of a timeline's ability IDs is that fight
+/// whatever either side chose to call it, and this needs no zone at all. Slower, since it takes a fair number
+/// of casts before the answer is clear, but it works on a log rather than on a running game.
 /// </summary>
 public static class TimelineLibrary
 {
@@ -61,6 +64,66 @@ public static class TimelineLibrary
         }
 
         return best;
+    }
+
+    private static readonly Lazy<Dictionary<ushort, CactbotTimeline>> _byZone = new(LoadZones);
+
+    /// <summary>
+    /// The timeline for a zone, from cactbot's own pairing of the two.
+    ///
+    /// Worth the table rather than working it out from the abilities as they appear. Measured against a real
+    /// M2 Savage pull, recognising the fight from overlap alone took until forty seconds in, and the opening
+    /// is exactly the part somebody needs a countdown for.
+    /// </summary>
+    public static CactbotTimeline? ForZone(ushort zone) => _byZone.Value.GetValueOrDefault(zone);
+
+    private static Dictionary<ushort, CactbotTimeline> LoadZones()
+    {
+        var res = new Dictionary<ushort, CactbotTimeline>();
+        var byName = new Dictionary<string, CactbotTimeline>(StringComparer.OrdinalIgnoreCase);
+        foreach (var t in All)
+        {
+            byName[t.Name] = t;
+        }
+
+        var assembly = Assembly.GetExecutingAssembly();
+        using var stream = assembly.GetManifestResourceStream(Prefix + "ZoneTimelines.txt");
+        if (stream == null)
+        {
+            Service.Log("[timelines] no zone table found");
+            return res;
+        }
+
+        using var reader = new StreamReader(stream);
+        while (reader.ReadLine() is string raw)
+        {
+            var line = raw.Trim();
+            if (line.Length == 0 || line[0] == '#')
+            {
+                continue;
+            }
+
+            var space = line.IndexOf(' ');
+            if (space <= 0 || !ushort.TryParse(line[..space], out var zone))
+            {
+                continue;
+            }
+
+            // Stored under cactbot's nested name, flattened the same way the files were.
+            var file = line[(space + 1)..].Trim();
+            if (file.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+            {
+                file = file[..^4];
+            }
+
+            if (byName.TryGetValue(file, out var timeline))
+            {
+                res[zone] = timeline;
+            }
+        }
+
+        Service.Log($"[timelines] {res.Count} zones mapped");
+        return res;
     }
 
     private static List<CactbotTimeline> Load()
