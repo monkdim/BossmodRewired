@@ -41,7 +41,7 @@ static class PositionAnalysis
         => p.Type is not (ActorType.Player or ActorType.Pet or ActorType.Chocobo or ActorType.Buddy);
 
     /// <summary>Where each player stood at one moment, both relative to the caster and in the world.</summary>
-    private readonly record struct Sample(WDir AtCast, WDir AtHit, WDir Settled, WPos CastWorld, WPos HitWorld, WPos SettledWorld);
+    private readonly record struct Sample(WDir AtCast, WDir AtHit, WDir Settled, WPos CastWorld, WPos HitWorld, WPos SettledWorld, double Elapsed);
 
     /// <summary>
     /// Where everyone stood when each ability resolved, measured from the caster: "how far from the thing
@@ -55,7 +55,7 @@ static class PositionAnalysis
     /// Also returns what it managed to say about each ability, which is what the coverage report reads to work
     /// out which of a fight's named mechanics this export still has nothing useful to say about.
     /// </remarks>
-    public static Dictionary<uint, Coverage> Append(StringBuilder sb, Replay replay, IReadOnlyCollection<Replay.Participant> involved, Func<Replay.Participant, string> label, Func<Replay.Action, bool> inScope, ArenaEstimate? arena = null)
+    public static Dictionary<uint, Coverage> Append(StringBuilder sb, Replay replay, IReadOnlyCollection<Replay.Participant> involved, Func<Replay.Participant, string> label, Func<Replay.Action, bool> inScope, ArenaEstimate? arena = null, Func<DateTime, double>? elapsed = null)
     {
         var outcomes = new Dictionary<uint, Coverage>();
         if (involved.Count == 0)
@@ -173,7 +173,7 @@ static class PositionAnalysis
                 var settledWorld = new WPos(settled.X, settled.Z);
                 perPlayer.GetOrAdd(p).Add(new(
                     castWorld - castOrigin, hitWorld - hitOrigin, settledWorld - hitOrigin,
-                    castWorld, hitWorld, settledWorld));
+                    castWorld, hitWorld, settledWorld, elapsed?.Invoke(hitAt) ?? 0d));
             }
         }
 
@@ -253,7 +253,7 @@ static class PositionAnalysis
             sb.AppendLine();
         }
 
-        AppendHints(sb, byAbility, resolutions, telegraphed, marked, landed, grouped, shapes, moments, label, arena, outcomes);
+        AppendHints(sb, byAbility, resolutions, telegraphed, marked, landed, grouped, shapes, moments, label, arena, outcomes, elapsed != null);
         return outcomes;
     }
 
@@ -286,7 +286,8 @@ static class PositionAnalysis
         Dictionary<ActionID, HashSet<long>> moments,
         Func<Replay.Participant, string> label,
         ArenaEstimate? arena,
-        Dictionary<uint, Coverage> outcomes)
+        Dictionary<uint, Coverage> outcomes,
+        bool haveElapsed)
     {
         // Only spells, and only the best outcome for one that appears twice. Everything that joins against a
         // cactbot timeline joins on the spell ID, and nothing else has one.
@@ -357,49 +358,98 @@ static class PositionAnalysis
 
             var casts = resolutions.GetValueOrDefault(aid);
             var isGroup = grouped.Contains(aid);
-            var rows = new List<string>();
 
-            foreach (var (p, samples) in perPlayer)
+            // One ability is often several mechanics. Alley-oop Inferno uses the same two IDs at forty-seven
+            // seconds, at two hundred and fifty-seven, and at two hundred and eighty, and the party is
+            // somewhere entirely different each time. Pooling all eight into one mean produced a spread wide
+            // enough to be discarded, which is how the most-repeated mechanics in a fight ended up in the list
+            // of things nothing could be said about.
+            //
+            // Clustering is on time into the pull rather than wall-clock time, so the same moment across seven
+            // pulls pools together, which is the whole point of pooling, while a different moment in the same
+            // pull stays separate.
+            var occurrences = Cluster(perPlayer, haveElapsed);
+            var printed = new List<string>();
+
+            for (var occ = 0; occ < occurrences.Count; ++occ)
             {
-                var castOffsets = new List<WDir>(samples.Count);
-                foreach (var sample in samples)
+                var window = occurrences[occ];
+                var rows = new List<string>();
+                var castsHere = 0;
+
+                foreach (var (p, all) in perPlayer)
                 {
-                    castOffsets.Add(sample.AtCast);
+                    var samples = new List<Sample>();
+                    foreach (var sample in all)
+                    {
+                        if (sample.Elapsed >= window.From && sample.Elapsed <= window.To)
+                        {
+                            samples.Add(sample);
+                        }
+                    }
+
+                    if (samples.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    castsHere = Math.Max(castsHere, samples.Count);
+
+                    var castOffsets = new List<WDir>(samples.Count);
+                    foreach (var sample in samples)
+                    {
+                        castOffsets.Add(sample.AtCast);
+                    }
+
+                    var (mean, spread) = MeanAndSpread(castOffsets);
+
+                    // A single cast cannot show whether a position was held, so it only earns a line when the
+                    // ability gathered or scattered the party, which is the case where one cast is all there
+                    // is. A single cast nobody was hit by is the other exception: taking no damage is proof
+                    // the spot was safe, which is more than a tidy-looking mean on a cast that landed can
+                    // claim.
+                    var trustworthy = samples.Count > 1 ? spread < LooseSpot : isGroup || avoided;
+                    if (!trustworthy)
+                    {
+                        continue;
+                    }
+
+                    var row = new StringBuilder();
+                    row.Append("  ").Append(label(p).PadRight(24))
+                       .Append("from caster ").Append(Fixed(mean.Length())).Append("y ").Append(Octant(mean).PadRight(8));
+
+                    if (arena != null)
+                    {
+                        var centre = new List<WDir>(samples.Count);
+                        foreach (var sample in samples)
+                        {
+                            centre.Add(sample.CastWorld - arena.Reference);
+                        }
+
+                        var (fromCentre, _) = MeanAndSpread(centre);
+                        var fraction = arena.Scale > 0f ? fromCentre.Length() / arena.Scale : 0f;
+                        row.Append("from centre ").Append(fraction.ToString("f2")).Append("r ").Append(Octant(fromCentre).PadRight(8));
+                    }
+
+                    rows.Add(row.Append(Confidence(samples.Count, castsHere, spread, avoided)).ToString());
                 }
 
-                var (mean, spread) = MeanAndSpread(castOffsets);
-
-                // A single cast cannot show whether a position was held, so it only earns a line when the
-                // ability gathered or scattered the party, which is the case where one cast is all there is.
-                // A single cast nobody was hit by is the other exception: taking no damage is proof the spot
-                // was safe, which is more than a tidy-looking mean on a cast that landed can claim.
-                var trustworthy = samples.Count > 1 ? spread < LooseSpot : isGroup || avoided;
-                if (!trustworthy)
+                if (rows.Count == 0)
                 {
                     continue;
                 }
 
-                var row = new StringBuilder();
-                row.Append("  ").Append(label(p).PadRight(24))
-                   .Append("from caster ").Append(Fixed(mean.Length())).Append("y ").Append(Octant(mean).PadRight(8));
-
-                if (arena != null)
+                // Only worth naming which occurrence this is when there is more than one to tell apart.
+                if (occurrences.Count > 1)
                 {
-                    var centre = new List<WDir>(samples.Count);
-                    foreach (var sample in samples)
-                    {
-                        centre.Add(sample.CastWorld - arena.Reference);
-                    }
-
-                    var (fromCentre, _) = MeanAndSpread(centre);
-                    var fraction = arena.Scale > 0f ? fromCentre.Length() / arena.Scale : 0f;
-                    row.Append("from centre ").Append(fraction.ToString("f2")).Append("r ").Append(Octant(fromCentre).PadRight(8));
+                    printed.Add($"  the one around T+{window.From:f0}s into the pull:");
                 }
 
-                rows.Add(row.Append(Confidence(samples.Count, casts, spread, avoided)).ToString());
+                printed.AddRange(rows);
+                printed.Add("");
             }
 
-            if (rows.Count == 0)
+            if (printed.Count == 0)
             {
                 record(aid, Coverage.Unheld);
                 ++skippedUnheld;
@@ -420,12 +470,10 @@ static class PositionAnalysis
                   .AppendLine(", so measure from the centre rather than from either caster");
             }
 
-            foreach (var row in rows)
+            foreach (var line in printed)
             {
-                sb.AppendLine(row);
+                sb.AppendLine(line);
             }
-
-            sb.AppendLine();
         }
 
         if (shown == 0)
@@ -483,6 +531,58 @@ static class PositionAnalysis
         }
 
         return null;
+    }
+
+    // Two uses of one ability this far apart in a pull are two different mechanics, whatever they share an ID
+    // with. Comfortably longer than the gap between the casts of one staggered mechanic and far shorter than
+    // the gap between phases.
+    private const double SameOccurrence = 45d;
+
+    /// <summary>
+    /// When in a pull an ability was used, as spans rather than as a single pooled everything.
+    ///
+    /// Returns one span covering all of it when the times give no reason to split, so an ability used once per
+    /// pull reads exactly as it did before.
+    /// </summary>
+    private static List<(double From, double To)> Cluster(Dictionary<Replay.Participant, List<Sample>> perPlayer, bool haveElapsed)
+    {
+        if (!haveElapsed)
+        {
+            return [(double.MinValue, double.MaxValue)];
+        }
+
+        var times = new List<double>();
+        foreach (var (_, samples) in perPlayer)
+        {
+            foreach (var sample in samples)
+            {
+                times.Add(sample.Elapsed);
+            }
+        }
+
+        if (times.Count == 0)
+        {
+            return [(double.MinValue, double.MaxValue)];
+        }
+
+        times.Sort();
+        var res = new List<(double From, double To)>();
+        var from = times[0];
+        var prev = times[0];
+
+        for (var i = 1; i < times.Count; ++i)
+        {
+            if (times[i] - prev > SameOccurrence)
+            {
+                res.Add((from, prev));
+                from = times[i];
+            }
+
+            prev = times[i];
+        }
+
+        res.Add((from, prev));
+        return res;
     }
 
     /// <summary>How much weight a single row deserves, which one cast cannot earn however tidy it looks.</summary>

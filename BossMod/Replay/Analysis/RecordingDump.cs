@@ -129,7 +129,8 @@ static class RecordingDump
             // exists and failed to start still declares the arena, and a declaration beats an estimate.
             var arena = ArenaEstimate.ForFight(replay, fight.OID, involved, fight.Start, fight.End);
             var coverage = PositionAnalysis.Append(sb, replay, involved, Label,
-                a => a.Timestamp >= fight.Start && a.Timestamp <= fight.End, arena);
+                a => a.Timestamp >= fight.Start && a.Timestamp <= fight.End, arena,
+                t => (t - fight.Start).TotalSeconds);
 
             // Per fight rather than per recording, since a recording is a night of several different ones and
             // each has a timeline of its own.
