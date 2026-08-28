@@ -113,9 +113,13 @@ static class ReplayExport
             File.WriteAllText(Path.Combine(dir, DataFileName(replay.Path)), export.Build());
             LearnedPositions.Merge(Path.Combine(dir, LearnedPositions.FileName), learned);
 
-            // Only the data file, and only if somebody asked. The text is written for a person to read and
-            // says nothing the data does not.
-            ExportUploader.Send(Path.Combine(dir, DataFileName(replay.Path)));
+            // Only the data file, only if somebody asked, and only if there is anything in it. A duty that
+            // produced no samples still writes a file locally, because "nothing happened here" is worth
+            // knowing on your own disk; sending it is just an empty file in somebody else's pile.
+            if (export.HasContent)
+            {
+                ExportUploader.Send(Path.Combine(dir, DataFileName(replay.Path)));
+            }
 
             // So the next pull uses what this export just learned, without restarting the game.
             MechanicTimersWindow.ForgetLearned();

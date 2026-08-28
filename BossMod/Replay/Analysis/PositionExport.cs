@@ -26,7 +26,7 @@ sealed class PositionExport
     /// "BLM 4ed5bd43" for somebody without: the same two words in the opposite order. Anything splitting that
     /// at scale gets it wrong on half the rows, so the data file says which is which.
     /// </remarks>
-    public readonly record struct Row(uint Ability, string Who, string Job, string Slot, int Pull, DateTime When, double Elapsed, WPos Cast, WPos Hit, WPos Settled, WPos Caster);
+    public readonly record struct Row(uint Ability, string Who, string Job, string Slot, DateTime When, double Elapsed, WPos Cast, WPos Hit, WPos Settled, WPos Caster);
 
     /// <summary>What the analysis concluded about an ability, so a reader need not re-derive it.</summary>
     public readonly record struct AbilityInfo(uint ID, string Name, string Shape, bool Positional, int Resolutions, bool Telegraphed, bool Marked, bool Landed);
@@ -59,18 +59,40 @@ sealed class PositionExport
 
     private readonly HashSet<uint> _described = [];
 
-    /// <summary>Which pull the rows arriving now belong to, so a reader never has to match timestamps.</summary>
-    private int _pull;
-
-    /// <summary>Opens a pull. Everything added afterwards is filed under it until the next one opens.</summary>
+    /// <summary>Registers a pull. Order of registration does not matter; rows find their own.</summary>
     public void BeginPull(int index, uint oid, string boss, DateTime from, DateTime to, WPos? arenaCenter, float arenaScale, string? arenaShape, bool mine)
-    {
-        _pull = index;
-        Pulls.Add(new(index, oid, boss, from, to, arenaCenter, arenaScale, arenaShape, mine));
-    }
+        => Pulls.Add(new(index, oid, boss, from, to, arenaCenter, arenaScale, arenaShape, mine));
 
     public void Add(uint ability, string who, Class job, string slot, DateTime when, double elapsed, WPos cast, WPos hit, WPos settled, WPos caster)
-        => Rows.Add(new(ability, who, job.ToString(), slot, _pull, when, elapsed, cast, hit, settled, caster));
+        => Rows.Add(new(ability, who, job.ToString(), slot, when, elapsed, cast, hit, settled, caster));
+
+    /// <summary>
+    /// Which pull a moment belongs to, worked out from when it happened.
+    ///
+    /// This used to be a counter that BeginPull moved along, which worked for the path that analyses one pull
+    /// at a time and was silently wrong for the path that pools them. Pooling registers every pull before
+    /// analysing any of them, so the counter had already reached the last one by the time the first sample
+    /// arrived: a six-pull export stamped all eight thousand of its samples as pull six.
+    ///
+    /// A timestamp cannot be wrong in that way. Zero means the moment falls outside every pull, which is a
+    /// real answer rather than a default.
+    /// </summary>
+    private int PullAt(DateTime when)
+    {
+        for (var i = 0; i < Pulls.Count; ++i)
+        {
+            var p = Pulls[i];
+            if (when >= p.From && when <= p.To)
+            {
+                return p.Index;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>Whether there is anything here worth handing to anybody.</summary>
+    public bool HasContent => Rows.Count > 0;
 
     /// <summary>
     /// Records what an ability turned out to be, once.
@@ -198,7 +220,7 @@ sealed class PositionExport
               .Append(", \"who\": ").Append(Str(r.Who))
               .Append(", \"job\": ").Append(Str(r.Job))
               .Append(", \"slot\": ").Append(Str(r.Slot))
-              .Append(", \"pull\": ").Append(r.Pull.ToString(CultureInfo.InvariantCulture))
+              .Append(", \"pull\": ").Append(PullAt(r.When).ToString(CultureInfo.InvariantCulture))
               .Append(", \"at\": ").Append(Str(T(r.When)))
               .Append(", \"t\": ").Append(N(r.Elapsed))
               .Append(", \"cast\": ").Append(Pos(r.Cast))
