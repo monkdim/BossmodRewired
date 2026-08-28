@@ -92,7 +92,15 @@ public sealed class MechanicTimersWindow : UIWindow
     {
         var config = Config;
         var castBars = _castBars;
-        var size = new Vector2(config.BarWidth, config.BarHeight);
+
+        // One slider for "make it smaller", because that is the request people actually have. Scaling the
+        // bars without the text just gives you the same words crammed into a shorter box, so the font goes
+        // with them. Clamped rather than trusted: the config is a file somebody can edit, and a zero here
+        // would produce bars with no height at all and no obvious way back.
+        var scale = Math.Clamp(config.Scale, 0.4f, 2f);
+        ImGui.SetWindowFontScale(scale);
+
+        var size = new Vector2(config.BarWidth * scale, config.BarHeight * scale);
         for (var i = 0; i < _bars.Count; ++i)
         {
             var (label, remaining, total) = _bars[i];
@@ -112,6 +120,10 @@ public sealed class MechanicTimersWindow : UIWindow
                 ImGui.Separator();
             }
         }
+
+        // The scale sticks to the window rather than to this draw, so leaving it set would follow the window
+        // into anything else drawn in it later.
+        ImGui.SetWindowFontScale(1f);
     }
 
     /// <summary>

@@ -26,6 +26,10 @@ public sealed class MechanicTimersConfig : ConfigNode
     [PropertySlider(0.5f, 10f)]
     public float ImminentThreshold = 3f;
 
+    [PropertyDisplay("Overall size", tooltip: "Scales the bars and their text together, so one slider makes the whole thing smaller. The two measurements below are taken before this is applied.")]
+    [PropertySlider(0.4f, 2f)]
+    public float Scale = 1f;
+
     [PropertyDisplay("Bar width")]
     [PropertySlider(100f, 600f)]
     public float BarWidth = 240f;
