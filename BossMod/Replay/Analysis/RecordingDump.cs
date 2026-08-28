@@ -356,7 +356,31 @@ static class RecordingDump
     private static string Name(Replay.Participant p)
         => p.Type == ActorType.Player
             ? SharedIdentity.Handle(p.ContentID)
-            : p.NameHistory.Count > 0 ? p.NameHistory.Values[0].name : $"{p.InstanceID:X}";
+            : EverNamed(p) ?? $"{p.InstanceID:X}";
+
+    /// <summary>
+    /// Any name this actor was ever recorded under, or null if it never had one.
+    ///
+    /// A name is not a property of an actor so much as something the client learns about it, and it does not
+    /// always know at the moment the actor first appears. Asking at one instant and giving up produced fights
+    /// labelled with a raw object ID: Royal City of Rabanastre came out as "1FC7" and "1FCA" for two of its
+    /// five bosses, while the other three named themselves perfectly, in the same recording.
+    ///
+    /// Taking the first entry of the history had the same problem from the other end, since that entry can
+    /// itself be the empty one. Any name at all beats a number nobody can read.
+    /// </summary>
+    private static string? EverNamed(Replay.Participant p)
+    {
+        foreach (var (_, entry) in p.NameHistory)
+        {
+            if (entry.name.Length > 0)
+            {
+                return entry.name;
+            }
+        }
+
+        return null;
+    }
 
     private static void AppendFightList(StringBuilder sb, List<Fight> fights)
     {
@@ -612,7 +636,9 @@ static class RecordingDump
 
     private static string Describe(Replay.Participant p, DateTime t)
     {
+        // What it was called then, if the client knew by then. Otherwise anything it was ever called, since a
+        // boss that names itself thirty seconds in is still that boss for the whole fight.
         var name = p.NameAt(t).name;
-        return name != null && name.Length > 0 ? name : $"{p.OID:X}";
+        return name != null && name.Length > 0 ? name : EverNamed(p) ?? $"{p.OID:X}";
     }
 }

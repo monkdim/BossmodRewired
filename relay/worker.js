@@ -73,14 +73,40 @@ export default {
   },
 };
 
-// Dated so a month's worth stays browsable, and suffixed so two people submitting the same fight in the same
-// second do not overwrite each other.
+// Filed by zone, then by day.
+//
+// Naming a file after its first pull's boss looked reasonable and was wrong for the content that matters most.
+// A recording is a duty, and a duty is often several bosses: the whole World of Darkness run arrived called
+// "Garm", after a fight in another room that the recorder never took part in, and Royal City of Rabanastre
+// arrived as "1FC7" because the first boss never told the client its name. Neither file could be found by
+// anybody looking for what was actually in it.
+//
+// The zone is the one thing every pull in a recording agrees on, so it groups a duty's recordings together no
+// matter who recorded them or which boss came first. A readable boss name is kept in the file name when there
+// is one, purely so a person browsing can see what they are looking at.
+//
+// Dated within the zone so a month's worth stays browsable, and suffixed so two people submitting the same
+// fight in the same second do not overwrite each other.
 function fileName(payload) {
-  const boss = (payload.pulls?.[0]?.boss || "unknown").replace(/[^A-Za-z0-9_-]/g, "");
+  const zone = Number.isInteger(payload.zone) && payload.zone > 0 ? `zone-${payload.zone}` : "zone-unknown";
   const day = new Date().toISOString().slice(0, 10);
   const stamp = new Date().toISOString().slice(11, 19).replace(/:/g, "");
   const tag = Math.random().toString(36).slice(2, 8);
-  return `${day}/${boss}-${stamp}-${tag}.json`;
+  const hint = bossHint(payload);
+  return `${zone}/${day}/${stamp}${hint}-${tag}.json`;
+}
+
+// The first pull whose boss has a name rather than an object ID in hex. Only a label for humans, so an
+// unnamed recording simply goes without one instead of carrying a number that means nothing.
+function bossHint(payload) {
+  for (const pull of payload.pulls || []) {
+    const boss = (pull.boss || "").replace(/[^A-Za-z0-9_-]/g, "");
+    if (boss && !/^[0-9A-F]{1,8}$/.test(boss)) {
+      return `-${boss.slice(0, 40)}`;
+    }
+  }
+
+  return "";
 }
 
 // Committed through the contents API, which is one request and needs no tree building. The token should be
