@@ -17,8 +17,13 @@ static class ReplayExport
     /// Version 2 is the first that never writes a character name: before it, handles were the player's actual
     /// name, so every export made by an earlier build is fine to keep and unsafe to hand anybody. It is also
     /// the first to measure each fight against its own arena and to record which duty it came from.
+    ///
+    /// Version 3 puts the right pull number on each sample. Version 2 stamped every sample in a pooled export
+    /// with the last pull, so a six-pull night claimed all eight thousand of its samples came from pull six.
+    /// The number is the only thing that changed, and it changed on every row, which is exactly the case this
+    /// version exists to catch: without the bump a re-export would look current and be skipped.
     /// </summary>
-    public const int FormatVersion = 2;
+    public const int FormatVersion = 3;
 
     private static string Stamp => $"Export format {FormatVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)}.";
 
