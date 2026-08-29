@@ -148,7 +148,14 @@ static class RecordingDump
             {
                 export.Boss = fight.Label;
                 export.OID = fight.OID;
-                export.BeginPull(i + 1, fight.OID, fight.Label, fight.Start, fight.End,
+                // Numbered by what the file ends up holding rather than by the loop, since fights with
+                // nothing to analyse are skipped above. Numbering by the loop left the gaps in the file: one
+                // recording arrived carrying pulls 1, 3 and 4, which reads as two pulls whose data went
+                // missing rather than as stretches of combat never worth writing down. The text keeps the
+                // loop's numbering, because there it lines up with the list of every fight printed above it;
+                // the data file has no such list to line up with, and the module path already numbers this
+                // way.
+                export.BeginPull(export.Pulls.Count + 1, fight.OID, fight.Label, fight.Start, fight.End,
                     arena?.Reference, arena?.Scale ?? 0f, arena?.Shape,
                     PositionAnalysis.WasThere(replay, me, fight.Start, fight.End));
             }
