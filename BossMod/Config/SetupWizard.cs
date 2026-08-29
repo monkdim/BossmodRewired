@@ -18,6 +18,12 @@ public sealed class SetupConfig : ConfigNode
     [PropertyDisplay("Relay address", tooltip: "The relay that receives shared exports. Leave empty to use whatever address this build ships with, if any.")]
     public string ShareEndpoint = "";
 
+    [PropertyDisplay("Also record damage, healing and deaths", tooltip: "Adds what each player dealt and took, per pull, to the exports written on this machine. It is what tells you whether a pull was worth learning positions from. Off by default, and kept out of anything shared unless the setting below is also on.")]
+    public bool CaptureContributions = false;
+
+    [PropertyDisplay("Include those figures when sharing", tooltip: "Off by default and deliberately separate. The question asked during setup was about positions, so these numbers are removed before an export is sent unless this is turned on as well.")]
+    public bool ShareContributions = false;
+
     /// <summary>
     /// Whether the question has ever actually been answered.
     ///

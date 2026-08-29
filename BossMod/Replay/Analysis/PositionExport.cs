@@ -28,6 +28,16 @@ sealed class PositionExport
     /// </remarks>
     public readonly record struct Row(uint Ability, string Who, string Job, string Slot, DateTime When, double Elapsed, WPos Cast, WPos Hit, WPos Settled, WPos Caster);
 
+    /// <summary>
+    /// One player's damage, healing and deaths over one pull.
+    ///
+    /// Written only when the person recording asked for it, and stripped again before anything is shared
+    /// unless they asked for that separately. It answers whether a pull was worth learning positions from,
+    /// which is a question about the run rather than about the player, but the numbers are the same either
+    /// way and it is not this code's place to decide that distinction for somebody else.
+    /// </summary>
+    public readonly record struct Contribution(int Pull, string Who, string Job, string Slot, long Damage, long Healing, long Taken, int Deaths, double Seconds);
+
     /// <summary>What the analysis concluded about an ability, so a reader need not re-derive it.</summary>
     public readonly record struct AbilityInfo(uint ID, string Name, string Shape, bool Positional, int Resolutions, bool Telegraphed, bool Marked, bool Landed);
 
@@ -56,6 +66,7 @@ sealed class PositionExport
     public readonly List<PullInfo> Pulls = [];
     public readonly List<Row> Rows = [];
     public readonly List<AbilityInfo> Abilities = [];
+    public readonly List<Contribution> Contributions = [];
 
     private readonly HashSet<uint> _described = [];
 
@@ -149,7 +160,17 @@ sealed class PositionExport
         return sb.Append('"').ToString();
     }
 
-    public string Build()
+    public string Build() => Build(false);
+
+    /// <summary>
+    /// The file itself.
+    ///
+    /// Built twice when the two sharing switches disagree: once with contributions for the copy kept on disk,
+    /// once without for the copy that leaves. Rebuilding costs a fraction of what parsing the recording
+    /// already cost, and it means the shared file never contains something that has to be trusted to be
+    /// removed later.
+    /// </summary>
+    public string Build(bool withContributions)
     {
         var sb = new StringBuilder();
         sb.Append("{\n");
@@ -208,6 +229,29 @@ sealed class PositionExport
         }
 
         sb.Append("  ],\n");
+
+        if (withContributions && Contributions.Count > 0)
+        {
+            sb.Append("  \"contributions\": [\n");
+            for (var i = 0; i < Contributions.Count; ++i)
+            {
+                var c = Contributions[i];
+                sb.Append("    {\"pull\": ").Append(c.Pull.ToString(CultureInfo.InvariantCulture))
+                  .Append(", \"who\": ").Append(Str(c.Who))
+                  .Append(", \"job\": ").Append(Str(c.Job))
+                  .Append(", \"slot\": ").Append(Str(c.Slot))
+                  .Append(", \"damage\": ").Append(c.Damage.ToString(CultureInfo.InvariantCulture))
+                  .Append(", \"healing\": ").Append(c.Healing.ToString(CultureInfo.InvariantCulture))
+                  .Append(", \"taken\": ").Append(c.Taken.ToString(CultureInfo.InvariantCulture))
+                  .Append(", \"deaths\": ").Append(c.Deaths.ToString(CultureInfo.InvariantCulture))
+                  .Append(", \"seconds\": ").Append(N(c.Seconds))
+                  .Append(", \"dps\": ").Append(N(c.Seconds > 0d ? c.Damage / c.Seconds : 0d))
+                  .Append('}')
+                  .Append(i + 1 < Contributions.Count ? ",\n" : "\n");
+            }
+
+            sb.Append("  ],\n");
+        }
 
         // The samples themselves, one line each. Flat rather than nested under abilities, because every reader
         // of this file wants to group it a different way and a flat list is the one shape none of them has to

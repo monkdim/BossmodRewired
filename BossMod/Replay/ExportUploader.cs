@@ -74,12 +74,15 @@ public static class ExportUploader
     /// <summary>
     /// Sends one export, on a thread that is not the game's.
     ///
+    /// Takes the body rather than a path, because what is sent is not always what was written: a recording
+    /// that captured damage keeps it on disk and sends a copy without it, unless that was asked for too.
+    ///
     /// Fire and forget on purpose. The caller has already written the file, which is the part that matters;
     /// whether it also reached a server is not something worth making anybody wait for. It joins a queue
     /// rather than starting immediately, so exporting a folder of recordings arrives as a hundred sends in a
     /// row instead of a hundred at once.
     /// </summary>
-    public static void Send(string path)
+    public static void Send(string name, string json)
     {
         if (!Wanted)
         {
@@ -89,15 +92,14 @@ public static class ExportUploader
         var endpoint = Submit(Endpoint);
         lock (_gate)
         {
-            _chain = _chain.ContinueWith(_ => SendOne(path, endpoint), TaskScheduler.Default).Unwrap();
+            _chain = _chain.ContinueWith(_ => SendOne(name, json, endpoint), TaskScheduler.Default).Unwrap();
         }
     }
 
-    private static async Task SendOne(string path, string endpoint)
+    private static async Task SendOne(string path, string json, string endpoint)
     {
         try
         {
-            var json = await File.ReadAllTextAsync(path);
             using var content = new StringContent(json, Encoding.UTF8, "application/json");
             using var res = await _http.PostAsync(endpoint, content);
             var reply = await res.Content.ReadAsStringAsync();
