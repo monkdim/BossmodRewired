@@ -51,7 +51,7 @@ export default {
       return text(400, "not an export");
     }
 
-    const name = fileName(payload);
+    const name = await fileName(payload);
 
     // Named rather than lumped together, because the two ways to get this wrong (a secret never added, and a
     // secret added under a slightly different name) look identical from the outside and are fixed differently.
@@ -73,27 +73,42 @@ export default {
   },
 };
 
-// Filed by zone, then by day.
+// Filed by zone, then by the day the recording happened, under a name derived from the recording itself.
 //
 // Naming a file after its first pull's boss looked reasonable and was wrong for the content that matters most.
-// A recording is a duty, and a duty is often several bosses: the whole World of Darkness run arrived called
-// "Garm", after a fight in another room that the recorder never took part in, and Royal City of Rabanastre
-// arrived as "1FC7" because the first boss never told the client its name. Neither file could be found by
-// anybody looking for what was actually in it.
+// A recording is a duty, and a duty is often several bosses: a whole World of Darkness run arrived called
+// "Garm", after a fight in another room the recorder never took part in. The zone is the one thing every pull
+// agrees on, so it groups a duty's recordings together whoever recorded them.
 //
-// The zone is the one thing every pull in a recording agrees on, so it groups a duty's recordings together no
-// matter who recorded them or which boss came first. A readable boss name is kept in the file name when there
-// is one, purely so a person browsing can see what they are looking at.
+// The rest of the name comes from the recording rather than from the moment of upload, which is what stops a
+// re-export from arriving as a second copy. Improving the analysis means re-exporting logs already sent, and
+// under upload-time naming every such pass doubled the repository: twenty-two recordings ended up stored
+// twice, half of them stale. Now the same log lands on the same path and simply replaces what is there, with
+// the previous rendering kept in git history where it belongs.
 //
-// Dated within the zone so a month's worth stays browsable, and suffixed so two people submitting the same
-// fight in the same second do not overwrite each other.
-function fileName(payload) {
+// The tag is a digest of the recording's own shape, not of the file's bytes. Bytes change whenever the
+// analysis improves, which is exactly when the path must stay the same; the fight windows do not. It also
+// keeps two people who recorded the same pulls apart, since their clocks differ by a second or so, where a
+// timestamp alone rounded to the same second would have one silently overwrite the other.
+async function fileName(payload) {
   const zone = Number.isInteger(payload.zone) && payload.zone > 0 ? `zone-${payload.zone}` : "zone-unknown";
-  const day = new Date().toISOString().slice(0, 10);
-  const stamp = new Date().toISOString().slice(11, 19).replace(/:/g, "");
-  const tag = Math.random().toString(36).slice(2, 8);
-  const hint = bossHint(payload);
-  return `${zone}/${day}/${stamp}${hint}-${tag}.json`;
+  const pulls = Array.isArray(payload.pulls) ? payload.pulls : [];
+
+  // When the recording happened, falling back to now for anything that does not say.
+  const started = Date.parse(pulls[0]?.from ?? "");
+  const when = new Date(Number.isNaN(started) ? Date.now() : started);
+  const day = when.toISOString().slice(0, 10);
+  const stamp = when.toISOString().slice(11, 19).replace(/:/g, "");
+
+  return `${zone}/${day}/${stamp}${bossHint(payload)}-${await recordingTag(payload)}.json`;
+}
+
+// Six hex characters standing for "which recording is this", stable across every re-export of one log.
+async function recordingTag(payload) {
+  const pulls = Array.isArray(payload.pulls) ? payload.pulls : [];
+  const basis = [payload.zone, pulls.length, pulls[0]?.from ?? "", pulls[pulls.length - 1]?.to ?? ""].join("|");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(basis));
+  return [...new Uint8Array(digest)].slice(0, 3).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 // The first pull whose boss has a name rather than an object ID in hex. Only a label for humans, so an
@@ -120,6 +135,11 @@ async function toGitHub(env, name, body) {
   const content = base64(body);
 
   for (let attempt = 0; ; ++attempt) {
+    // Replacing a file through the contents API means naming the blob being replaced, so the existing one is
+    // looked up first. Re-read on every attempt rather than once, since the whole reason an attempt fails is
+    // that the branch moved underneath it.
+    const sha = await shaOf(env, path);
+
     const res = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/contents/${path}`, {
       method: "PUT",
       headers: {
@@ -129,9 +149,10 @@ async function toGitHub(env, name, body) {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        message: `export: ${name}`,
+        message: sha ? `export: ${name} (re-exported)` : `export: ${name}`,
         content,
         branch: env.GITHUB_BRANCH || "main",
+        ...(sha ? { sha } : {}),
       }),
     });
 
@@ -150,6 +171,29 @@ async function toGitHub(env, name, body) {
   }
 }
 
+
+// The blob currently at this path, or null when nothing is there yet. A 404 is the ordinary answer for a
+// recording nobody has sent before, so it is not an error.
+async function shaOf(env, path) {
+  const branch = encodeURIComponent(env.GITHUB_BRANCH || "main");
+  const res = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/contents/${path}?ref=${branch}`, {
+    headers: {
+      authorization: `Bearer ${env.GITHUB_TOKEN}`,
+      accept: "application/vnd.github+json",
+      "user-agent": "bossmod-rewired-relay",
+    },
+  });
+
+  if (res.status === 404) {
+    return null;
+  }
+
+  if (!res.ok) {
+    throw new Error(`github ${res.status} looking up ${path}`);
+  }
+
+  return (await res.json()).sha ?? null;
+}
 
 // btoa only handles latin-1, and an export is UTF-8, so the bytes are widened first.
 function base64(s) {
