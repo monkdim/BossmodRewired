@@ -365,9 +365,11 @@ sealed class EncounterDump : CommonEnumInfo
                 for (var i = 0; i < _encounters.Count; ++i)
                 {
                     var enc = _encounters[i].Encounter;
-                    export.BeginPull(export.Pulls.Count + 1, _oid, _moduleName, enc.Time.Start, enc.Time.End,
+                    var index = export.Pulls.Count + 1;
+                    export.BeginPull(index, _oid, _moduleName, enc.Time.Start, enc.Time.End,
                         arena?.Reference, arena?.Scale ?? 0f, arena?.Shape,
                         PositionAnalysis.WasThere(pooled, me, enc.Time.Start, enc.Time.End));
+                    RecordingDump.RecordContributions(export, pooled, party, index, enc.Time.Start, enc.Time.End);
                 }
             }
 
@@ -395,9 +397,11 @@ sealed class EncounterDump : CommonEnumInfo
 
             if (export != null)
             {
-                export.BeginPull(export.Pulls.Count + 1, _oid, _moduleName, enc.Time.Start, enc.Time.End,
+                var index = export.Pulls.Count + 1;
+                export.BeginPull(index, _oid, _moduleName, enc.Time.Start, enc.Time.End,
                     arena?.Reference, arena?.Scale ?? 0f, arena?.Shape,
                     PositionAnalysis.WasThere(replay, PositionAnalysis.WhoRecorded(replay), enc.Time.Start, enc.Time.End));
+                RecordingDump.RecordContributions(export, replay, party, index, enc.Time.Start, enc.Time.End);
             }
 
             merge(PositionAnalysis.Append(sb, replay, party, label,

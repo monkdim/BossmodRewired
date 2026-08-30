@@ -115,7 +115,13 @@ static class ReplayExport
         // anything else reads, and a failure to write it must not cost the export that was already produced.
         try
         {
-            File.WriteAllText(Path.Combine(dir, DataFileName(replay.Path)), export.Build());
+            var setup = Service.Config.Get<SetupConfig>();
+
+            // The copy kept here carries whatever was captured. The copy that leaves is built separately when
+            // the two switches disagree, so what is shared never contains something that was meant to be
+            // removed on the way out.
+            var mine = export.Build(setup.CaptureContributions);
+            File.WriteAllText(Path.Combine(dir, DataFileName(replay.Path)), mine);
             LearnedPositions.Merge(Path.Combine(dir, LearnedPositions.FileName), learned);
 
             // Only the data file, only if somebody asked, and only if there is anything in it. A duty that
@@ -123,7 +129,8 @@ static class ReplayExport
             // knowing on your own disk; sending it is just an empty file in somebody else's pile.
             if (export.HasContent)
             {
-                ExportUploader.Send(Path.Combine(dir, DataFileName(replay.Path)));
+                var shared = setup.CaptureContributions && !setup.ShareContributions ? export.Build(false) : mine;
+                ExportUploader.Send(DataFileName(replay.Path), shared);
             }
 
             // So the next pull uses what this export just learned, without restarting the game.

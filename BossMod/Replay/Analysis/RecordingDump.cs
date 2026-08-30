@@ -155,9 +155,11 @@ static class RecordingDump
                 // loop's numbering, because there it lines up with the list of every fight printed above it;
                 // the data file has no such list to line up with, and the module path already numbers this
                 // way.
-                export.BeginPull(export.Pulls.Count + 1, fight.OID, fight.Label, fight.Start, fight.End,
+                var index = export.Pulls.Count + 1;
+                export.BeginPull(index, fight.OID, fight.Label, fight.Start, fight.End,
                     arena?.Reference, arena?.Scale ?? 0f, arena?.Shape,
                     PositionAnalysis.WasThere(replay, me, fight.Start, fight.End));
+                RecordContributions(export, replay, involved, index, fight.Start, fight.End);
             }
 
             var coverage = PositionAnalysis.Append(sb, replay, involved, Label,
@@ -304,6 +306,29 @@ static class RecordingDump
         }
 
         return last > first ? (float)(last - first).TotalSeconds : 0f;
+    }
+
+    /// <summary>
+    /// Files what each player put into a pull, when the person recording asked for that.
+    ///
+    /// Gated here rather than at the point of writing, so a recording made with the setting off never computes
+    /// it at all: this walks every action in the replay once per pull, and a night of nine pulls should not
+    /// pay for that to produce something nobody asked for.
+    /// </summary>
+    internal static void RecordContributions(PositionExport export, Replay replay, IReadOnlyCollection<Replay.Participant> involved, int pull, DateTime from, DateTime to)
+    {
+        if (!Service.Config.Get<SetupConfig>().CaptureContributions)
+        {
+            return;
+        }
+
+        var seconds = (to - from).TotalSeconds;
+        foreach (var line in Contributions.ForWindow(replay, involved, from, to))
+        {
+            export.Contributions.Add(new(pull, Label(line.Player), line.Player.Class.ToString(),
+                LearnedPositions.SlotOf(line.Player.Class, line.Player.ContentID),
+                line.Damage, line.Healing, line.Taken, line.Deaths, seconds));
+        }
     }
 
     /// <summary>
