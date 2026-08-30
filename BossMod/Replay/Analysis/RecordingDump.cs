@@ -155,10 +155,11 @@ static class RecordingDump
                 // loop's numbering, because there it lines up with the list of every fight printed above it;
                 // the data file has no such list to line up with, and the module path already numbers this
                 // way.
-                export.BeginPull(export.Pulls.Count + 1, fight.OID, fight.Label, fight.Start, fight.End,
+                var index = export.Pulls.Count + 1;
+                export.BeginPull(index, fight.OID, fight.Label, fight.Start, fight.End,
                     arena?.Reference, arena?.Scale ?? 0f, arena?.Shape,
                     PositionAnalysis.WasThere(replay, me, fight.Start, fight.End));
-                RecordContributions(export, replay, involved, i + 1, fight.Start, fight.End);
+                RecordContributions(export, replay, involved, index, fight.Start, fight.End);
             }
 
             var coverage = PositionAnalysis.Append(sb, replay, involved, Label,
