@@ -19,6 +19,14 @@ ones that were merely produced takes longer than writing the change would have.
 If you have used a tool to help you understand the codebase, that is your business. What lands in a pull
 request should be code you wrote, can explain line by line, and have run.
 
+You will see pull requests here opened by an agent, labelled as such. That is not the rule being ignored
+quietly, so it is worth saying what the rule actually is. The cost this rule is about is review: a change
+nobody understood, arriving from somebody who cannot answer questions about it, is a change the maintainer
+has to reconstruct from scratch before it can be trusted. An agent working an issue on this repository does
+not dodge that. It opens a pull request like anybody else, the maintainer reads it and answers for it, and
+plenty of them get closed. What is not accepted is that work arriving from outside, where there is nobody to
+ask.
+
 ## Test encounter modules in an actual duty
 
 Replaying a recording is not enough. A module has to be watched working in the fight it is for, because

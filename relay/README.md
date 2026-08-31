@@ -34,15 +34,36 @@ and it arrives versioned and diffable for free.
 
    `GITHUB_BRANCH` may be set as a plain variable if the branch is not `main`.
 
+   To accept feedback as well, add the plugin's own repository to the token with **issues: read and write**,
+   and set where the issues go:
+
+   ```
+   wrangler secret put GITHUB_ISSUE_REPO  # owner/name of the plugin repository
+   ```
+
+   Leave it unset and the feedback endpoint says so and files nothing. Exports are unaffected either way.
+
 4. Wrangler prints the deployed URL. That is what goes into the plugin, and it is safe to hand out: it accepts
    writes and nothing else, and neither secret above is reachable through it.
 
 ## What it will accept
 
-Only a POST to `/submit`, only valid JSON, only if it looks like an export (a numeric `schema` and an array of
-`samples`), and only up to 8 MB. Anything else is refused before it reaches storage.
+`POST /submit` takes an export: valid JSON, shaped like one (a numeric `schema` and an array of `samples`),
+up to 8 MB.
 
-That shape check is a filter, not authentication, and is not mistaken for it here. Whatever the plugin knows in
-order to post is knowable by anybody holding the plugin, so this endpoint is writable by anybody who cares to.
-The defence is that it can only ever append files to one repository, the credential for that is not in it, and
-you can turn it off or replace it at any moment without touching a single install.
+`POST /feedback` takes what somebody typed into the plugin's feedback box, up to 8 KB, and opens an issue
+with it. The message is fenced in the issue body so that nothing in it can pose as a heading or an
+instruction once rendered, and the issue is labelled `from-plugin` and nothing else.
+
+Anything else is refused before it reaches storage.
+
+Those shape checks are filters, not authentication, and are not mistaken for it here. Whatever the plugin
+knows in order to post is knowable by anybody holding the plugin, so both endpoints are writable by anybody
+who cares to. The defence is that the relay can only ever append files to one repository and open issues on
+another, the credential for both is not in it, and you can turn it off or replace it at any moment without
+touching a single install.
+
+That is also why the relay does not start anything. An issue it files sits there until a person with write
+access reads it and applies a label. The work an agent does on this repository begins with that label, never
+with an arriving report, because a report is text from a stranger and the alternative is letting a stranger
+decide what gets written.

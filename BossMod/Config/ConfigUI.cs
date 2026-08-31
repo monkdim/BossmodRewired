@@ -24,6 +24,7 @@ public sealed class ConfigUI : IDisposable
     private readonly UITree _tree = new();
     private readonly UITabs _tabs = new();
     private readonly AboutTab _about;
+    private readonly FeedbackTab _feedback;
     private readonly ModuleViewer _mv;
     private readonly ConfigRoot _root;
     private readonly WorldState _ws;
@@ -31,11 +32,12 @@ public sealed class ConfigUI : IDisposable
 
     private readonly List<List<string>> _filterNodes = [];
 
-    public ConfigUI(ConfigRoot config, WorldState ws, DirectoryInfo? replayDir, RotationDatabase? rotationDB)
+    public ConfigUI(ConfigRoot config, WorldState ws, DirectoryInfo? replayDir, RotationDatabase? rotationDB, BossModuleManager bossmod)
     {
         _root = config;
         _ws = ws;
         _about = new(replayDir);
+        _feedback = new(ws, bossmod);
         _mv = new(rotationDB?.Plans, ws);
         _presets = rotationDB != null ? new(rotationDB) : null;
 
@@ -43,6 +45,7 @@ public sealed class ConfigUI : IDisposable
         _tabs.Add("Supported fights", () => _mv.Draw(_tree, _ws));
         _tabs.Add("Autorotation presets", () => _presets?.Draw());
         _tabs.Add("Slash commands", DrawAvailableCommands);
+        _tabs.Add("Feedback", _feedback.Draw);
         _tabs.Add("About", _about.Draw);
 
         Dictionary<Type, UINode> nodes = [];
