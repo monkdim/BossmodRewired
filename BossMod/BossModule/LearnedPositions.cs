@@ -64,6 +64,123 @@ public sealed class LearnedPositions
         return role != PartyRolesConfig.Assignment.Unassigned ? role.ToString() : SlotOf(cls);
     }
 
+    /// <summary>
+    /// The whole party's slots at once, numbering whoever the config never named.
+    ///
+    /// SlotOf answers for one person in isolation, and in isolation the honest answer for an unassigned melee
+    /// is "Melee". That is also the answer that throws away most of what a recording contains. Four melees in
+    /// a light party file under one name, and four people standing in four different places around a boss have
+    /// no shared position, so the agreement check correctly refuses to learn anything from any of them. A whole
+    /// role's worth of evidence is discarded for want of a way to tell them apart.
+    ///
+    /// Seeing the party at once fixes that, because a number only means anything relative to the others. Each
+    /// role's unassigned members are put in a fixed order and take the names the configuration left free, so
+    /// four melees become M1 through M4 and each teaches its own spot.
+    ///
+    /// What a number here is not is a claim about the group. Nothing in a recording says who pulled the boss,
+    /// so MT and OT are assigned by account ID and one of the two tanks gets called MT because their number is
+    /// lower. It is a stable label for pooling, not a reading of anybody's assignment, and where somebody has
+    /// configured the real thing that always wins.
+    ///
+    /// Stable is the part that has to hold: the same person must keep the same name across every pull of a
+    /// night, or pooling mixes two people's positions under one name and learns the midpoint of neither. Account
+    /// ID gives that for a fixed party. Where the party changes between pulls the numbering can shift, and the
+    /// agreement check is what catches the result, which is the same protection the job names had.
+    /// </summary>
+    public static Dictionary<ulong, string> SlotsFor(IReadOnlyCollection<(Class Class, ulong ContentID)> party)
+    {
+        var config = Service.Config.Get<PartyRolesConfig>();
+        var slots = new Dictionary<ulong, string>(party.Count);
+        var taken = new HashSet<string>();
+
+        // Configured assignments first and unconditionally, so numbering can see which names are spoken for
+        // and never hands a second person a name somebody already holds.
+        foreach (var (_, contentID) in party)
+        {
+            if (contentID == 0)
+            {
+                continue;
+            }
+
+            var role = config[contentID];
+            if (role != PartyRolesConfig.Assignment.Unassigned)
+            {
+                slots[contentID] = role.ToString();
+                taken.Add(role.ToString());
+            }
+        }
+
+        foreach (var (category, names) in Numbering)
+        {
+            var waiting = new List<(Class Class, ulong ContentID)>();
+            foreach (var member in party)
+            {
+                if (member.ContentID != 0 && !slots.ContainsKey(member.ContentID) && CategoryOf(member.Class) == category)
+                {
+                    waiting.Add(member);
+                }
+            }
+
+            // Physical ranged ahead of casters, so R1 and R2 land where a party would expect them rather than
+            // wherever account IDs happen to fall. Within a job category the ID is the only stable ordering a
+            // recording offers, and stable is the whole requirement.
+            waiting.Sort(static (a, b) =>
+            {
+                var byRole = RangedOrder(a.Class).CompareTo(RangedOrder(b.Class));
+                return byRole != 0 ? byRole : a.ContentID.CompareTo(b.ContentID);
+            });
+
+            var next = 0;
+            foreach (var member in waiting)
+            {
+                while (next < names.Length && taken.Contains(names[next]))
+                {
+                    ++next;
+                }
+
+                // Past the end of the list the job name is still true, and a made-up eleventh name would not
+                // be. Alliance raids reach this and lose nothing they had before.
+                slots[member.ContentID] = next < names.Length ? names[next] : SlotOf(member.Class);
+                if (next < names.Length)
+                {
+                    taken.Add(names[next]);
+                    ++next;
+                }
+            }
+        }
+
+        return slots;
+    }
+
+    /// <summary>
+    /// The names each role hands out, in order.
+    ///
+    /// The first two of each are what a party actually says out loud, and the rest simply keep counting: a
+    /// twenty-four player raid has six tanks and no third word for them, and T3 reads better than inventing
+    /// one. Long enough for a full alliance, and past it the job name takes over again.
+    /// </summary>
+    private static readonly (ClassCategory Category, string[] Names)[] Numbering =
+    [
+        (ClassCategory.Tank, ["MT", "OT", "T3", "T4", "T5", "T6"]),
+        (ClassCategory.Healer, ["H1", "H2", "H3", "H4", "H5", "H6"]),
+        (ClassCategory.Melee, ["M1", "M2", "M3", "M4", "M5", "M6"]),
+        (ClassCategory.PhysRanged, ["R1", "R2", "R3", "R4", "R5", "R6"]),
+    ];
+
+    /// <summary>
+    /// Casters and physical ranged share the R numbering, because a party says R1 and R2 and means one of
+    /// each. They are kept apart everywhere else in this file, and deliberately: where they stand is one of
+    /// the things the two roles do not share. Sharing a name here costs nothing, since the number is what
+    /// separates them and the order below is what makes the number mean something.
+    /// </summary>
+    private static ClassCategory CategoryOf(Class cls)
+    {
+        var category = cls.GetClassCategory();
+        return category == ClassCategory.Caster ? ClassCategory.PhysRanged : category;
+    }
+
+    private static int RangedOrder(Class cls) => cls.GetClassCategory() == ClassCategory.Caster ? 1 : 0;
+
     /// <summary>The job's own answer, with no configuration behind it.</summary>
     public static string SlotOf(Class cls) => cls.GetClassCategory() switch
     {

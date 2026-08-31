@@ -63,6 +63,11 @@ static class PositionAnalysis
             return outcomes;
         }
 
+        // Worked out once for the whole fight rather than per sample, because numbering somebody within their
+        // role means looking at the rest of the role, and because the answer has to be the same for every
+        // sample in the pull or two people's positions end up pooled under one name.
+        var slot = SlotsOf(involved);
+
         // A knockback lands its damage first and moves people a moment later, so a sample taken at the
         // resolution is still pre-displacement. This is how long to wait before asking where they ended up.
         const double SettleSeconds = 2d;
@@ -181,7 +186,7 @@ static class PositionAnalysis
                 // conclusions cannot check them.
                 if (export != null && a.ID.Type == ActionType.Spell)
                 {
-                    export.Add(a.ID.ID, label(p), p.Class, SlotOf(p), hitAt, into, castWorld, hitWorld, settledWorld, castOrigin);
+                    export.Add(a.ID.ID, label(p), p.Class, slot(p), hitAt, into, castWorld, hitWorld, settledWorld, castOrigin);
                 }
             }
         }
@@ -275,7 +280,7 @@ static class PositionAnalysis
             sb.AppendLine();
         }
 
-        AppendHints(sb, byAbility, resolutions, telegraphed, marked, landed, grouped, shapes, moments, label, arena, outcomes, elapsed != null, learned);
+        AppendHints(sb, byAbility, resolutions, telegraphed, marked, landed, grouped, shapes, moments, label, slot, arena, outcomes, elapsed != null, learned);
         return outcomes;
     }
 
@@ -313,6 +318,7 @@ static class PositionAnalysis
         Dictionary<ActionID, (string Text, bool Positional)> shapes,
         Dictionary<ActionID, HashSet<long>> moments,
         Func<Replay.Participant, string> label,
+        Func<Replay.Participant, string> slot,
         ArenaEstimate? arena,
         Dictionary<uint, Coverage> outcomes,
         bool haveElapsed,
@@ -515,7 +521,7 @@ static class PositionAnalysis
                         // happen; a hint may not prescribe for it, since it never involved anybody.
                         if (learned != null && aid.Type == ActionType.Spell && mean.Length() <= WithinTheFight)
                         {
-                            candidates.GetOrAdd(SlotOf(p)).Add((fromCentre, new(fraction, Bearing(fromCentre), mean.Length(),
+                            candidates.GetOrAdd(slot(p)).Add((fromCentre, new(fraction, Bearing(fromCentre), mean.Length(),
                                 samples.Count, castsHere, spread, avoided)));
                         }
                     }
@@ -1016,8 +1022,24 @@ static class PositionAnalysis
         return false;
     }
 
-    /// <summary>Which slot a participant holds, so a learned spot is filed under the role and not the player.</summary>
-    private static string SlotOf(Replay.Participant p) => LearnedPositions.SlotOf(p.Class, p.ContentID);
+    /// <summary>
+    /// Which slot each participant holds, so a learned spot is filed under the role and not the player.
+    ///
+    /// Worked out for the party as a whole rather than one person at a time, because the useful part of a slot
+    /// name is the number, and a number only exists relative to everybody else in the same role. Anybody the
+    /// party map has nothing for, which means a participant carrying no account ID, falls back to the job.
+    /// </summary>
+    private static Func<Replay.Participant, string> SlotsOf(IReadOnlyCollection<Replay.Participant> involved)
+    {
+        var party = new List<(Class, ulong)>(involved.Count);
+        foreach (var p in involved)
+        {
+            party.Add((p.Class, p.ContentID));
+        }
+
+        var slots = LearnedPositions.SlotsFor(party);
+        return p => slots.TryGetValue(p.ContentID, out var slot) ? slot : LearnedPositions.SlotOf(p.Class);
+    }
 
     // How far two people filed under the same slot may stand apart before the slot stops describing a place.
     // An assigned slot is one person and never trips this; a job slot can be eight melees, and eight melees

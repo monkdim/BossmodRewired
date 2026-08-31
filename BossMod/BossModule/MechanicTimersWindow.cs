@@ -180,16 +180,58 @@ public sealed class MechanicTimersWindow : UIWindow
     /// <summary>
     /// Which slot this player holds, which is what a learned position is filed under.
     ///
-    /// An assigned slot wins where there is one. Otherwise the job answers, which is what makes this work at
-    /// all outside a static: nobody in a duty finder party has configured anything, and a healer is still a
-    /// healer whether or not somebody told the plugin so.
+    /// An assigned slot wins where there is one. Otherwise the number falls out of the party, which is what
+    /// makes this work at all outside a static: nobody in a duty finder party has configured anything, and the
+    /// second melee of four is still the second melee of four whether or not somebody told the plugin so.
+    ///
+    /// Derived from the live party by exactly the call the exporter makes from a recording, and that is the
+    /// whole requirement rather than a tidiness point. A learned position is stored under a slot name and
+    /// looked up under one, so if the two halves ever disagree about what to call somebody the file still
+    /// loads, still has the position in it, and simply never matches. Nothing would look broken.
     /// </summary>
     private string MySlot()
     {
-        var member = _ws.Party.Members[PartyState.PlayerSlot];
+        var me = _ws.Party.Members[PartyState.PlayerSlot];
         var job = _ws.Party.Player()?.Class ?? Class.None;
-        return member.ContentId != 0 ? LearnedPositions.SlotOf(job, member.ContentId) : LearnedPositions.SlotOf(job);
+        if (me.ContentId == 0)
+        {
+            return LearnedPositions.SlotOf(job);
+        }
+
+        // Cached on the party as it stands, because this is asked once a frame and the answer only changes
+        // when somebody joins, leaves or swaps job. Rebuilding a dictionary sixty times a second to be told
+        // the same thing is the kind of cost a window that draws during a pull should not be paying.
+        var roles = Service.Config.Get<PartyRolesConfig>();
+        var party = new List<(Class, ulong)>();
+        var key = 17UL;
+        for (var i = 0; i < PartyState.MaxAllies; ++i)
+        {
+            var member = _ws.Party.Members[i];
+            if (member.ContentId == 0)
+            {
+                continue;
+            }
+
+            var cls = _ws.Party[i]?.Class ?? Class.None;
+            party.Add((cls, member.ContentId));
+
+            // The configured role goes into the key as well as the job. Numbering reads the configuration, so
+            // somebody setting a role in the settings changes the answer without changing who is standing
+            // here, and a key that only watched the party would keep handing back the old one.
+            key = (key * 31) ^ member.ContentId ^ ((ulong)cls << 40) ^ ((ulong)roles[member.ContentId] << 56);
+        }
+
+        if (key != _slotsKey)
+        {
+            _slots = LearnedPositions.SlotsFor(party);
+            _slotsKey = key;
+        }
+
+        return _slots is not null && _slots.TryGetValue(me.ContentId, out var slot) ? slot : LearnedPositions.SlotOf(job);
     }
+
+    private Dictionary<ulong, string>? _slots;
+    private ulong _slotsKey;
 
     // Loaded once and kept, since this is read every frame and rewritten only when somebody exports. The
     // reload button in the replay window is what picks up a fresh export without a restart.
