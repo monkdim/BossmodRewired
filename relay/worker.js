@@ -52,12 +52,12 @@ export default {
     // post here is knowable by anybody holding the plugin.
     let payload;
     try {
-      payload = JSON.parse(body);
+      payload = describe(body);
     } catch {
       return text(400, "not json");
     }
 
-    if (typeof payload?.schema !== "number" || !Array.isArray(payload?.samples)) {
+    if (typeof payload?.schema !== "number" || !payload.hasSamples) {
       return text(400, "not an export");
     }
 
@@ -166,6 +166,34 @@ async function feedback(request, env) {
 // tidiness: the message itself is fenced rather than escaped.
 function escapeCell(s) {
   return s.replace(/[|\r\n]/g, " ");
+}
+
+// Everything the relay needs to know about a submission, read without parsing the whole of it.
+//
+// This used to be a plain JSON.parse, and that is what stopped alliance raids arriving. A 24-man export runs
+// to seven megabytes and twenty-seven thousand samples, and parsing it built twenty-seven thousand objects
+// the relay then never looked at: it wants the zone, the pull windows and the boss names, all of which sit in
+// the first few kilobytes. Together with encoding the file a character at a time, that was enough to exceed
+// what a worker is allowed to spend, and Cloudflare killed the request with a 1102 before anything reached
+// storage. Nothing was wrong with the recordings; the largest ones simply could not get through.
+//
+// The exporter writes samples last, so everything worth reading is what comes before them. The head is closed
+// off with an empty samples array to make it valid JSON on its own. If that ever stops being true the whole
+// body is parsed instead, which is correct but expensive, and only ever reached by a file small enough for it
+// not to matter or by one that was going to be refused anyway.
+function describe(body) {
+  const at = body.indexOf('"samples"');
+  if (at > 0) {
+    try {
+      const head = JSON.parse(`${body.slice(0, at)}"samples":[]}`);
+      return { ...head, hasSamples: true };
+    } catch {
+      // Falls through to the whole-body parse below.
+    }
+  }
+
+  const whole = JSON.parse(body);
+  return { ...whole, hasSamples: Array.isArray(whole?.samples) };
 }
 
 // Filed by zone, then by the day the recording happened, under a name derived from the recording itself.
@@ -291,11 +319,19 @@ async function shaOf(env, path) {
 }
 
 // btoa only handles latin-1, and an export is UTF-8, so the bytes are widened first.
+//
+// A chunk at a time rather than a character at a time. The character loop was correct and cost two seconds of
+// processor time on a seven megabyte export, which a worker does not have to give; a whole alliance raid
+// arrived, spent its entire budget widening bytes one at a time, and was killed before it reached storage.
+// Handing whole slices to fromCharCode does the same work in a couple of hundred calls instead of seven
+// million. The chunk is bounded because the argument list is: spreading a whole file across one call
+// overflows the stack, which is the other way to lose a large export.
 function base64(s) {
   const bytes = new TextEncoder().encode(s);
+  const CHUNK = 0x8000;
   let binary = "";
-  for (const b of bytes) {
-    binary += String.fromCharCode(b);
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
   }
   return btoa(binary);
 }
