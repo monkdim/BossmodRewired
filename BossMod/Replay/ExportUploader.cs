@@ -23,6 +23,13 @@ namespace BossMod;
 /// export it was made from is still sitting on disk and can be sent again; an error box during a pull costs a
 /// pull.
 ///
+/// Loud means loud, though, and this used to say so without meaning it. Service.Log writes at debug level and
+/// Dalamud shows information and above, so every line here was filtered out of the log before anybody could
+/// read it. Alliance raids then stopped arriving for days without leaving a mark: the relay was refusing them,
+/// the plugin was saying so, and the saying went nowhere. Outcomes are written straight to the plugin log at a
+/// level that survives now, because the whole point of failing quietly in the game is that the failure is
+/// recoverable somewhere else.
+///
 /// It sends whatever gets exported, when it gets exported, which today means once per duty. Sending once per
 /// boss instead would need something that does not exist: the analysis reads a finished log file, and while a
 /// duty is running the recorder is still writing one. Nothing keeps a parsed replay in memory alongside it, so
@@ -106,18 +113,21 @@ public static class ExportUploader
 
             if (res.IsSuccessStatusCode)
             {
-                Service.Log($"[upload] sent {Path.GetFileName(path)}: {reply}");
+                Service.Logger.Information($"[upload] sent {Path.GetFileName(path)} ({json.Length} bytes): {reply}");
             }
             else
             {
-                Service.Log($"[upload] {Path.GetFileName(path)} refused with {(int)res.StatusCode}: {reply}");
+                // The size goes in the line because it is the thing most likely to be at fault. A relay has
+                // limits, and the export that trips them is the twenty-four player fight nobody else has
+                // recorded, which is exactly the one worth having.
+                Service.Logger.Error($"[upload] {Path.GetFileName(path)} ({json.Length} bytes) refused with {(int)res.StatusCode}: {reply}");
             }
         }
         catch (Exception e)
         {
             // Never surfaced in game. The file is still on disk, so nothing has been lost that cannot be
             // sent again, and a raid is the worst possible moment to be told about a network error.
-            Service.Log($"[upload] could not send {Path.GetFileName(path)}: {e.Message}");
+            Service.Logger.Error($"[upload] could not send {Path.GetFileName(path)} ({json.Length} bytes): {e.Message}");
         }
     }
 
