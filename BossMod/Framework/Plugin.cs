@@ -173,7 +173,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
         var replayDir = string.IsNullOrEmpty(config.ReplayFolder) ? _dalamud.ConfigDirectory.FullName + "/replays" : config.ReplayFolder;
         _wndReplay = new ReplayManagementWindow(_ws, _bossmod, _rotationDB, new DirectoryInfo(replayDir));
         _wndDutyExport = new(_wndReplay, _divergence);
-        _configUI = new(Service.Config, _ws, new DirectoryInfo(replayDir), _rotationDB);
+        _configUI = new(Service.Config, _ws, new DirectoryInfo(replayDir), _rotationDB, _bossmod);
         config.Modified.ExecuteAndSubscribe(() => _wndReplay.UpdateLogDirectory());
         _wndRotation = new(_rotation, _amex, () => OpenConfigUI("Autorotation presets"));
         _wndDebug = new(_ws, _rotation, _zonemod, _amex, _movementOverride, _hintsBuilder, _dalamud, _rsr);
