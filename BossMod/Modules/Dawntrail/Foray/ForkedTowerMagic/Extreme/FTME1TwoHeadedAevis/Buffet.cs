@@ -1,10 +1,16 @@
-﻿namespace BossMod.Dawntrail.Foray.ForkedTowerMagic.Normal.FTMN1TwoHeadedAevis;
+﻿namespace BossMod.Dawntrail.Foray.ForkedTowerMagic.Extreme.FTME1TwoHeadedAevis;
 
+[SkipLocalsInit]
 sealed class Buffet(BossModule module) : BossComponent(module)
 {
     private readonly Actor?[] AssignedBoss = new Actor?[PartyState.MaxPartySize];
-    private readonly TwoHeadedAevis bossModule = (TwoHeadedAevis)module;
-    private readonly TwoHeadedAevisConfig _config = Service.Config.Get<TwoHeadedAevisConfig>();
+    private readonly FTME1TwoHeadedAevis bossModule = (FTME1TwoHeadedAevis)module;
+    //private readonly FTME1TwoHeadedAevisConfig _config = Service.Config.Get<FTME1TwoHeadedAevisConfig>();
+
+    public Actor? GetAssignedBoss(int slot)
+    {
+        return AssignedBoss[slot];
+    }
 
     public override void OnTethered(Actor source, in ActorTetherInfo tether)
     {
@@ -19,7 +25,7 @@ sealed class Buffet(BossModule module) : BossComponent(module)
     {
         var boss = status.ID switch
         {
-            (uint)SID.EpicHero => Module.PrimaryActor,
+            (uint)SID.EpicHero => bossModule.GreenHead(),
             (uint)SID.FatedHero => bossModule.BlueHead(),
             _ => null
         };
@@ -51,7 +57,7 @@ sealed class Buffet(BossModule module) : BossComponent(module)
 
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
-        if (slot < PartyState.MaxAllianceSize && AssignedBoss[slot] is var assignedSlot /*&& assignedSlot != null*/ && WorldState.Actors.Find(actor.TargetID) is Actor target)
+        if (slot < PartyState.MaxAllianceSize && AssignedBoss[slot] is var assignedSlot && WorldState.Actors.Find(actor.TargetID) is Actor target)
         {
             if (assignedSlot != null)
             {
@@ -64,11 +70,13 @@ sealed class Buffet(BossModule module) : BossComponent(module)
                         enemy.Priority = AIHints.Enemy.PriorityInvincible;
                     }
                 }
+                /*
                 // also ignore forced targeting if current target is a PC
                 if (_config.ForceTargeting && (target == null || target.Type != ActorType.Player) && target != assignedSlot)
                 {
                     hints.ForcedTarget = assignedSlot;
                 }
+                */
             }
             else
             {
@@ -80,10 +88,12 @@ sealed class Buffet(BossModule module) : BossComponent(module)
                     {
                         enemy.Priority = AIHints.Enemy.PriorityPointless;
                     }
+                    /*
                     else if (_config.ForceTargeting && (target == null || target.Type != ActorType.Player))
                     {
                         hints.ForcedTarget = enemy?.Actor;
                     }
+                    */
                 }
             }
         }

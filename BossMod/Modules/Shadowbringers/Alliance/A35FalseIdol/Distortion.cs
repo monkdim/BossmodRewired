@@ -66,11 +66,10 @@ sealed class Distortion(BossModule module) : Components.GenericGaze(module)
         var rot = pc.Rotation;
         var pos = pc.Position;
         var danger = ((rot + eye.Forward).ToDirection().Dot((eye.Position - pos).Normalized()) >= 0f) != eye.Inverted;
-        var eyeCenter = Arena.WorldPositionToScreenPosition(eye.Position);
-        DrawEye(eyeCenter, danger);
+        DrawEye(eye.Position, danger);
 
         var (min, max) = eye.Inverted ? (90f, 270f) : (-90f, 90f);
-        Arena.PathArcTo(pos, 1f, (rot + eye.Forward + min.Degrees()).Rad, (rot + eye.Forward + max.Degrees()).Rad);
+        Arena.PathArcTo(pos, 1.5f, (rot + eye.Forward + min.Degrees()).Rad, (rot + eye.Forward + max.Degrees()).Rad);
         MiniArena.PathStroke(false, Colors.Enemy);
     }
 }

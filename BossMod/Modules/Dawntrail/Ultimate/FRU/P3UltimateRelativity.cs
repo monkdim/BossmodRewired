@@ -1,4 +1,6 @@
-﻿namespace BossMod.Dawntrail.Ultimate.FRU;
+﻿using TerraFX.Interop.Windows;
+
+namespace BossMod.Dawntrail.Ultimate.FRU;
 
 sealed class P3UltimateRelativity(BossModule module) : Components.CastCounter(module, default)
 {
@@ -449,45 +451,18 @@ sealed class P3UltimateRelativityDarkBlizzard(BossModule module) : Components.Ge
     }
 }
 
-sealed class P3UltimateRelativityShadoweye(BossModule module) : BossComponent(module)
+sealed class P3UltimateRelativityShadoweye(BossModule module) : Components.GenericGaze(module)
 {
     private readonly P3UltimateRelativity? _rel = module.FindComponent<P3UltimateRelativity>();
     private readonly List<WPos> _eyes = [];
     private DateTime _activation;
-
-    public override void AddHints(int slot, Actor actor, TextHints hints)
-    {
-        var pos = _rel?.States[slot].ReturnPos ?? actor.Position;
-        if (_eyes.Any(eye => eye != pos && HitByEye(pos, actor.Rotation, eye)))
-            hints.Add("Turn away from gaze!");
-    }
-
-    public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
-    {
-        var pos = _rel?.States[slot].ReturnPos ?? actor.Position;
-        foreach (var eye in _eyes)
-            if (eye != pos)
-                hints.ForbiddenDirections.Add((Angle.FromDirection(eye - pos), 45f.Degrees(), _activation));
-    }
 
     public override void DrawArenaForeground(int pcSlot, Actor pc)
     {
         var pos = _rel?.States[pcSlot].ReturnPos ?? pc.Position;
         Arena.Actor(pos, pc.Rotation, Colors.Object);
         Arena.AddLine(pos, pc.Position, Colors.Safe);
-        foreach (var eye in _eyes)
-        {
-            if (eye == pos)
-                continue;
-
-            var danger = HitByEye(pos, pc.Rotation, eye);
-            var eyeCenter = Arena.WorldPositionToScreenPosition(eye);
-            Components.GenericGaze.DrawEye(eyeCenter, danger);
-
-            var (min, max) = (-45f, 45f);
-            Arena.PathArcTo(pos, 1, (pc.Rotation + min.Degrees()).Rad, (pc.Rotation + max.Degrees()).Rad);
-            MiniArena.PathStroke(false, Colors.Enemy);
-        }
+        base.DrawArenaForeground(pcSlot, pc);
     }
 
     public override void OnStatusGain(Actor actor, ref ActorStatus status)
@@ -497,7 +472,9 @@ sealed class P3UltimateRelativityShadoweye(BossModule module) : BossComponent(mo
             case (uint)SID.SpellInWaitingShadoweye:
                 var slot = Raid.FindSlot(actor.InstanceID);
                 if (slot >= 0 && _rel != null)
+                {
                     _eyes.Add(_rel.States[slot].ReturnPos);
+                }
                 break;
             case (uint)SID.Return:
                 _activation = status.ExpireAt;
@@ -508,10 +485,31 @@ sealed class P3UltimateRelativityShadoweye(BossModule module) : BossComponent(mo
     public override void OnEventCast(Actor caster, ActorCastEvent spell)
     {
         if (spell.Action.ID == (uint)AID.UltimateRelativityShadoweye)
+        {
             _eyes.Clear();
+        }
     }
 
-    private bool HitByEye(WPos pos, Angle rot, WPos eye) => rot.ToDirection().Dot((eye - pos).Normalized()) >= 0.707107f; // 45-degree
+    public override ReadOnlySpan<Eye> ActiveEyes(int slot, Actor actor)
+    {
+        var count = _eyes.Count;
+        if (count == 0)
+        {
+            return [];
+        }
+        var pos = _rel?.States[slot].ReturnPos ?? actor.Position;
+        var relevantEyes = new List<Eye>(count);
+        var eyes = CollectionsMarshal.AsSpan(_eyes);
+        for (var i = 0; i < count; ++i)
+        {
+            var eye = eyes[i];
+            if (pos != eye)
+            {
+                relevantEyes.Add(new(eye, _activation, eyeCenter: eye));
+            }
+        }
+        return CollectionsMarshal.AsSpan(relevantEyes);
+    }
 }
 
 sealed class P3ShellCrusher(BossModule module) : Components.UniformStackSpread(module, 6f, default, 8, 8, includeDeadTargets: true)

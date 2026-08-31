@@ -303,6 +303,29 @@ sealed class Comet(BossModule module) : BossComponent(module)
 
         hints.Add("Attack the arcane sphere with the green circle around it!", false);
     }
+
+    public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
+    {
+        if (arcaneSpheres.Count == 0)
+        {
+            return;
+        }
+
+        var firstArcaneSphere = arcaneSpheres.MaxBy(a => a.mages);
+        if (firstArcaneSphere != null)
+        {
+            var arcane = firstArcaneSphere.arcaneSphere;
+            var count = hints.PotentialTargets.Count;
+            for (var i = 0; i < count; ++i)
+            {
+                var enemy = hints.PotentialTargets[i];
+                if (enemy.Actor.InstanceID == arcane.InstanceID)
+                {
+                    enemy.Priority = 2;
+                }
+            }
+        }
+    }
 }
 
 sealed class FlareHolyMerge(BossModule module) : BossComponent(module)

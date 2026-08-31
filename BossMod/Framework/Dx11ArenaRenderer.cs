@@ -1597,9 +1597,13 @@ public static unsafe partial class Dx11ArenaRenderer
         AppendSegment(SegmentKind.Stroke, start, 1);
     }
 
-    // Adds one unclipped analytic circle in logical screen pixels
+    // Adds one unclipped, fixed-size screen circle whose center is anchored in arena-local world space
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void AppendScreenCircle(Vector2 center, float radius, uint color)
+    public static void AppendArenaScreenCircle(in WDir centerOffset, float radius, uint color)
+        => AppendArenaScreenCircle(centerOffset, default, radius, color);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void AppendArenaScreenCircle(in WDir centerOffset, Vector2 screenOffset, float radius, uint color)
     {
         if (!IsInitialized || !_arenaActive || !(radius > 0f))
         {
@@ -1609,12 +1613,16 @@ public static unsafe partial class Dx11ArenaRenderer
         EnsureBuildRunStarted();
         var pixelScale = Math.Max(_buildPixelScale, 1e-5f);
         var aaPadScreen = 1.5f / pixelScale;
-        AppendScreenAnalytic(center, new Vector2(radius + aaPadScreen), default, new Vector4(radius * pixelScale, 0f, 0f, 0f), color);
+        AppendArenaScreenAnalytic(centerOffset, screenOffset, new Vector2(radius + aaPadScreen), default, new Vector4(radius * pixelScale, 0f, 0f, 0f), color);
     }
 
-    // Adds an unclipped analytic almond/eye lens in logical screen pixels. The shape is the exact intersection of two equal circles
+    // Adds one unclipped, analytic almond/eye lens whose center is anchored in arena-local world space, the shape is the exact intersection of two equal circles
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void AppendScreenEye(Vector2 center, float halfWidth, float halfHeight, uint color)
+    public static void AppendArenaScreenEye(in WDir centerOffset, float halfWidth, float halfHeight, uint color)
+        => AppendArenaScreenEye(centerOffset, default, halfWidth, halfHeight, color);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void AppendArenaScreenEye(in WDir centerOffset, Vector2 screenOffset, float halfWidth, float halfHeight, uint color)
     {
         if (!IsInitialized || !_arenaActive || !(halfWidth > 0f) || !(halfHeight > 0f))
         {
@@ -1626,24 +1634,24 @@ public static unsafe partial class Dx11ArenaRenderer
         var radius = (halfWidth * halfWidth + halfHeight * halfHeight) / (2f * halfHeight);
         var offset = radius - halfHeight;
         var aaPadScreen = 1.5f / pixelScale;
-        AppendScreenAnalytic(center, new Vector2(halfWidth + aaPadScreen, halfHeight + aaPadScreen), default, new Vector4(radius * pixelScale, offset * pixelScale, 0f, 6f), color);
+        AppendArenaScreenAnalytic(centerOffset, screenOffset, new Vector2(halfWidth + aaPadScreen, halfHeight + aaPadScreen), default, new Vector4(radius * pixelScale, offset * pixelScale, 0f, 6f), color);
     }
 
-    private static void AppendScreenAnalytic(Vector2 center, Vector2 extentScreen, Vector2 directionScreen, Vector4 parameters, uint color)
+    private static void AppendArenaScreenAnalytic(in WDir centerOffset, Vector2 screenOffset, Vector2 extentScreen, Vector2 directionScreen, Vector4 parameters, uint color)
     {
         if (!IsInitialized || !_arenaActive)
         {
             return;
         }
 
-        // Screen-space analytics need the current viewport/NDC transform just like world-space analytics do.
+        // Keep ScreenAnalytic so indicators outside ArenaBounds are not stencil-clipped
         EnsureArenaPrepared();
         EnsureAnalyticBuildCapacity(_buildAnalyticCount + 1);
 
         var start = _buildAnalyticCount;
         _buildAnalytics![_buildAnalyticCount++] = new AnalyticInstance
         {
-            CenterNdc = ScreenToNdc(center),
+            CenterNdc = LocalToNdc(centerOffset) + screenOffset * _buildNdcScale,
             ExtentNdc = extentScreen * _buildExtentNdcScale,
             ExtentPx = extentScreen * _buildPixelScale,
             DirectionScreen = directionScreen,
