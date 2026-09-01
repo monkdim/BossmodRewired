@@ -23,7 +23,8 @@ and it arrives versioned and diffable for free.
 
 1. Create a private repository for the data. It only ever holds exports, so it can be small and boring.
 2. Create a fine-grained personal access token scoped to that one repository, with **contents: read and
-   write** and nothing else. It should be able to do exactly one thing.
+   write** and nothing else. It should be able to do exactly one thing. That one permission covers the blobs,
+   trees, commits and references the relay writes through, so nothing further is needed.
 3. Install [wrangler](https://developers.cloudflare.com/workers/wrangler/), then from this directory:
 
    ```
@@ -49,7 +50,13 @@ and it arrives versioned and diffable for free.
 ## What it will accept
 
 `POST /submit` takes an export: valid JSON, shaped like one (a numeric `schema` and an array of `samples`),
-up to 8 MB.
+up to 32 MB.
+
+That ceiling used to be 8 MB, and a twenty-four player alliance raid carrying everybody's weaponskills is
+fifteen. The old limit was not arbitrary: the contents API wants the file base64 encoded, which is a third
+larger again and has to exist beside the original and once more inside the request body, so the file was
+costing roughly four times its own size in a worker that has a hundred and twenty-eight megabytes. Commits are
+now built from their parts through the git API, which takes a blob as plain UTF-8 and never doubles anything.
 
 `POST /feedback` takes what somebody typed into the plugin's feedback box, up to 8 KB, and opens an issue
 with it. The message is fenced in the issue body so that nothing in it can pose as a heading or an

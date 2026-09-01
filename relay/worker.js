@@ -12,7 +12,7 @@
 // Deploy with `wrangler deploy`, and set the secrets named below with `wrangler secret put`. Neither belongs
 // in this file or in the repository around it.
 
-const MAX_BYTES = 8 * 1024 * 1024;
+const MAX_BYTES = 32 * 1024 * 1024;
 
 // Feedback is prose somebody typed into a text box, so it needs nothing like the room an export does.
 // Generous enough for somebody to describe what went wrong properly, small enough that nobody is filing
@@ -247,93 +247,86 @@ function bossHint(payload) {
   return "";
 }
 
-// Committed through the contents API, which is one request and needs no tree building. The token should be
-// fine-grained, scoped to this one repository, and allowed nothing beyond writing contents.
+// Committed by building the commit out of its parts rather than through the contents API.
 //
-// Retried on conflict, because the contents API commits against the branch head and two people finishing a
-// duty at the same second are two writes racing for it. The loser is told 409 and simply needs to go again
-// with the head that now exists; the file names cannot collide, so nothing is overwritten by trying twice.
+// The contents API is one request and wants the file base64 encoded, which was fine until an alliance raid
+// turned up. Base64 makes a file a third larger again, and the encoded copy has to exist beside the original
+// and then a third time inside the request body, so a fifteen megabyte export needs sixty megabytes of a
+// worker's hundred and twenty-eight to say one thing. A twenty-four player raid carrying everybody's
+// weaponskills is exactly the recording most worth having and the one that could not get through.
+//
+// The git API takes a blob as plain UTF-8, so none of that doubling happens. It costs more requests and the
+// requests are small: a reference, its commit, the blob, a tree, a commit, the reference again. Only the blob
+// carries the file, and it carries it once.
+//
+// Retried as a whole rather than at the failing step, because the only failure worth retrying is somebody
+// else's upload moving the branch underneath this one, and the answer to that is to start again from wherever
+// the branch now is.
 async function toGitHub(env, name, body) {
   const path = `data/${name}`;
-  const content = base64(body);
+  const branch = env.GITHUB_BRANCH || "main";
+  const message = (await alreadyThere(env, path, branch)) ? `export: ${name} (re-exported)` : `export: ${name}`;
 
   for (let attempt = 0; ; ++attempt) {
-    // Replacing a file through the contents API means naming the blob being replaced, so the existing one is
-    // looked up first. Re-read on every attempt rather than once, since the whole reason an attempt fails is
-    // that the branch moved underneath it.
-    const sha = await shaOf(env, path);
+    try {
+      const ref = await api(env, `git/ref/heads/${branch}`);
+      const parent = ref.object.sha;
+      const commit = await api(env, `git/commits/${parent}`);
 
-    const res = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/contents/${path}`, {
-      method: "PUT",
-      headers: {
-        authorization: `Bearer ${env.GITHUB_TOKEN}`,
-        accept: "application/vnd.github+json",
-        "user-agent": "bossmod-rewired-relay",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        message: sha ? `export: ${name} (re-exported)` : `export: ${name}`,
-        content,
-        branch: env.GITHUB_BRANCH || "main",
-        ...(sha ? { sha } : {}),
-      }),
-    });
+      const blob = await api(env, "git/blobs", { content: body, encoding: "utf-8" });
+      const tree = await api(env, "git/trees", {
+        base_tree: commit.tree.sha,
+        tree: [{ path, mode: "100644", type: "blob", sha: blob.sha }],
+      });
 
-    if (res.ok) {
+      const made = await api(env, "git/commits", { message, tree: tree.sha, parents: [parent] });
+      await api(env, `git/refs/heads/${branch}`, { sha: made.sha }, "PATCH");
       return;
-    }
+    } catch (e) {
+      // A reference that moved is the ordinary case and simply means going again. Anything else is real.
+      if (!`${e.message}`.includes("github 422") || attempt >= 4) {
+        throw e;
+      }
 
-    const text = (await res.text()).slice(0, 200);
-    if ((res.status !== 409 && res.status !== 422) || attempt >= 4) {
-      throw new Error(`github ${res.status} ${text}`);
+      await new Promise((done) => setTimeout(done, 250 * (attempt + 1)));
     }
-
-    // Backing off a little rather than hammering, and staggered by attempt so two losers do not collide again
-    // on the retry the way they collided on the write.
-    await new Promise((done) => setTimeout(done, 250 * (attempt + 1)));
   }
 }
 
-
-// The blob currently at this path, or null when nothing is there yet. A 404 is the ordinary answer for a
-// recording nobody has sent before, so it is not an error.
-async function shaOf(env, path) {
-  const branch = encodeURIComponent(env.GITHUB_BRANCH || "main");
-  const res = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/contents/${path}?ref=${branch}`, {
+// One request against the GitHub API, carrying the token and the headers every one of them needs.
+async function api(env, route, payload, method) {
+  const res = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/${route}`, {
+    method: method ?? (payload ? "POST" : "GET"),
     headers: {
       authorization: `Bearer ${env.GITHUB_TOKEN}`,
       accept: "application/vnd.github+json",
       "user-agent": "bossmod-rewired-relay",
+      ...(payload ? { "content-type": "application/json" } : {}),
     },
+    ...(payload ? { body: JSON.stringify(payload) } : {}),
   });
 
-  if (res.status === 404) {
-    return null;
-  }
-
   if (!res.ok) {
-    throw new Error(`github ${res.status} looking up ${path}`);
+    throw new Error(`github ${res.status} on ${route}: ${(await res.text()).slice(0, 200)}`);
   }
 
-  return (await res.json()).sha ?? null;
+  return res.json();
 }
 
-// btoa only handles latin-1, and an export is UTF-8, so the bytes are widened first.
+// Whether this path is already filed, asked of the directory rather than of the file.
 //
-// A chunk at a time rather than a character at a time. The character loop was correct and cost two seconds of
-// processor time on a seven megabyte export, which a worker does not have to give; a whole alliance raid
-// arrived, spent its entire budget widening bytes one at a time, and was killed before it reached storage.
-// Handing whole slices to fromCharCode does the same work in a couple of hundred calls instead of seven
-// million. The chunk is bounded because the argument list is: spreading a whole file across one call
-// overflows the stack, which is the other way to lose a large export.
-function base64(s) {
-  const bytes = new TextEncoder().encode(s);
-  const CHUNK = 0x8000;
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+// Asking for the file hands back the file, which for the exports that made this rewrite necessary means
+// fetching fifteen megabytes to learn one thing. A directory listing is names and hashes and stays small
+// however large the things in it are. It only decides how the commit is worded, so an unreachable answer is a
+// shrug rather than a failure.
+async function alreadyThere(env, path, branch) {
+  const dir = path.slice(0, path.lastIndexOf("/"));
+  try {
+    const listing = await api(env, `contents/${dir}?ref=${encodeURIComponent(branch)}`);
+    return Array.isArray(listing) && listing.some((f) => f.path === path);
+  } catch {
+    return false;
   }
-  return btoa(binary);
 }
 
 function text(status, message) {
