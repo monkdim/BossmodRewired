@@ -323,10 +323,22 @@ static class RecordingDump
         }
 
         var seconds = (to - from).TotalSeconds;
+
+        // The same names the positions are filed under, worked out the same way, so a reader can line the two
+        // halves of a pull up against each other. A damage table calling somebody M2 while the position rows
+        // call them Melee would be two files pretending to be one.
+        var party = new List<(Class, ulong)>(involved.Count);
+        foreach (var p in involved)
+        {
+            party.Add((p.Class, p.ContentID));
+        }
+
+        var slots = LearnedPositions.SlotsFor(party);
+
         foreach (var line in Contributions.ForWindow(replay, involved, from, to))
         {
             export.Contributions.Add(new(pull, Label(line.Player), line.Player.Class.ToString(),
-                LearnedPositions.SlotOf(line.Player.Class, line.Player.ContentID),
+                slots.TryGetValue(line.Player.ContentID, out var slot) ? slot : LearnedPositions.SlotOf(line.Player.Class),
                 line.Damage, line.Healing, line.Taken, line.Deaths, seconds));
         }
     }
