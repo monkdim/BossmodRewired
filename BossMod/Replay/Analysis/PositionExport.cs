@@ -47,7 +47,8 @@ sealed class PositionExport
     /// disk, where nothing has to fit through anything; what travels is the shape of the pull.
     /// </summary>
     public readonly record struct Rotation(int Pull, string Who, string Job, string Slot, int Gcds, int Ogcds,
-        double Recast, double Active, double Lost, double LongestGap, double LongestGapAt, bool Reliable);
+        double Recast, double Active, double Lost, double LostToFight, double LostToMovement,
+        double LongestGap, double LongestGapAt, bool Reliable, bool Split);
 
     /// <summary>One button, kept only in the copy written locally.</summary>
     public readonly record struct Press(int Pull, string Who, uint Ability, string Name, double At, bool GCD);
@@ -197,7 +198,7 @@ sealed class PositionExport
 
         // Bumped whenever a field changes meaning, so a reader can refuse a file it would misread rather than
         // silently interpreting an old one under new rules.
-        sb.Append("  \"schema\": 3,\n");
+        sb.Append("  \"schema\": 4,\n");
         sb.Append("  \"boss\": ").Append(Str(Boss)).Append(",\n");
         sb.Append("  \"oid\": ").Append(OID.ToString(CultureInfo.InvariantCulture)).Append(",\n");
         sb.Append("  \"zone\": ").Append(Zone.ToString(CultureInfo.InvariantCulture)).Append(",\n");
@@ -288,6 +289,10 @@ sealed class PositionExport
                   .Append(", \"recast\": ").Append(N(r.Recast))
                   .Append(", \"active\": ").Append(N(r.Active))
                   .Append(", \"lost\": ").Append(N(r.Lost))
+                  // Null rather than zero when the party was too small or too patchily recorded to tell the
+                  // two apart, because a zero here reads as a fight that never stopped.
+                  .Append(", \"lostToFight\": ").Append(r.Split ? N(r.LostToFight) : "null")
+                  .Append(", \"lostToMovement\": ").Append(r.Split ? N(r.LostToMovement) : "null")
                   .Append(", \"longestGap\": ").Append(N(r.LongestGap))
                   .Append(", \"longestGapAt\": ").Append(N(r.LongestGapAt))
                   // Withheld rather than defaulted when the recast could not be read, because a zero here

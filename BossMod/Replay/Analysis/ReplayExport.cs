@@ -23,7 +23,7 @@ static class ReplayExport
     /// The number is the only thing that changed, and it changed on every row, which is exactly the case this
     /// version exists to catch: without the bump a re-export would look current and be skipped.
     /// </summary>
-    public const int FormatVersion = 4;
+    public const int FormatVersion = 5;
 
     private static string Stamp => $"Export format {FormatVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)}.";
 

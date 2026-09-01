@@ -363,7 +363,8 @@ static class RecordingDump
                 var who = Label(line.Player);
                 export.Rotations.Add(new(pull, who, line.Player.Class.ToString(), Slot(line.Player),
                     line.Gcds, line.Ogcds, line.Recast, line.Active, line.Lost,
-                    line.LongestGap, line.LongestGapAt, line.Reliable));
+                    line.LostToFight, line.LostToMovement,
+                    line.LongestGap, line.LongestGapAt, line.Reliable, line.Split));
 
                 foreach (var step in line.Steps)
                 {
