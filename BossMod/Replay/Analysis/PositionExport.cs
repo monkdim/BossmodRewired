@@ -38,6 +38,20 @@ sealed class PositionExport
     /// </summary>
     public readonly record struct Contribution(int Pull, string Who, string Job, string Slot, long Damage, long Healing, long Taken, int Deaths, double Seconds);
 
+    /// <summary>
+    /// One player's pull, measured in weaponskills rather than coordinates.
+    ///
+    /// A summary and not the button list, and the reason is size rather than taste. A twenty-four player
+    /// alliance raid already exports seven megabytes of positions, and every action every one of them pressed
+    /// would add another two, which is past what the relay will carry. The steps stay on the recorder's own
+    /// disk, where nothing has to fit through anything; what travels is the shape of the pull.
+    /// </summary>
+    public readonly record struct Rotation(int Pull, string Who, string Job, string Slot, int Gcds, int Ogcds,
+        double Recast, double Active, double Lost, double LongestGap, double LongestGapAt, bool Reliable);
+
+    /// <summary>One button, kept only in the copy written locally.</summary>
+    public readonly record struct Press(int Pull, string Who, uint Ability, string Name, double At, bool GCD);
+
     /// <summary>What the analysis concluded about an ability, so a reader need not re-derive it.</summary>
     public readonly record struct AbilityInfo(uint ID, string Name, string Shape, bool Positional, int Resolutions, bool Telegraphed, bool Marked, bool Landed);
 
@@ -67,6 +81,8 @@ sealed class PositionExport
     public readonly List<Row> Rows = [];
     public readonly List<AbilityInfo> Abilities = [];
     public readonly List<Contribution> Contributions = [];
+    public readonly List<Rotation> Rotations = [];
+    public readonly List<Press> Presses = [];
 
     private readonly HashSet<uint> _described = [];
 
@@ -160,24 +176,28 @@ sealed class PositionExport
         return sb.Append('"').ToString();
     }
 
-    public string Build() => Build(false);
+    public string Build() => Build(false, false, true);
 
     /// <summary>
     /// The file itself.
     ///
-    /// Built twice when the two sharing switches disagree: once with contributions for the copy kept on disk,
-    /// once without for the copy that leaves. Rebuilding costs a fraction of what parsing the recording
-    /// already cost, and it means the shared file never contains something that has to be trusted to be
-    /// removed later.
+    /// Built twice when the sharing switches disagree with the capture ones: once in full for the copy kept
+    /// on disk, once trimmed for the copy that leaves. Rebuilding costs a fraction of what parsing the
+    /// recording already cost, and it means the shared file never contains something that has to be trusted to
+    /// be removed later.
+    ///
+    /// The button list is never in the shared copy at all, whatever anybody has switched on. It is the one
+    /// thing here big enough to matter: an alliance raid's positions already run to seven megabytes, and every
+    /// action every player pressed adds two more, which is past what the relay will accept.
     /// </summary>
-    public string Build(bool withContributions)
+    public string Build(bool withContributions, bool withRotations, bool local)
     {
         var sb = new StringBuilder();
         sb.Append("{\n");
 
         // Bumped whenever a field changes meaning, so a reader can refuse a file it would misread rather than
         // silently interpreting an old one under new rules.
-        sb.Append("  \"schema\": 2,\n");
+        sb.Append("  \"schema\": 3,\n");
         sb.Append("  \"boss\": ").Append(Str(Boss)).Append(",\n");
         sb.Append("  \"oid\": ").Append(OID.ToString(CultureInfo.InvariantCulture)).Append(",\n");
         sb.Append("  \"zone\": ").Append(Zone.ToString(CultureInfo.InvariantCulture)).Append(",\n");
@@ -248,6 +268,53 @@ sealed class PositionExport
                   .Append(", \"dps\": ").Append(N(c.Seconds > 0d ? c.Damage / c.Seconds : 0d))
                   .Append('}')
                   .Append(i + 1 < Contributions.Count ? ",\n" : "\n");
+            }
+
+            sb.Append("  ],\n");
+        }
+
+        if (withRotations && Rotations.Count > 0)
+        {
+            sb.Append("  \"rotations\": [\n");
+            for (var i = 0; i < Rotations.Count; ++i)
+            {
+                var r = Rotations[i];
+                sb.Append("    {\"pull\": ").Append(r.Pull.ToString(CultureInfo.InvariantCulture))
+                  .Append(", \"who\": ").Append(Str(r.Who))
+                  .Append(", \"job\": ").Append(Str(r.Job))
+                  .Append(", \"slot\": ").Append(Str(r.Slot))
+                  .Append(", \"gcds\": ").Append(r.Gcds.ToString(CultureInfo.InvariantCulture))
+                  .Append(", \"ogcds\": ").Append(r.Ogcds.ToString(CultureInfo.InvariantCulture))
+                  .Append(", \"recast\": ").Append(N(r.Recast))
+                  .Append(", \"active\": ").Append(N(r.Active))
+                  .Append(", \"lost\": ").Append(N(r.Lost))
+                  .Append(", \"longestGap\": ").Append(N(r.LongestGap))
+                  .Append(", \"longestGapAt\": ").Append(N(r.LongestGapAt))
+                  // Withheld rather than defaulted when the recast could not be read, because a zero here
+                  // would be indistinguishable from a player who genuinely never stopped.
+                  .Append(", \"uptime\": ").Append(r.Reliable && r.Active + r.Lost > 0d ? N(r.Active / (r.Active + r.Lost)) : "null")
+                  .Append('}')
+                  .Append(i + 1 < Rotations.Count ? ",\n" : "\n");
+            }
+
+            sb.Append("  ],\n");
+        }
+
+        // Never written to anything that leaves. See the note on Build.
+        if (local && Presses.Count > 0)
+        {
+            sb.Append("  \"presses\": [\n");
+            for (var i = 0; i < Presses.Count; ++i)
+            {
+                var k = Presses[i];
+                sb.Append("    {\"pull\": ").Append(k.Pull.ToString(CultureInfo.InvariantCulture))
+                  .Append(", \"who\": ").Append(Str(k.Who))
+                  .Append(", \"ability\": ").Append(k.Ability.ToString(CultureInfo.InvariantCulture))
+                  .Append(", \"name\": ").Append(Str(k.Name))
+                  .Append(", \"at\": ").Append(N(k.At))
+                  .Append(", \"gcd\": ").Append(k.GCD ? "true" : "false")
+                  .Append('}')
+                  .Append(i + 1 < Presses.Count ? ",\n" : "\n");
             }
 
             sb.Append("  ],\n");

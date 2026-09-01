@@ -317,7 +317,8 @@ static class RecordingDump
     /// </summary>
     internal static void RecordContributions(PositionExport export, Replay replay, IReadOnlyCollection<Replay.Participant> involved, int pull, DateTime from, DateTime to)
     {
-        if (!Service.Config.Get<SetupConfig>().CaptureContributions)
+        var setup = Service.Config.Get<SetupConfig>();
+        if (!setup.CaptureContributions && !setup.CaptureRotations)
         {
             return;
         }
@@ -335,11 +336,40 @@ static class RecordingDump
 
         var slots = LearnedPositions.SlotsFor(party);
 
-        foreach (var line in Contributions.ForWindow(replay, involved, from, to))
+        string Slot(Replay.Participant p)
+            => slots.TryGetValue(p.ContentID, out var slot) ? slot : LearnedPositions.SlotOf(p.Class);
+
+        if (setup.CaptureContributions)
         {
-            export.Contributions.Add(new(pull, Label(line.Player), line.Player.Class.ToString(),
-                slots.TryGetValue(line.Player.ContentID, out var slot) ? slot : LearnedPositions.SlotOf(line.Player.Class),
-                line.Damage, line.Healing, line.Taken, line.Deaths, seconds));
+            foreach (var line in Contributions.ForWindow(replay, involved, from, to))
+            {
+                export.Contributions.Add(new(pull, Label(line.Player), line.Player.Class.ToString(),
+                    Slot(line.Player), line.Damage, line.Healing, line.Taken, line.Deaths, seconds));
+            }
+        }
+
+        if (setup.CaptureRotations)
+        {
+            foreach (var line in Rotations.ForWindow(replay, involved, from, to))
+            {
+                // A player who pressed nothing at all is left out rather than recorded as a row of zeroes.
+                // Every alliance raid has people the client never loaded, and a table full of them reads as a
+                // party that stood still rather than as a recording that could not see them.
+                if (line.Steps.Count == 0)
+                {
+                    continue;
+                }
+
+                var who = Label(line.Player);
+                export.Rotations.Add(new(pull, who, line.Player.Class.ToString(), Slot(line.Player),
+                    line.Gcds, line.Ogcds, line.Recast, line.Active, line.Lost,
+                    line.LongestGap, line.LongestGapAt, line.Reliable));
+
+                foreach (var step in line.Steps)
+                {
+                    export.Presses.Add(new(pull, who, step.Ability, step.Name, step.At, step.GCD));
+                }
+            }
         }
     }
 
