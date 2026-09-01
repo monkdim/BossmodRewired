@@ -41,7 +41,11 @@ public static class ExportUploader
 {
     // Kept for the plugin's lifetime rather than per send. Creating one per upload is the classic way to
     // exhaust sockets, and a raid night is a lot of uploads.
-    private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
+    // Generous, because the thing most worth sending is the thing that takes longest. A full alliance raid
+    // with everybody's weaponskills in it is fifteen megabytes, and the relay files it as half a dozen small
+    // requests once it arrives, none of which has finished when the thirty seconds this used to allow are up.
+    // Nothing is waiting on the result, so a long ceiling costs nothing and a short one loses the recording.
+    private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromMinutes(3) };
 
     // Sends run one after another rather than all at once. A duty finishing produces a single export and would
     // not care either way, but exporting a folder of recordings produces a hundred within a few seconds, and a
