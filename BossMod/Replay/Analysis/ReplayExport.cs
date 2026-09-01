@@ -23,7 +23,7 @@ static class ReplayExport
     /// The number is the only thing that changed, and it changed on every row, which is exactly the case this
     /// version exists to catch: without the bump a re-export would look current and be skipped.
     /// </summary>
-    public const int FormatVersion = 3;
+    public const int FormatVersion = 4;
 
     private static string Stamp => $"Export format {FormatVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)}.";
 
@@ -120,7 +120,7 @@ static class ReplayExport
             // The copy kept here carries whatever was captured. The copy that leaves is built separately when
             // the two switches disagree, so what is shared never contains something that was meant to be
             // removed on the way out.
-            var mine = export.Build(setup.CaptureContributions);
+            var mine = export.Build(setup.CaptureContributions, setup.CaptureRotations, true);
             File.WriteAllText(Path.Combine(dir, DataFileName(replay.Path)), mine);
             LearnedPositions.Merge(Path.Combine(dir, LearnedPositions.FileName), learned);
 
@@ -129,7 +129,15 @@ static class ReplayExport
             // knowing on your own disk; sending it is just an empty file in somebody else's pile.
             if (export.HasContent)
             {
-                var shared = setup.CaptureContributions && !setup.ShareContributions ? export.Build(false) : mine;
+                // Rebuilt whenever anything captured is not also shared. The button list is excluded from the
+                // shared copy unconditionally, so a recording that captured it always needs the second build.
+                var trim = (setup.CaptureContributions && !setup.ShareContributions)
+                        || (setup.CaptureRotations && !setup.ShareRotations)
+                        || setup.CaptureRotations;
+                var shared = trim
+                    ? export.Build(setup.CaptureContributions && setup.ShareContributions,
+                                   setup.CaptureRotations && setup.ShareRotations, false)
+                    : mine;
                 ExportUploader.Send(DataFileName(replay.Path), shared);
             }
 

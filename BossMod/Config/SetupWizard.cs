@@ -24,6 +24,12 @@ public sealed class SetupConfig : ConfigNode
     [PropertyDisplay("Include those figures when sharing", tooltip: "Off by default and deliberately separate. The question asked during setup was about positions, so these numbers are removed before an export is sent unless this is turned on as well.")]
     public bool ShareContributions = false;
 
+    [PropertyDisplay("Also record what everybody pressed", tooltip: "Adds every ability each player used, per pull, and how much of the pull they spent on weaponskills. It is what turns a position into a cost: a spot that drops two casts is a worse spot than one that drops none. Off by default, and heavier than the rest, since a busy pull is a few thousand button presses.")]
+    public bool CaptureRotations = false;
+
+    [PropertyDisplay("Include the uptime summary when sharing", tooltip: "Off by default and separate again. Only the summary can ever be shared, never the button list itself: an alliance raid's positions already fill most of what the relay will carry, and the presses would not fit beside them. Those stay on this machine whatever this is set to.")]
+    public bool ShareRotations = false;
+
     /// <summary>
     /// Whether the question has ever actually been answered.
     ///
