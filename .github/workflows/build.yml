@@ -9,6 +9,22 @@ on:
   push:
     branches:
       - 'upstream/**'
+
+  # Dalamud ships on its own schedule and this plugin compiles against whatever it has shipped, so the build
+  # can start failing without a line of this repository changing. Nothing here would notice: the last run was
+  # against whatever Dalamud looked like the last time somebody opened a pull request, which during a quiet
+  # week can be a fortnight ago and a client update or two behind.
+  #
+  # A weekly run turns that into a red tick on a morning nobody was expecting one, which is the whole point.
+  # It costs a few minutes of a runner and answers the question that otherwise gets asked by a user whose game
+  # will not load the plugin.
+  schedule:
+    - cron: '0 10 * * 1'
+
+  # And on demand, for the morning somebody sees the Dalamud update land and wants the answer now rather than
+  # by opening a pull request against main to provoke one.
+  workflow_dispatch:
+
 jobs:
   Build:
     runs-on: windows-latest
