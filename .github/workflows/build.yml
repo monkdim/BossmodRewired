@@ -9,6 +9,22 @@ on:
   push:
     branches:
       - 'upstream/**'
+
+  # Dalamud ships on its own schedule and this plugin compiles against whatever it has shipped, so the build
+  # can start failing without a line of this repository changing. Nothing here would notice: the last run was
+  # against whatever Dalamud looked like the last time somebody opened a pull request, which during a quiet
+  # week can be a fortnight ago and a client update or two behind.
+  #
+  # A weekly run turns that into a red tick on a morning nobody was expecting one, which is the whole point.
+  # It costs a few minutes of a runner and answers the question that otherwise gets asked by a user whose game
+  # will not load the plugin.
+  schedule:
+    - cron: '0 10 * * 1'
+
+  # And on demand, for the morning somebody sees the Dalamud update land and wants the answer now rather than
+  # by opening a pull request against main to provoke one.
+  workflow_dispatch:
+
 jobs:
   Build:
     runs-on: windows-latest
@@ -25,8 +41,28 @@ jobs:
 
       - name: Download Dalamud Latest
         run: |
-          Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile latest.zip
+          # Retried, because this is one unauthenticated fetch of somebody else's file and it does fail: the
+          # sister repository's build died here the same morning this was written, on a connection closed
+          # mid-transfer, and reported it as a build failure. That matters more now than it did. A weekly run
+          # exists to say "the plugin no longer compiles", and a red tick that actually means "the download
+          # blipped" is the fastest way to teach everybody to ignore the weekly run.
+          $ErrorActionPreference = 'Stop'
+          for ($i = 1; $i -le 5; ++$i) {
+            try {
+              Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile latest.zip
+              break
+            } catch {
+              if ($i -eq 5) { throw }
+              Write-Host "Dalamud download failed ($($_.Exception.Message)), attempt $i of 5"
+              Start-Sleep -Seconds (5 * $i)
+            }
+          }
+
           Expand-Archive -Force latest.zip -DestinationPath "$env:AppData\XIVLauncher\addon\Hooks\dev"
+
+          # Printed so a failure later in the run can be pinned to a Dalamud version without guessing.
+          $version = Invoke-RestMethod -Uri https://goatcorp.github.io/dalamud-distrib/version
+          Write-Host "Building against Dalamud $($version.AssemblyVersion)"
 
       - name: Restore NuGet Packages
         run: dotnet restore     BossMod/BossModReborn.csproj
