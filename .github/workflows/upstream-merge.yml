@@ -65,14 +65,60 @@ jobs:
             git merge --abort
           fi
 
+      # Written before anything is asked of the API, and to a file rather than through it. The two runs this
+      # job had before this step existed both worked out exactly what was wrong and then lost it, because the
+      # only place they tried to put it was an issue the token was not allowed to create. A step summary needs
+      # no permission and shows on the run page, so from here the finding survives the reporting failing.
+      - name: Write the outcome to the run
+        if: always() && steps.check.outputs.behind != '0'
+        run: |
+          if [ "${{ steps.merge.outputs.clean }}" = "true" ]; then
+            cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          ## Upstream merged cleanly
+
+          ${{ steps.check.outputs.behind }} commit(s) from [BossMod Reborn](https://github.com/FFXIV-CombatReborn/BossmodReborn).
+
+          Branch: `${{ steps.merge.outputs.branch }}`
+          SUMMARY
+          else
+            cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          ## Upstream does not merge cleanly
+
+          ${{ steps.check.outputs.behind }} commit(s) from [BossMod Reborn](https://github.com/FFXIV-CombatReborn/BossmodReborn)
+          conflict, so no branch was pushed. These files:
+
+          ```
+          ${{ steps.merge.outputs.conflicts }}
+          ```
+
+          To do it locally:
+
+          ```
+          git remote add upstream https://github.com/FFXIV-CombatReborn/BossmodReborn.git
+          git fetch upstream main
+          git checkout -b upstream/merge main
+          git merge upstream/main
+          ```
+
+          The usual culprit is one line of `BossMod/BossModReborn.csproj`. This fork renames the assembly, so
+          the build-output cleanup target differs from upstream's, and any upstream edit to that line lands on
+          top of the rename. Take their version of the line and put `BossModRewired.*` back in it.
+          SUMMARY
+          fi
+
+      - name: Push the branch
+        if: steps.check.outputs.behind != '0' && steps.merge.outputs.clean == 'true'
+        run: git push origin "${{ steps.merge.outputs.branch }}"
+
+      # Best effort, and deliberately so. The branch is already pushed by the time this runs, so a refusal
+      # here costs the pull request and not the merge. Failing the job over it would put a red tick on a run
+      # that did its work, which is the same thing that taught nobody to look at this job in the first place.
       - name: Open the pull request
         if: steps.check.outputs.behind != '0' && steps.merge.outputs.clean == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git push origin "${{ steps.merge.outputs.branch }}"
-
-          gh pr create \
+          if gh pr create \
             --base main \
             --head "${{ steps.merge.outputs.branch }}" \
             --title "Merge upstream BossMod Reborn" \
@@ -91,7 +137,17 @@ jobs:
 
           Opened automatically. Nothing was sent upstream.
           BODY
-          )"
+          )"; then
+            echo "pull request opened"
+          else
+            echo "::warning::Could not open the pull request. The branch ${{ steps.merge.outputs.branch }} is pushed; open it by hand."
+            cat >> "$GITHUB_STEP_SUMMARY" <<'NOTE'
+
+          Could not open the pull request automatically. If this says `Resource not accessible by
+          integration`, the workflow token is capped: Settings, Actions, General, Workflow permissions, then
+          read and write plus allow GitHub Actions to create and approve pull requests.
+          NOTE
+          fi
 
       - name: Say so when it needs hands
         if: steps.check.outputs.behind != '0' && steps.merge.outputs.clean == 'false'
@@ -100,32 +156,27 @@ jobs:
         run: |
           # One issue, not one a week. The job runs on a schedule and the conflict persists until somebody
           # resolves it, so re-reporting would bury the original under its own copies.
-          if [ -n "$(gh issue list --state open --search 'Upstream merge needs hands in:title' --json number --jq '.[].number')" ]; then
+          existing=$(gh issue list --state open --search 'Upstream merge needs hands in:title' --json number --jq '.[].number' 2>/dev/null || true)
+          if [ -n "$existing" ]; then
             echo "already reported, leaving it alone"
-            exit 0
-          fi
-
-          gh issue create \
+          elif gh issue create \
             --title "Upstream merge needs hands" \
             --body "$(cat <<'BODY'
-          ${{ steps.check.outputs.behind }} commit(s) from
-          [BossMod Reborn](https://github.com/FFXIV-CombatReborn/BossmodReborn) do not merge cleanly, so no
-          branch was pushed. These files conflict:
+          Upstream commits do not merge cleanly, so no branch was pushed. The conflicting files, and how to do
+          the merge locally, are in the run summary linked below.
 
-          ```
-          ${{ steps.merge.outputs.conflicts }}
-          ```
+          The usual culprit is one line of `BossMod/BossModReborn.csproj`. This fork renames the assembly, so
+          the build-output cleanup target differs from upstream's, and any upstream edit to that line lands on
+          top of the rename. Take their version of the line and put `BossModRewired.*` back in it.
 
-          To do it locally:
-
-          ```
-          git remote add upstream https://github.com/FFXIV-CombatReborn/BossmodReborn.git
-          git fetch upstream main
-          git checkout -b upstream/merge main
-          git merge upstream/main
-          ```
-
-          Resolve, push the branch, and open a pull request. Closing this issue without merging means the
-          next run opens a fresh one, since the conflict is still there.
+          Closing this without merging means the next run opens a fresh one, since the conflict is still there.
           BODY
-          )"
+          )"; then
+            echo "issue opened"
+          else
+            echo "::warning::Could not open the issue. The conflict is in the run summary."
+          fi
+
+          # The job goes red either way. A conflict is a thing somebody has to do, and the run summary now
+          # says what it is whether or not the issue got filed.
+          exit 1
