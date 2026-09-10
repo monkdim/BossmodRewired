@@ -1,4 +1,3 @@
-﻿using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -19,7 +18,7 @@ public sealed class ConfigDisplayAttribute : Attribute
 public sealed class PropertyDisplayAttribute(string label, uint color = default, string tooltip = "", bool separator = false, string[]? tags = null) : Attribute
 {
     public string Label { get; } = label;
-    public uint Color { get; } = color == default ? Colors.TextColor1 : color;
+    public uint Color => color == default ? Colors.TextColor1 : color;
     public string Tooltip { get; } = tooltip;
     public bool Separator { get; } = separator;
     public string[] Tags { get; } = tags ?? [];
@@ -31,7 +30,7 @@ public sealed class PropertyComboAttribute(string[] values) : Attribute
 {
     public string[] Values { get; } = values;
 
-#pragma warning disable CA1019 // this is just a shorthand
+#pragma warning disable CA1019
     public PropertyComboAttribute(string falseText, string trueText) : this([falseText, trueText]) { }
 #pragma warning restore CA1019
 }
@@ -60,67 +59,28 @@ public abstract class ConfigNode
     [JsonIgnore]
     public Event Modified = new();
 
-    // draw custom contents; override this for complex config nodes
     public virtual void DrawCustom(UITree tree, WorldState ws) { }
-
-    private static readonly ConcurrentDictionary<Type, FieldInfo[]> _fieldsCache = [];
-
-    protected static FieldInfo[] GetSerializableFields(Type t)
-    {
-        if (_fieldsCache.TryGetValue(t, out var cachedFields))
-        {
-            return cachedFields;
-        }
-
-        var fields = t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-        var len = fields.Length;
-        var discoveredFields = new FieldInfo[len];
-        var index = 0;
-        for (var i = 0; i < len; ++i)
-        {
-            ref readonly var field = ref fields[i];
-            if (!field.IsStatic && !field.IsDefined(typeof(JsonIgnoreAttribute), false))
-            {
-                discoveredFields[index++] = field;
-            }
-        }
-
-        return _fieldsCache[t] = discoveredFields[..index];
-    }
 
     // deserialize fields from json; default implementation should work fine for most cases
     public virtual void Deserialize(JsonElement j, JsonSerializerOptions ser)
     {
         var agg = new List<JsonException>();
+        var metadata = GeneratedConfigMetadata.Get(this);
 
-        var type = GetType();
         foreach (var jfield in j.EnumerateObject())
         {
-            var field = type.GetField(jfield.Name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (field != null)
+            if (metadata.FieldsByName.GetValueOrDefault(jfield.Name) is not { Serializable: true } field)
+                continue;
+
+            try
             {
-                if (field.IsStatic)
-                {
-                    continue;
-                }
-
-                if (field.GetCustomAttribute<JsonIgnoreAttribute>() != null)
-                {
-                    continue;
-                }
-
-                try
-                {
-                    var value = jfield.Value.Deserialize(field.FieldType, ser);
-                    if (value != null)
-                    {
-                        field.SetValue(this, value);
-                    }
-                }
-                catch (JsonException ex)
-                {
-                    agg.Add(ex);
-                }
+                var value = jfield.Value.Deserialize(field.FieldType, ser);
+                if (value != null)
+                    field.Setter(this, value);
+            }
+            catch (JsonException ex)
+            {
+                agg.Add(ex);
             }
         }
 
@@ -132,14 +92,12 @@ public abstract class ConfigNode
     public virtual void Serialize(Utf8JsonWriter writer, JsonSerializerOptions options)
     {
         writer.WriteStartObject();
-
-        var fields = GetSerializableFields(GetType());
+        var fields = GeneratedConfigMetadata.Get(this).SerializableFields;
         var len = fields.Length;
         for (var i = 0; i < len; ++i)
         {
-            ref readonly var field = ref fields[i];
-            var fieldValue = field.GetValue(this);
-
+            var field = fields[i];
+            var fieldValue = field.Getter(this);
             writer.WritePropertyName(field.Name);
             if (fieldValue is ConfigNode subNode)
             {
@@ -150,7 +108,6 @@ public abstract class ConfigNode
                 JsonSerializer.Serialize(writer, fieldValue, field.FieldType, options);
             }
         }
-
         writer.WriteEndObject();
     }
 }

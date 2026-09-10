@@ -17,7 +17,7 @@ sealed class VoidBlizzard(BossModule module) : Components.CastInterruptHint(modu
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add("The first act is fairly easy. Interrupt the Void Blizzards with Flying\nSardine and most of the danger is gone. The Imps are weak against fire spells.\nIn the 2nd act you can start the Final Sting combination at about 50%\nhealth left. (Off-guard->Bristle->Moonflute->Final Sting)");
     }
@@ -25,7 +25,7 @@ sealed class Hints(BossModule module) : BossComponent(module)
 
 sealed class Hints2(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add("The imps are weak to fire spells and strong against ice.\nInterrupt Void Blizzard with Flying Sardine.");
     }

@@ -1,6 +1,5 @@
 namespace BossMod;
 
-[SkipLocalsInit]
 public static class SortHelpers
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -28,6 +27,9 @@ public static class SortHelpers
     public static void SortEyesByActivation(List<Components.GenericGaze.Eye> list) => RefSort.Sort(CollectionsMarshal.AsSpan(list), new EyeActivationComparer());
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void SortKnockbacksByActivation(List<Components.GenericKnockback.Knockback> list) => RefSort.Sort(CollectionsMarshal.AsSpan(list), new KnockbackActivationComparer());
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void SortForbiddenZonesByActivation(List<(ShapeDistance, DateTime, ulong)> list) => RefSort.Sort(CollectionsMarshal.AsSpan(list), new ForbiddenZonesActivationComparer());
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -43,6 +45,12 @@ public static class SortHelpers
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int Compare(ref Components.GenericAOEs.AOEInstance a, ref Components.GenericAOEs.AOEInstance b) => a.Activation.CompareTo(b.Activation);
+    }
+
+    private readonly struct KnockbackActivationComparer : IRefComparer<Components.GenericKnockback.Knockback>
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int Compare(ref Components.GenericKnockback.Knockback a, ref Components.GenericKnockback.Knockback b) => a.Activation.CompareTo(b.Activation);
     }
 
     private readonly struct EyeActivationComparer : IRefComparer<Components.GenericGaze.Eye>
@@ -64,13 +72,11 @@ public static class SortHelpers
     }
 }
 
-[SkipLocalsInit]
 public interface IRefComparer<T>
 {
     int Compare(ref T a, ref T b);
 }
 
-[SkipLocalsInit]
 public readonly struct ReverseComparer<TComparer, T>(TComparer comparer) : IRefComparer<T> where TComparer : struct, IRefComparer<T>
 {
     private readonly TComparer _comparer = comparer;
@@ -79,7 +85,6 @@ public readonly struct ReverseComparer<TComparer, T>(TComparer comparer) : IRefC
     public int Compare(ref T a, ref T b) => -_comparer.Compare(ref a, ref b);
 }
 
-[SkipLocalsInit]
 public sealed class ReverseRefComparer<T>(IComparer<T> comparer) : IComparer<T> where T : class
 {
     private readonly IComparer<T> _comparer = comparer;
@@ -88,7 +93,6 @@ public sealed class ReverseRefComparer<T>(IComparer<T> comparer) : IComparer<T> 
     public int Compare(T? x, T? y) => -_comparer.Compare(x!, y!);
 }
 
-[SkipLocalsInit]
 public static class RefSort
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

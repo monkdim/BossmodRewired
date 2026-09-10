@@ -183,6 +183,11 @@ sealed class AIManager : IDisposable
                 ToggleFollowTarget(messageData);
                 configModified = cfgFollowT != _config.FollowTarget;
                 break;
+            case "MANUALTARGET":
+                var cfgManualT = _config.ManualTarget;
+                ToggleManualTarget(messageData);
+                configModified = cfgManualT != _config.ManualTarget;
+                break;
             case "OBSTACLEMAPS":
                 var cfgOM = _config.DisableObstacleMaps;
                 ToggleObstacleMaps(messageData);
@@ -576,6 +581,36 @@ sealed class AIManager : IDisposable
         if (_config.EchoToChat)
         {
             Service.ChatGui.Print($"[BMRAI] Following targets is now {(_config.FollowTarget ? "enabled" : "disabled")}");
+        }
+    }
+
+    private void ToggleManualTarget(string[] messageData)
+    {
+        if (messageData.Length == 1)
+        {
+            _config.ManualTarget = !_config.ManualTarget;
+        }
+        else
+        {
+            switch (messageData[1].ToUpperInvariant())
+            {
+                case "ON":
+                    _config.ManualTarget = true;
+                    break;
+                case "OFF":
+                    _config.ManualTarget = false;
+                    break;
+                default:
+                    if (_config.EchoToChat)
+                    {
+                        Service.ChatGui.Print($"[BMRAI] Unknown manual target command: {messageData[1]}");
+                    }
+                    return;
+            }
+        }
+        if (_config.EchoToChat)
+        {
+            Service.ChatGui.Print($"[BMRAI] Manual targeting is now {(_config.ManualTarget ? "enabled" : "disabled")}");
         }
     }
 

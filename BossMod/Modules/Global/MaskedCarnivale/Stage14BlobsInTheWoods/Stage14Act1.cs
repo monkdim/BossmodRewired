@@ -32,7 +32,7 @@ sealed class LastSongHint(BossModule module) : BossComponent(module)
         }
     }
 
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         if (Casting)
         {
@@ -43,7 +43,7 @@ sealed class LastSongHint(BossModule module) : BossComponent(module)
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add("These slimes start casting Final Song after death.\nWhile Final Song is not deadly, it does heavy damage and applies silence\nto you. Take cover! For act 2 the spell Loom is strongly recommended.\nThe slimes are strong against blunt melee damage such as J Kick.");
     }

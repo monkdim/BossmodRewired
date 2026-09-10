@@ -64,7 +64,7 @@ sealed class Hints2(BossModule module) : BossComponent(module)
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add($"For this fight Diamondback, Exuviation, Flying Sardine and a healing\nability (preferably Pom Cure with healer mimicry) are mandatory.\nEerie Soundwave is also recommended.");
     }

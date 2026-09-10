@@ -3,7 +3,6 @@ using Clipper2Lib;
 namespace BossMod;
 
 // generic 'simplified' complex polygon that consists of 0 or more non-intersecting polygons with holes (note however that some polygons could be fully inside other polygon's hole)
-[SkipLocalsInit]
 public sealed class RelSimplifiedComplexPolygon(List<RelPolygonWithHoles> parts)
 {
     public readonly List<RelPolygonWithHoles> Parts = parts;
@@ -13,6 +12,8 @@ public sealed class RelSimplifiedComplexPolygon(List<RelPolygonWithHoles> parts)
 
     // constructors for simple polygon
     public RelSimplifiedComplexPolygon(List<WDir> simpleVertices) : this([new RelPolygonWithHoles(simpleVertices)]) { }
+
+    internal PolygonBoundaryIndex2D? ExistingPolygonIndex => _polyIndex;
 
     // build a new polygon by transformation
     public RelSimplifiedComplexPolygon Transform(WDir offset, WDir rotation)

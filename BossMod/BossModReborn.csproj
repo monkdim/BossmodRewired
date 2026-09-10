@@ -1,5 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <Authors></Authors>
     <Company></Company>
@@ -40,7 +39,7 @@
     <Using Include="System.Runtime.CompilerServices" />
     <Using Include="System.Linq" />
     <Using Include="System.Numerics" />
-    <Using Include="System.Threading.Tasks;" />
+    <Using Include="System.Threading.Tasks" />
     <Using Include="System.Text" />
   </ItemGroup>
 
@@ -60,7 +59,6 @@
 
   <ItemGroup>
     <PackageReference Include="DalamudPackager" Version="15.0.0" />
-    <PackageReference Include="PInvoke.User32" Version="0.7.124" />
     <PackageReference Include="TerraFX.Interop.Windows" Version="10.0.26100.6" />
     <Reference Include="FFXIVClientStructs">
       <HintPath>$(DalamudLibPath)FFXIVClientStructs.dll</HintPath>
@@ -102,6 +100,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\BossMod.SourceGen\BossMod.SourceGen.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="DefaultRotationPresets.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
@@ -136,7 +140,7 @@
 
   <Target Name="CleanupOutput" AfterTargets="Build" BeforeTargets="DalamudPackage">
     <ItemGroup>
-      <_ExtraOutputFiles Include="$(OutputPath)*" Exclude="$(OutputPath)BossModRewired.*;$(OutputPath)DefaultRotationPresets.json;$(OutputPath)RebornPresets.json;$(OutputPath)PInvoke.User32.dll" />
+      <_ExtraOutputFiles Include="$(OutputPath)*" Exclude="$(OutputPath)BossModRewired.*;$(OutputPath)DefaultRotationPresets.json;$(OutputPath)RebornPresets.json;" />
     </ItemGroup>
     <Delete Files="@(_ExtraOutputFiles)" />
   </Target>

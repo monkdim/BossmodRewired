@@ -95,7 +95,7 @@ sealed class KegExplosion(BossModule module) : BossComponent(module)
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add("Make the manticores run to the kegs and their attacks will make them\nblow up. They take 2500 damage per keg explosion.\nThe Ram's Voice and Ultravibration combo can be used to kill manticores.");
     }

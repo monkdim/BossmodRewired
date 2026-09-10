@@ -1,6 +1,6 @@
 ﻿namespace BossMod.Stormblood.Ultimate.UCOB;
 
-class P3GrandOctet(BossModule module) : Components.GenericAOEs(module)
+sealed class P3GrandOctet(BossModule module) : Components.GenericAOEs(module)
 {
     public List<Actor> Casters = [];
     private Actor? _nael;
@@ -12,9 +12,9 @@ class P3GrandOctet(BossModule module) : Components.GenericAOEs(module)
     private readonly int[] _baitOrder = new int[PartyState.MaxPartySize];
     public int NumBaitsAssigned = 1; // reserve for lunar dive
 
-    private static readonly AOEShapeRect _shapeNaelTwin = new(63.96f, 4f);
-    private static readonly AOEShapeRect _shapeBahamut = new(64.2f, 6f);
-    private static readonly AOEShapeRect _shapeDrake = new(52f, 10f);
+    private readonly AOEShapeRect _shapeNaelTwin = new(63.96f, 4f);
+    private readonly AOEShapeRect _shapeBahamut = new(64.2f, 6f);
+    private readonly AOEShapeRect _shapeDrake = new(52f, 10f);
 
     public override ReadOnlySpan<AOEInstance> ActiveAOEs(int slot, Actor actor) => CollectionsMarshal.AsSpan(AOEs);
 
@@ -25,7 +25,7 @@ class P3GrandOctet(BossModule module) : Components.GenericAOEs(module)
         base.AddHints(slot, actor, hints);
     }
 
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         if (_diveOrder != 0)
             hints.Add($"Move {(_diveOrder < 0 ? "CW" : "CCW")}");
@@ -180,14 +180,14 @@ class P3GrandOctet(BossModule module) : Components.GenericAOEs(module)
     }
 
     private int NextBaitOrder => AOEs.Count + NumCasts + 1;
-    private static AOEShapeRect BaitShape(int order) => order switch
+    private AOEShapeRect BaitShape(int order) => order switch
     {
         1 or 8 => _shapeNaelTwin,
         7 => _shapeBahamut,
         _ => _shapeDrake
     };
 
-    private static AOEShapeRect? CastShape(ActionID aid) => aid.ID switch
+    private AOEShapeRect? CastShape(ActionID aid) => aid.ID switch
     {
         (uint)AID.Cauterize1 => _shapeDrake,
         (uint)AID.Cauterize2 => _shapeDrake,

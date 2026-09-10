@@ -37,7 +37,7 @@ sealed class BloodRain(BossModule module) : Components.RaidwideCast(module, (uin
 
 class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add($"{Module.PrimaryActor.Name} will cast various AOEs and summons adds.\nInterrupt the adds with Flying Sardine and kill them fast.\nIf the add is still alive during the next Black Sabbath, you will be wiped.");
     }

@@ -2,7 +2,6 @@ namespace BossMod;
 
 // utility that recalculates ai hints based on different data sources (eg active bossmodule, etc)
 // when there is no active bossmodule (eg in outdoor or on trash), we try to guess things based on world state (eg actor casts)
-[SkipLocalsInit]
 public sealed class AIHintsBuilder : IDisposable
 {
     private const float RaidwideSize = 30f;

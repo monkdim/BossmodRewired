@@ -76,7 +76,7 @@ sealed class Burst(BossModule module) : Components.SimpleAOEs(module, (uint)AID.
             {
                 if (seed.Position.InCircle(spell.LocXZ, 5.0f))
                 {
-                    Casters.Add(new(Shape, seed.Position, default, Module.CastFinishAt(spell, 3.5f), actorID: seed.InstanceID,
+                    Casters.Add(new(Shape, seed.Position, default, Module.CastFinishAt(spell, 3.5d), actorID: seed.InstanceID,
                         shapeDistance: Shape.Distance(seed.Position, default)));
                 }
             }
@@ -84,7 +84,6 @@ sealed class Burst(BossModule module) : Components.SimpleAOEs(module, (uint)AID.
     }
 }
 
-[SkipLocalsInit]
 sealed class InconstantGardenerStates : StateMachineBuilder
 {
     public InconstantGardenerStates(BossModule module) : base(module)
@@ -114,5 +113,4 @@ sealed class InconstantGardenerStates : StateMachineBuilder
     NameID = 2079u,
     SortOrder = 8,
     PlanLevel = 0)]
-[SkipLocalsInit]
 public sealed class InconstantGardener(WorldState ws, Actor primary) : OpenWorldFate(ws, primary);

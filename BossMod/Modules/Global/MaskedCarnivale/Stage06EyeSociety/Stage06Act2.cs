@@ -129,7 +129,7 @@ sealed class DreadGaze(BossModule module) : Components.SimpleAOEs(module, (uint)
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add("The eyes are weak to lightning spells.");
     }

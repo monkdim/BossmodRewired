@@ -14,12 +14,12 @@ struct PS_INPUT
 {
     float4 pos       : SV_POSITION;
     float2 localPx   : TEXCOORD0;
-    float2 direction : TEXCOORD1;
-    float4 params    : TEXCOORD2;
-    float2 widthsPx  : TEXCOORD3;
-    float2 extra     : TEXCOORD4;
-    float4 col       : COLOR0;
-    float4 shadowCol : COLOR1;
+    nointerpolation float2 direction : TEXCOORD1;
+    nointerpolation float4 params    : TEXCOORD2;
+    nointerpolation float2 widthsPx  : TEXCOORD3;
+    nointerpolation float2 extra     : TEXCOORD4;
+    nointerpolation float4 col       : COLOR0;
+    nointerpolation float4 shadowCol : COLOR1;
 };
 static const float2 Quad[4] =
 {

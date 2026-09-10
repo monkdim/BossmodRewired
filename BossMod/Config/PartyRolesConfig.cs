@@ -407,9 +407,11 @@ public class PartyRolesConfig : ConfigNode
         {
             if (table)
             {
-                foreach (var r in typeof(Assignment).GetEnumValues())
+                var assignments = (Assignment[])typeof(Assignment).GeneratedEnumValues();
+                var len = assignments.Length;
+                for (var i = 0; i < len; ++i)
                 {
-                    ImGui.TableSetupColumn(r.ToString(), ImGuiTableColumnFlags.None, 25);
+                    ImGui.TableSetupColumn(assignments[i].ToString(), ImGuiTableColumnFlags.WidthFixed, 25f);
                 }
 
                 ImGui.TableSetupColumn("Name");
@@ -426,28 +428,32 @@ public class PartyRolesConfig : ConfigNode
                 }
 
                 party.Sort(static (a, b) => a.role.CompareTo(b.role));
-                foreach (var (contentID, name, classRole, assignment) in party)
+                var partySpan = CollectionsMarshal.AsSpan(party);
+                var count = party.Count;
+                for (var j = 0; j < count; ++j)
                 {
+                    ref var p = ref partySpan[j];
                     ImGui.TableNextRow();
-                    foreach (var r in (Assignment[])typeof(Assignment).GetEnumValues())
+                    for (var i = 0; i < len; ++i)
                     {
+                        var r = assignments[i];
                         ImGui.TableNextColumn();
-                        if (ImGui.RadioButton($"###{contentID:X}:{r}", assignment == r))
+                        if (ImGui.RadioButton($"###{p.cid:X}:{r}", p.assignment == r))
                         {
                             if (r != Assignment.Unassigned)
                             {
-                                Assignments[contentID] = r;
+                                Assignments[p.cid] = r;
                             }
                             else
                             {
-                                Assignments.Remove(contentID);
+                                Assignments.Remove(p.cid);
                             }
 
                             Modified.Fire();
                         }
                     }
                     ImGui.TableNextColumn();
-                    ImGui.TextUnformatted($"({classRole}) {name}");
+                    ImGui.TextUnformatted($"({p.role}) {p.name}");
                 }
             }
         }

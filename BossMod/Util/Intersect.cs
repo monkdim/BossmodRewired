@@ -3,7 +3,6 @@
 // ray-shape intersection functions return parameter along ray dir of intersection point; if intersection does not happen, they return float.MaxValue
 // rayDir is assumed to be normalized
 // WDir rayOriginOffset overload for symmetrical shapes uses offset from shape center for ray origin
-[SkipLocalsInit]
 public static class Intersect
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -30,7 +30,6 @@ public sealed class BRD(RotationModuleManager manager, Actor player) : Attackxan
         WanderersMinuet
     }
 
-    [Flags]
     public enum CodaSongs : byte
     {
         None = 0,
@@ -67,7 +66,7 @@ public sealed class BRD(RotationModuleManager manager, Actor player) : Attackxan
     private Enemy? BestLineTarget;
     private Enemy? BestDotTarget;
 
-    public int Codas => (Coda.HasFlag(CodaSongs.MagesBallad) ? 1 : 0) + (Coda.HasFlag(CodaSongs.ArmysPaeon) ? 1 : 0) + (Coda.HasFlag(CodaSongs.WanderersMinuet) ? 1 : 0);
+    public int Codas => ((Coda & CodaSongs.MagesBallad) != 0 ? 1 : 0) + ((Coda & CodaSongs.ArmysPaeon) != 0 ? 1 : 0) + ((Coda & CodaSongs.WanderersMinuet) != 0 ? 1 : 0);
 
     public override void Exec(in Strategy strategy, Enemy? primaryTarget)
     {

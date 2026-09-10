@@ -1,10 +1,10 @@
 ﻿namespace BossMod.Stormblood.Ultimate.UCOB;
 
-class P3EarthShaker(BossModule module) : Components.GenericBaitAway(module, (uint)AID.EarthShakerAOE)
+sealed class P3EarthShaker(BossModule module) : Components.GenericBaitAway(module, (uint)AID.EarthShakerAOE)
 {
     private List<Bait> _futureBaits = [];
 
-    private static readonly AOEShapeCone _shape = new(60f, 45f.Degrees());
+    private readonly AOEShapeCone _shape = new(60f, 45f.Degrees());
 
     public override void OnEventIcon(Actor actor, uint iconID, ulong targetID)
     {
@@ -26,7 +26,7 @@ class P3EarthShaker(BossModule module) : Components.GenericBaitAway(module, (uin
     }
 }
 
-class P3EarthShakerVoidzone(BossModule module) : Components.GenericAOEs(module, default, "GTFO from voidzone!")
+sealed class P3EarthShakerVoidzone(BossModule module) : Components.GenericAOEs(module, default, "GTFO from voidzone!")
 {
     private readonly List<Actor> _voidzones = module.Enemies((uint)OID.VoidzoneEarthShaker);
     private readonly List<AOEInstance> _predicted = [];

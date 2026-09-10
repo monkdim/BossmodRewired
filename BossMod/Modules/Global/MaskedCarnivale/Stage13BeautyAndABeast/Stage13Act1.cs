@@ -16,7 +16,7 @@ sealed class Mow(BossModule module) : Components.SimpleAOEs(module, (uint)AID.Mo
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add("The first act is trivial, almost anything will work.\nFor act 2 having Flying Sardine is recommended.");
     }

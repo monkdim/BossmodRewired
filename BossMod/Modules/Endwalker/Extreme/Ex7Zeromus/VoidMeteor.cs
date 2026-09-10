@@ -55,11 +55,10 @@ sealed class MeteorImpactCharge(BossModule module) : Components.GenericAOEs(modu
             {
                 var count = _meteors.Count;
                 var center = Arena.Center;
-                var error = Arena.Bounds.MaxApproxError;
                 var pos = source.Position;
                 for (var i = 0; i < count; ++i)
                 {
-                    polygons.Add(new PolygonCustom(BuildShadowPolygon(pos - center, _meteors[i] - center, error)));
+                    polygons.Add(new PolygonCustom(BuildShadowPolygon(pos - center, _meteors[i] - center)));
                 }
                 var aoe = new AOEShapeCustom(center, [.. polygons]);
                 _aoe = [new(aoe, center, shapeDistance: aoe.Distance(center, default))];
@@ -76,27 +75,34 @@ sealed class MeteorImpactCharge(BossModule module) : Components.GenericAOEs(modu
             Arena.ZoneCircleOutline(_meteors[i], _radius, Colors.Object);
         }
 
-        foreach (var (slot, target) in Raid.WithSlot(true, true, true))
+        var raid = Raid.WithSlot(true, true, true);
+        var len = raid.Length;
+        var a90 = 90f.Degrees();
+        for (var i = 0; i < len; ++i)
         {
+            var p = raid[i];
+            var slot = p.Item1;
             if (SourceIfActive(slot) is var source && source != null)
             {
                 var thickness = slot == pcSlot ? _ownThickness : _otherThickness;
-                if (thickness != 0)
-                {
-                    var norm = (target.Position - source.Position).Normalized().OrthoL() * 2f;
-                    var rot = Angle.FromDirection(target.Position - source.Position);
-                    Arena.PathArcTo(target.Position, 2f, (rot + 90f.Degrees()).Rad, (rot - 90f.Degrees()).Rad);
-                    Arena.PathLineTo(source.Position - norm);
-                    Arena.PathLineTo(source.Position + norm);
-                    MiniArena.PathStroke(true, _playerStates[slot].NonClipping ? Colors.Safe : default, thickness);
-                    Arena.AddLine(source.Position, target.Position, _playerStates[slot].Stretched ? Colors.Safe : default, thickness);
-                }
+                var targetPos = p.Item2.Position;
+                var sourcePos = source.Position;
+                var state = _playerStates[slot];
+                var norm = (targetPos - sourcePos).Normalized().OrthoL() * 2f;
+                var rot = Angle.FromDirection(targetPos - sourcePos);
+                Arena.PathArcTo(targetPos, 2f, (rot + a90).Rad, (rot - a90).Rad);
+                Arena.PathLineTo(sourcePos - norm);
+                Arena.PathLineTo(sourcePos + norm);
+                Arena.PathStroke(true, state.NonClipping ? Colors.Safe : default, thickness);
+                Arena.AddLine(sourcePos, targetPos, state.Stretched ? Colors.Safe : default, thickness);
             }
         }
 
         // circle showing approximate min stretch distance; for second order, we might be forced to drop meteor there and die to avoid wipe
         if (SourceIfActive(pcSlot) is var pcSource && pcSource != null)
+        {
             Arena.ZoneCircleOutline(pcSource.Position, 26f);
+        }
     }
 
     public override void OnEventCast(Actor caster, ActorCastEvent spell)
@@ -144,16 +150,16 @@ sealed class MeteorImpactCharge(BossModule module) : Components.GenericAOEs(modu
         };
     }
 
-    private static WPos[] BuildShadowPolygon(WDir sourceOffset, WDir meteorOffset, float maxerror)
+    private static WPos[] BuildShadowPolygon(WDir sourceOffset, WDir meteorOffset)
     {
-        var center = Ex7Zeromus.ArenaCenter;
+        var center = new WPos(100f, 100f);
         var toMeteor = meteorOffset - sourceOffset;
         var dirToMeteor = Angle.FromDirection(toMeteor);
         var halfAngle = Angle.Asin(_radius * 2f / toMeteor.Length());
         // intersection point is at dirToMeteor -+ halfAngle relative to source; relative to meteor, it is (dirToMeteor + 180) +- (90 - halfAngle)
         var dirFromMeteor = dirToMeteor + 180f.Degrees();
         var halfAngleFromMeteor = 90f.Degrees() - halfAngle;
-        var circlearc = CurveApprox.CircleArc(_radius * 2, dirFromMeteor + halfAngleFromMeteor, dirFromMeteor - halfAngleFromMeteor, maxerror);
+        var circlearc = CurveApprox.CircleArc(_radius * 2f, dirFromMeteor + halfAngleFromMeteor, dirFromMeteor - halfAngleFromMeteor, 0.01f);
         var count = circlearc.Length;
         var vertices = new WPos[count + 2];
         for (var i = 0; i < count; ++i)

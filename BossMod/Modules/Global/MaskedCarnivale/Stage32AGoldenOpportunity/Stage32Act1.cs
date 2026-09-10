@@ -130,7 +130,7 @@ sealed class Hints2(BossModule module) : BossComponent(module)
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add($"For this fight The Ram's Voice, Ultravibration, Diamondback,\nExuviation, Flying Sardine, Loom, a physical dmg ability and a healing\nability (preferably Pom Cure with healer mimicry) are mandatory.");
     }

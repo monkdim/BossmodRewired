@@ -31,8 +31,8 @@ public enum AID : uint
     FocusedTremor9 = 47595, // 4BED->location, 15.5s cast, range 20-30 donut
 }
 
-sealed class Windage(BossModule module) : Components.SimpleAOEs(module, (uint)AID.Windage, new AOEShapeCircle(7.0f));
-sealed class BitingScratch(BossModule module) : Components.SimpleAOEs(module, (uint)AID.BitingScratch, new AOEShapeCone(40.0f, 45.0f.Degrees()));
+sealed class Windage(BossModule module) : Components.SimpleAOEs(module, (uint)AID.Windage, 7f);
+sealed class BitingScratch(BossModule module) : Components.SimpleAOEs(module, (uint)AID.BitingScratch, new AOEShapeCone(40f, 45f.Degrees()));
 
 sealed class FocusedTremor(BossModule module) : Components.ConcentricAOEs(module, _shapes)
 {
@@ -63,15 +63,13 @@ sealed class FocusedTremor(BossModule module) : Components.ConcentricAOEs(module
     }
 }
 
-[SkipLocalsInit]
 sealed class GaleForceEncounterStates : StateMachineBuilder
 {
     public GaleForceEncounterStates(BossModule module) : base(module)
     {
         TrivialPhase()
             .ActivateOnEnter<Windage>()
-            .ActivateOnEnter<BitingScratch>()
-            .ActivateOnEnter<FocusedTremor>();
+            .ActivateOnEnter<BitingScratch>();
     }
 }
 
@@ -92,5 +90,10 @@ sealed class GaleForceEncounterStates : StateMachineBuilder
     NameID = 2082u,
     SortOrder = 11,
     PlanLevel = 0)]
-[SkipLocalsInit]
-public sealed class GaleForceEncounter(WorldState ws, Actor primary) : OpenWorldFate(ws, primary);
+public sealed class GaleForceEncounter : OpenWorldFate
+{
+    public GaleForceEncounter(WorldState ws, Actor primary) : base(ws, primary)
+    {
+        ActivateComponent<FocusedTremor>();
+    }
+}

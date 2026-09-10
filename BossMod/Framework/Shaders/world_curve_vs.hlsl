@@ -1,8 +1,12 @@
 cbuffer WorldLineConstants : register(b1)
 {
     row_major float4x4 ViewProj;
+    row_major float4x4 InvViewProj;
     float4 NearPlane;
     float4 Viewport; // x/y framebuffer dimensions, z logical->framebuffer pixel scale
+    float4 RasterScale;
+    float4 SceneDepthParams;
+    float4 SceneInfoParams;
 };
 
 cbuffer WorldLineTransforms : register(b2)
@@ -23,13 +27,13 @@ struct VS_INPUT
 
 struct PS_INPUT
 {
-    float4 pos                      : SV_POSITION;
-    float4 col                      : COLOR0;
-    float4 shadowCol                : COLOR1;
-    float acrossPx                  : TEXCOORD0;
-    float alongPx                   : TEXCOORD1;
-    nointerpolation float3 params   : TEXCOORD2;
-    nointerpolation uint flags      : TEXCOORD3;
+    float4 pos                       : SV_POSITION;
+    nointerpolation float4 col       : COLOR0;
+    nointerpolation float4 shadowCol : COLOR1;
+    noperspective float acrossPx     : TEXCOORD0;
+    noperspective float alongPx      : TEXCOORD1;
+    nointerpolation float3 params    : TEXCOORD2;
+    nointerpolation uint flags       : TEXCOORD3;
 };
 
 static const float PI = 3.14159265358979323846f;
@@ -179,7 +183,7 @@ PS_INPUT main(VS_INPUT input, uint vertexId : SV_VertexID)
     PS_INPUT output;
     output.col = input.col;
     output.shadowCol = float4(0.0f, 0.0f, 0.0f, 0.0f);
-    output.flags = 0x3u;
+    output.flags = 0x7u; // start/end caps + scene-depth occlusion
 
     // Indexed draw assigns four unique vertex ids to each generated line; the shared
     // index buffer repeats ids 0 and 2 to form the same two triangles
@@ -205,10 +209,17 @@ PS_INPUT main(VS_INPUT input, uint vertexId : SV_VertexID)
         {
             float t = saturate(-an / denom);
             float4 clipped = lerp(ca, cb, t);
+            float4 clippedWorld = lerp(wa, wb, t);
             if (an >= 0.0f)
+            {
                 ca = clipped;
+                wa = clippedWorld;
+            }
             else
+            {
                 cb = clipped;
+                wb = clippedWorld;
+            }
         }
     }
 
@@ -255,11 +266,16 @@ PS_INPUT main(VS_INPUT input, uint vertexId : SV_VertexID)
     float alongPx = corner.x < 0.0f ? -2.0f : segmentLengthPx + 2.0f;
     float acrossPx = corner.y * outerHalfWidthPx;
     float2 offsetPx = directionPx * alongPx + normalPx * acrossPx;
-    float2 offsetNdc = float2(
-        offsetPx.x * (2.0f / Viewport.x),
-        offsetPx.y * (-2.0f / Viewport.y));
+    float2 offsetNdc = offsetPx * float2(RasterScale.z, -RasterScale.w);
 
-    output.pos = float4(aNdc + offsetNdc, 0.0f, 1.0f);
+    // Preserve endpoint clip-space Z/W instead of flattening the expanded quad to z=0,w=1.
+    // stroke_ps uses the resulting rasterized SV_POSITION.z to reconstruct this fragment's
+    // primitive position on the same camera ray as the sampled FFXIV scene depth.
+    bool atStart = corner.x < 0.0f;
+    float endpointW = atStart ? ca.w : cb.w;
+    float endpointZ = atStart ? ca.z : cb.z;
+    float2 outNdc = aNdc + offsetNdc;
+    output.pos = float4(outNdc * endpointW, endpointZ, endpointW);
     output.acrossPx = acrossPx;
     output.alongPx = alongPx;
     output.params = float3(halfWidthPx, 0.0f, segmentLengthPx);

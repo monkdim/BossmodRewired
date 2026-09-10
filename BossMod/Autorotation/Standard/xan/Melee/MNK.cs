@@ -221,8 +221,8 @@ public sealed class MNK(RotationModuleManager manager, Actor player) : Attackxan
     private Enemy? WindTarget; // wind's reply
     private Enemy? EnlightenmentTarget;
 
-    public bool HaveLunar => Nadi.HasFlag(NadiFlags.Lunar);
-    public bool HaveSolar => Nadi.HasFlag(NadiFlags.Solar);
+    public bool HaveLunar => (Nadi & NadiFlags.Lunar) != 0;
+    public bool HaveSolar => (Nadi & NadiFlags.Solar) != 0;
     public bool HaveBothNadi => HaveLunar && HaveSolar;
 
     protected override float GetCastTime(AID aid) => 0;
@@ -452,7 +452,7 @@ public sealed class MNK(RotationModuleManager manager, Actor player) : Attackxan
     (Enemy? Best, int Targets) OrSelectTarget<T>(in Strategy strategy, Enemy? primaryTarget, in Track<T> strategyTrack, float range, PositionCheck isInAOE) where T : struct
     {
         return ResolveEnemy(strategyTrack) is { } targetOverride
-            ? (targetOverride, Hints.PriorityTargets.Count(p => isInAOE(targetOverride.Actor, p.Actor)))
+            ? (targetOverride, Hints.CountPriorityTargets(p => isInAOE(targetOverride.Actor, p.Actor)))
             : SelectTarget(strategy, primaryTarget, range, isInAOE);
     }
 

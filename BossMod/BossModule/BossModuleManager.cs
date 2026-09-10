@@ -1,7 +1,6 @@
 ﻿namespace BossMod;
 
 // class that creates and manages instances of proper boss modules in response to world state changes
-[SkipLocalsInit]
 public sealed class BossModuleManager : IDisposable
 {
     public readonly WorldState WorldState;
@@ -315,6 +314,7 @@ public sealed class BossModuleManager : IDisposable
     private void OnZoneChange(WorldState.OpZoneChange zc)
     {
         ForceUnload("ZoneInit");
+        _wipeInProgress = false;
     }
 
     public void ForceUnload(string? cause = null)

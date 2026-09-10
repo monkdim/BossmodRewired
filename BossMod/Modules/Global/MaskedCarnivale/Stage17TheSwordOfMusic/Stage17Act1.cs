@@ -18,7 +18,7 @@ sealed class Shred(BossModule module) : Components.SimpleAOEs(module, (uint)AID.
 
 sealed class Hints2(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         if (!Module.PrimaryActor.IsDead)
             hints.Add($"{Module.PrimaryActor.Name} counters magical damage!");
@@ -34,7 +34,7 @@ sealed class Hints2(BossModule module) : BossComponent(module)
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add($"The {Module.PrimaryActor.Name} counters magical attacks, the {Module.Enemies((uint)OID.RightClaw)[0].Name} counters physical\nattacks. If you have healing spells you can just tank the counter damage\nand kill them however you like anyway. All opponents in this stage are\nweak to lightning.\nThe Ram's Voice and Ultravibration combo can be used in Act 2.");
     }

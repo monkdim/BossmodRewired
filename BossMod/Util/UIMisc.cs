@@ -6,7 +6,6 @@ using Dalamud.Interface.Utility.Raii;
 
 namespace BossMod;
 
-[SkipLocalsInit]
 public static class UIMisc
 {
     public static bool Button(string label, float width, params (bool disabled, string reason)[] disabled)

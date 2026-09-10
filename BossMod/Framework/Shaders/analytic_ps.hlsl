@@ -2,9 +2,10 @@ struct PS_INPUT
 {
     float4 pos       : SV_POSITION;
     float2 localPx   : TEXCOORD0;
-    float2 direction : TEXCOORD1;
-    float4 params    : TEXCOORD2;
-    float4 col       : COLOR0;
+    nointerpolation float2 direction : TEXCOORD1;
+    nointerpolation float4 params    : TEXCOORD2;
+    nointerpolation float2 arcEndDirection : TEXCOORD3;
+    nointerpolation float4 col       : COLOR0;
 };
 
 // Coarse rejects stay well outside the analytic AA footprint. Apart from reducing
@@ -121,9 +122,31 @@ float coverageCapsule(float2 p, float2 direction, float halfSegment, float radiu
     return 1.0f - smoothstep(-aa, aa, sd);
 }
 
-float coverageArcCapsule(float2 p, float2 startDirection, float orbitRadius, float radius, float angularLength)
+bool directionInArc(float2 startDirection, float2 radial, float2 endDirection, float angularLength)
 {
+    const float PI = 3.14159265358979323846f;
     const float TWO_PI = 6.28318530717958647692f;
+
+    float absSweep = abs(angularLength);
+    if (absSweep >= TWO_PI - 1e-5f)
+        return true;
+
+    // With coincident start/end rays, the two half-plane tests alone also accept the
+    // antipodal ray. Treat a degenerate sweep as the single authored endpoint instead.
+    if (absSweep <= 1e-6f)
+        return false;
+
+    float sweepSign = angularLength >= 0.0f ? 1.0f : -1.0f;
+    float fromStart = -(startDirection.x * radial.y - startDirection.y * radial.x) * sweepSign;
+    float toEnd = -(radial.x * endDirection.y - radial.y * endDirection.x) * sweepSign;
+    const float sideEpsilon = -1e-6f;
+    return absSweep <= PI
+        ? fromStart >= sideEpsilon && toEnd >= sideEpsilon
+        : fromStart >= sideEpsilon || toEnd >= sideEpsilon;
+}
+
+float coverageArcCapsule(float2 p, float2 startDirection, float2 endDirection, float orbitRadius, float radius, float angularLength)
+{
 
     float d2 = dot(p, p);
     float outerReject = orbitRadius + radius + CoarseRejectPad;
@@ -136,26 +159,8 @@ float coverageArcCapsule(float2 p, float2 startDirection, float orbitRadius, flo
     float d = sqrt(d2);
     float2 radial = d > 1e-5f ? p / d : startDirection;
 
-    // BossMod angles increase from South toward East. In screen x/y coordinates that is the
-    // opposite sign of the usual 2D cross-product angle, hence the negated cross below.
-    float dotStart = clamp(dot(startDirection, radial), -1.0f, 1.0f);
-    float crossStart = startDirection.x * radial.y - startDirection.y * radial.x;
-    float signedAngle = atan2(-crossStart, dotStart);
-
-    float sweepSign = angularLength >= 0.0f ? 1.0f : -1.0f;
-    float sweptAngle = signedAngle * sweepSign;
-    if (sweptAngle < 0.0f)
-        sweptAngle += TWO_PI;
-
-    float absSweep = abs(angularLength);
-    float sinSweep, cosSweep;
-    sincos(angularLength, sinSweep, cosSweep);
-    float2 endDirection = float2(
-        startDirection.x * cosSweep + startDirection.y * sinSweep,
-        startDirection.y * cosSweep - startDirection.x * sinSweep);
-
     float distanceToCenterline;
-    if (sweptAngle <= absSweep)
+    if (directionInArc(startDirection, radial, endDirection, angularLength))
     {
         // Angular projection lands on the arc interior: nearest centerline point is at the
         // same polar angle, so distance is simply radial distance to the orbit circle.
@@ -208,7 +213,7 @@ float4 main(PS_INPUT input) : SV_Target
     else if (shape < 3.5f)
         coverage = coverageCapsule(input.localPx, input.direction, input.params.x, input.params.y);
     else if (shape < 4.5f)
-        coverage = coverageArcCapsule(input.localPx, input.direction, input.params.x, input.params.y, input.params.z);
+        coverage = coverageArcCapsule(input.localPx, input.direction, input.arcEndDirection, input.params.x, input.params.y, input.params.z);
     else if (shape < 5.5f)
         coverage = coverageCross(input.localPx, input.direction, input.params.x, input.params.y);
     else

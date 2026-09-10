@@ -126,9 +126,9 @@ public sealed class SAM(RotationModuleManager manager, Actor player) : Attackxan
 
     private int NumStickers => (Ice ? 1 : 0) + (Moon ? 1 : 0) + (Flower ? 1 : 0);
 
-    private bool Ice => Sen.HasFlag(SenFlags.Setsu);
-    private bool Moon => Sen.HasFlag(SenFlags.Getsu);
-    private bool Flower => Sen.HasFlag(SenFlags.Ka);
+    private bool Ice => (Sen & SenFlags.Setsu) != 0;
+    private bool Moon => (Sen & SenFlags.Getsu) != 0;
+    private bool Flower => (Sen & SenFlags.Ka) != 0;
 
     // fugetsu needs to cover end of iaijutsu cast
     private bool HaveDmg => DamageUpLeft > GCD + GetCastTime(AID.Higanbana);

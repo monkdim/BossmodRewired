@@ -227,8 +227,11 @@ sealed class MainDebugWindow(WorldState ws, RotationModuleManager autorot, ZoneM
 
         ImGui.Separator();
         ImGui.TextUnformatted("TriggerSpecialStateWithDuration:");
-        foreach (var cmd in Enum.GetValues<RotationSolverRebornModule.SpecialCommandType>())
+        var cmds = GeneratedEnumMetadata.Values<RotationSolverRebornModule.SpecialCommandType>();
+        var len = cmds.Length;
+        for (var i = 0; i < len; ++i)
         {
+            var cmd = cmds[i];
             if (cmd == RotationSolverRebornModule.SpecialCommandType.EndSpecial)
             {
                 continue;

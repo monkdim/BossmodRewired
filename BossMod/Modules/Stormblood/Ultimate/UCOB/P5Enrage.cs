@@ -1,6 +1,6 @@
 ﻿namespace BossMod.Stormblood.Ultimate.UCOB;
 
-class P5Enrage(BossModule module) : Components.UniformStackSpread(module, default, 4f)
+sealed class P5Enrage(BossModule module) : Components.UniformStackSpread(module, default, 4f)
 {
     public int NumCasts;
 

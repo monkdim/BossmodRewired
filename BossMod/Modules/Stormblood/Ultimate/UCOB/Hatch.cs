@@ -1,6 +1,6 @@
 ﻿namespace BossMod.Stormblood.Ultimate.UCOB;
 
-class Hatch(BossModule module) : Components.CastCounter(module, (uint)AID.Hatch)
+sealed class Hatch(BossModule module) : Components.CastCounter(module, (uint)AID.Hatch)
 {
     public bool Active = true;
     public override bool KeepOnPhaseChange => true;

@@ -134,7 +134,7 @@ sealed class FluidConvectionDynamic(BossModule module) : Components.GenericAOEs(
 
 sealed class Hints2(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         var leftHands = Module.Enemies((uint)OID.LeftHand);
         var countL = leftHands.Count;
@@ -166,7 +166,7 @@ sealed class Hints2(BossModule module) : BossComponent(module)
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add($"{Module.PrimaryActor.Name} will cast Throttle on you which needs to be\ncleansed with Excuviation. It will also spawn two hands which need to be\nkilled asap. Focus the left hand first because it will drain all your MP.");
     }

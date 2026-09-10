@@ -1065,7 +1065,7 @@ public sealed unsafe class DebugCollision() : IDisposable
         return dx * dx + dz * dz;
     }
 
-    private readonly CollisionOutlinesExtractor.MaterialMatchMode[] modes = Enum.GetValues<CollisionOutlinesExtractor.MaterialMatchMode>();
+    private readonly CollisionOutlinesExtractor.MaterialMatchMode[] modes = GeneratedEnumMetadata.Values<CollisionOutlinesExtractor.MaterialMatchMode>();
 
     private void DrawSettings()
     {

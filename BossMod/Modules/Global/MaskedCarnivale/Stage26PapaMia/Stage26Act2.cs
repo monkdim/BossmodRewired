@@ -103,7 +103,7 @@ sealed class BodyBlow(BossModule module) : Components.SingleTargetCast(module, (
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add($"{Module.PrimaryActor.Name} will cast Raw Instinct, which causes all his hits to crit.\nUse Eerie Soundwave to dispel it.\n{Module.PrimaryActor.Name} is weak against earth and strong against lightning attacks.");
     }
@@ -111,7 +111,7 @@ sealed class Hints(BossModule module) : BossComponent(module)
 
 sealed class Hints2(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         if (Module.PrimaryActor.FindStatus((uint)SID.CriticalStrikes) != null)
         {

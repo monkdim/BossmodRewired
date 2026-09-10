@@ -1,6 +1,6 @@
 ﻿namespace BossMod.Stormblood.Ultimate.UCOB;
 
-class P3BlackfireTrio(BossModule module) : BossComponent(module)
+sealed class P3BlackfireTrio(BossModule module) : BossComponent(module)
 {
     private Actor? _nael;
 
@@ -20,9 +20,9 @@ class P3BlackfireTrio(BossModule module) : BossComponent(module)
     }
 }
 
-class P3ThermionicBeam : Components.UniformStackSpread
+sealed class P3ThermionicBeam : Components.UniformStackSpread
 {
-    public P3ThermionicBeam(BossModule module) : base(module, 4, 0, 8)
+    public P3ThermionicBeam(BossModule module) : base(module, 4f, 0f, 8)
     {
         var target = Raid.Player(); // note: target is random
         if (target != null)
@@ -36,7 +36,7 @@ class P3ThermionicBeam : Components.UniformStackSpread
     }
 }
 
-class P3MegaflareTower(BossModule module) : Components.CastTowers(module, (uint)AID.MegaflareTower, 3f)
+sealed class P3MegaflareTower(BossModule module) : Components.CastTowers(module, (uint)AID.MegaflareTower, 3f)
 {
     public override void OnEventIcon(Actor actor, uint iconID, ulong targetID)
     {
@@ -50,7 +50,7 @@ class P3MegaflareTower(BossModule module) : Components.CastTowers(module, (uint)
     }
 }
 
-class P3MegaflareStack(BossModule module) : Components.UniformStackSpread(module, 5f, default, 4, 4)
+sealed class P3MegaflareStack(BossModule module) : Components.UniformStackSpread(module, 5f, default, 4, 4)
 {
     public override void OnEventIcon(Actor actor, uint iconID, ulong targetID)
     {

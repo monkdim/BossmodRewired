@@ -1,6 +1,6 @@
 ﻿namespace BossMod.Stormblood.Ultimate.UCOB;
 
-class P3QuickmarchTrio(BossModule module) : BossComponent(module)
+sealed class P3QuickmarchTrio(BossModule module) : BossComponent(module)
 {
     private Actor? _relNorth;
     private readonly WPos[] _safeSpots = new WPos[PartyState.MaxPartySize];
@@ -34,12 +34,12 @@ class P3QuickmarchTrio(BossModule module) : BossComponent(module)
     }
 }
 
-class P3TwistingDive(BossModule module) : Components.SimpleAOEs(module, (uint)AID.TwistingDive, new AOEShapeRect(63.96f, 4f));
-class P3LunarDive(BossModule module) : Components.SimpleAOEs(module, (uint)AID.LunarDive, new AOEShapeRect(62.55f, 4f));
-class P3MegaflareDive(BossModule module) : Components.SimpleAOEs(module, (uint)AID.MegaflareDive, new AOEShapeRect(64.2f, 6f));
-class P3Twister(BossModule module) : Components.ImmediateTwister(module, 2, (uint)OID.VoidzoneTwister, 1.4f); // TODO: verify radius
+sealed class P3TwistingDive(BossModule module) : Components.SimpleAOEs(module, (uint)AID.TwistingDive, new AOEShapeRect(63.96f, 4f));
+sealed class P3LunarDive(BossModule module) : Components.SimpleAOEs(module, (uint)AID.LunarDive, new AOEShapeRect(62.55f, 4f));
+sealed class P3MegaflareDive(BossModule module) : Components.SimpleAOEs(module, (uint)AID.MegaflareDive, new AOEShapeRect(64.2f, 6f));
+sealed class P3Twister(BossModule module) : Components.ImmediateTwister(module, 2, (uint)OID.VoidzoneTwister, 1.4f); // TODO: verify radius
 
-class P3MegaflareSpreadStack : Components.UniformStackSpread
+sealed class P3MegaflareSpreadStack : Components.UniformStackSpread
 {
     private BitMask _stackTargets;
 
@@ -71,5 +71,5 @@ class P3MegaflareSpreadStack : Components.UniformStackSpread
     }
 }
 
-class P3MegaflarePuddle(BossModule module) : Components.SimpleAOEs(module, (uint)AID.MegaflarePuddle, 6);
-class P3TempestWing(BossModule module) : Components.TankbusterTether(module, (uint)AID.TempestWing, (uint)TetherID.TempestWing, 5);
+sealed class P3MegaflarePuddle(BossModule module) : Components.SimpleAOEs(module, (uint)AID.MegaflarePuddle, 6f);
+sealed class P3TempestWing(BossModule module) : Components.TankbusterTether(module, (uint)AID.TempestWing, (uint)TetherID.TempestWing, 5f);

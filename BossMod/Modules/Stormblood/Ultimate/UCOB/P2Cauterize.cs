@@ -1,6 +1,6 @@
 ﻿namespace BossMod.Stormblood.Ultimate.UCOB;
 
-class P2Cauterize(BossModule module) : Components.GenericAOEs(module)
+sealed class P2Cauterize(BossModule module) : Components.GenericAOEs(module)
 {
     public int[] BaitOrder = new int[PartyState.MaxPartySize];
     public int NumBaitsAssigned;
@@ -102,7 +102,7 @@ class P2Cauterize(BossModule module) : Components.GenericAOEs(module)
     }
 }
 
-class P2Hypernova(BossModule module) : Components.VoidzoneAtCastTarget(module, 5f, (uint)AID.Hypernova, GetVoidzones, 1.4f)
+sealed class P2Hypernova(BossModule module) : Components.VoidzoneAtCastTarget(module, 5f, (uint)AID.Hypernova, GetVoidzones, 1.4f)
 {
     private static Actor[] GetVoidzones(BossModule module)
     {

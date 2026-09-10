@@ -2,8 +2,6 @@
 
 // generic 'directional parry' component that shows actors and sides it's forbidden to attack them from
 // uses common status + custom prediction
-
-[SkipLocalsInit]
 public class DirectionalParry(BossModule module, uint[] actorOID, int forbiddenPriority = AIHints.Enemy.PriorityForbidden) : AddsMulti(module, actorOID)
 {
     public enum Side
@@ -192,7 +190,7 @@ public class DirectionalParry(BossModule module, uint[] actorOID, int forbiddenP
     {
         var dir = actor.Rotation + offset;
         Arena.PathArcTo(actor.Position, 1.5f, (dir - 45f.Degrees()).Rad, (dir + 45f.Degrees()).Rad);
-        MiniArena.PathStroke(false, color);
+        Arena.PathStroke(false, color);
     }
 
     public int ActorState(ulong instanceID) => ActorStates.GetValueOrDefault(instanceID, 0);

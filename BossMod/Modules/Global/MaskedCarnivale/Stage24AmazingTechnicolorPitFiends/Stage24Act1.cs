@@ -22,7 +22,7 @@ sealed class LightningSpark(BossModule module) : Components.CastInterruptHint(mo
 
 sealed class Hints2(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         if (!Module.PrimaryActor.IsDead)
         {
@@ -42,7 +42,7 @@ sealed class Hints2(BossModule module) : BossComponent(module)
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add($"The {Module.PrimaryActor.Name} is immune to magic, the {Module.Enemies((uint)OID.ArenaViking)[0].Name} is immune to\nphysical attacks. For the 2nd act Diamondback is highly recommended.\nFor the 3rd act a ranged physical spell such as Fire Angon\nis highly recommended.");
     }

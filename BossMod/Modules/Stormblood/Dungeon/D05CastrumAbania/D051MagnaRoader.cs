@@ -72,7 +72,7 @@ class MagitekPulsePlayer(BossModule module) : BossComponent(module)
             hints.ForcedTarget = Module.PrimaryActor;
     }
 
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         if (_aoe.AOEs.Count == 0)
             return;

@@ -122,7 +122,6 @@ public sealed class PhantomAI(RotationModuleManager manager, Actor player) : AIB
         Disabled
     }
 
-    [Flags]
     enum Element
     {
         None,
@@ -225,9 +224,9 @@ public sealed class PhantomAI(RotationModuleManager manager, Actor player) : AIB
                 UseAction(PhantomID.OccultLibra, primaryTarget, ActionQueue.Priority.High);
             else
             {
-                UseAction(PhantomID.OccultFireII, primaryTarget, prio + (weakness.HasFlag(Element.Fire) ? 1 : 0), castTime);
-                UseAction(PhantomID.OccultBlizzardII, primaryTarget, prio + (weakness.HasFlag(Element.Ice) ? 1 : 0), castTime);
-                UseAction(PhantomID.OccultThunderII, primaryTarget, prio + (weakness.HasFlag(Element.Thunder) ? 1 : 0), castTime);
+                UseAction(PhantomID.OccultFireII, primaryTarget, prio + ((weakness & Element.Fire) != 0 ? 1 : 0), castTime);
+                UseAction(PhantomID.OccultBlizzardII, primaryTarget, prio + ((weakness & Element.Ice) != 0 ? 1 : 0), castTime);
+                UseAction(PhantomID.OccultThunderII, primaryTarget, prio + ((weakness & Element.Fire) != 0 ? 1 : 0), castTime);
             }
         }
 
@@ -256,9 +255,9 @@ public sealed class PhantomAI(RotationModuleManager manager, Actor player) : AIB
         var prio = strategy.Summoner.Priority(PGCDPriority);
         var (weakness, _) = FindWeakness(primaryTarget);
 
-        UseAction(PhantomID.Hellfire, primaryTarget, prio + (weakness.HasFlag(Element.Fire) ? 1 : 0), 4);
-        UseAction(PhantomID.JudgmentBolt, primaryTarget, prio + (weakness.HasFlag(Element.Thunder) ? 1 : 0), 4);
-        UseAction(PhantomID.Thunderstorm, primaryTarget, prio + (weakness.HasFlag(Element.Wind) ? 1 : 0), 4);
+        UseAction(PhantomID.Hellfire, primaryTarget, prio + ((weakness & Element.Fire) != 0 ? 1 : 0), 4);
+        UseAction(PhantomID.JudgmentBolt, primaryTarget, prio + ((weakness & Element.Thunder) != 0 ? 1 : 0), 4);
+        UseAction(PhantomID.Thunderstorm, primaryTarget, prio + ((weakness & Element.Wind) != 0 ? 1 : 0), 4);
         UseAction(PhantomID.Megaflare, primaryTarget, prio + 2, 4);
     }
 
@@ -271,9 +270,9 @@ public sealed class PhantomAI(RotationModuleManager manager, Actor player) : AIB
         var prio = strategy.BlackMage.Priority(PGCDPriority);
         var (weakness, _) = FindWeakness(primaryTarget);
 
-        UseAction(PhantomID.OccultFireIII, primaryTarget, prio + (weakness.HasFlag(Element.Fire) ? 1 : 0), 1.5f * haste);
-        UseAction(PhantomID.OccultBlizzardIII, primaryTarget, prio + (weakness.HasFlag(Element.Ice) ? 1 : 0), 1.5f * haste);
-        UseAction(PhantomID.OccultThunderIII, primaryTarget, prio + (weakness.HasFlag(Element.Thunder) ? 1 : 0), 1.5f * haste);
+        UseAction(PhantomID.OccultFireIII, primaryTarget, prio + ((weakness & Element.Fire) != 0 ? 1 : 0), 1.5f * haste);
+        UseAction(PhantomID.OccultBlizzardIII, primaryTarget, prio + ((weakness & Element.Ice) != 0 ? 1 : 0), 1.5f * haste);
+        UseAction(PhantomID.OccultThunderIII, primaryTarget, prio + ((weakness & Element.Thunder) != 0 ? 1 : 0), 1.5f * haste);
         UseAction(PhantomID.OccultFlare, primaryTarget, prio + 2, 2.3f * haste);
     }
 
@@ -434,10 +433,15 @@ public sealed class PhantomAI(RotationModuleManager manager, Actor player) : AIB
 
         var bestTarget = primaryTarget?.IsAlly == false ? primaryTarget : null;
         var bestCount = bestTarget == null ? 0 : Hints.NumPriorityTargetsInAOECircle(bestTarget.Position, 5);
-        foreach (var tar in Hints.PriorityTargets.Where(x => Player.DistanceToHitbox(x.Actor) <= 30))
+        var targets = Hints.PriorityTargetsSpan;
+        var len = targets.Length;
+        for (var i = 0; i < len; ++i)
         {
-            if (tar.Actor == bestTarget)
+            var tar = targets[i];
+            if (tar.Actor == bestTarget || Player.DistanceToHitbox(tar.Actor) > 30f)
+            {
                 continue;
+            }
 
             var cnt = Hints.NumPriorityTargetsInAOECircle(tar.Actor.Position, 5);
             if (cnt > bestCount)
@@ -534,7 +538,7 @@ public sealed class PhantomAI(RotationModuleManager manager, Actor player) : AIB
             var prio = strategy.Monk.Priority(ActionQueue.Priority.Low);
 
             var counterLeft = SelfStatusDetails(PhantomSID.Counterstance, 60).Left;
-            if (counterLeft <= 30 && !Hints.PriorityTargets.Any())
+            if (counterLeft <= 30 && Hints.PriorityTargetsSpan.Length == 0)
                 UseAction(PhantomID.Counterstance, Player, prio);
 
             if (primaryTarget?.IsAlly == false)

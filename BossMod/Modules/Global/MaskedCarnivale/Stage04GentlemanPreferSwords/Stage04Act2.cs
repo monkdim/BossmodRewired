@@ -23,7 +23,7 @@ sealed class MagitekField(BossModule module) : Components.CastInterruptHint(modu
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add($"{Module.PrimaryActor.Name} is weak to lightning spells.\nDuring the fight he will spawn 6 beetles.\nIf available use the Ram's Voice + Ultravibration combo for the instant kill.");
     }
@@ -31,7 +31,7 @@ sealed class Hints(BossModule module) : BossComponent(module)
 
 sealed class Hints2(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add($"{Module.PrimaryActor.Name} is weak against lightning spells and can be frozen.");
     }

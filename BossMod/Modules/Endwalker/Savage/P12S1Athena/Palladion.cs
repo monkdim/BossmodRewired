@@ -74,8 +74,10 @@ sealed class PalladionArena(BossModule module) : BossComponent(module)
     public override void DrawArenaForeground(int pcSlot, Actor pc)
     {
         for (var i = 0; i < 8; ++i)
+        {
             Arena.PathLineTo(Arena.Center + 14f * (i * 45f).Degrees().ToDirection());
-        MiniArena.PathStroke(true, Colors.Border, 2);
+        }
+        Arena.PathStroke(true, Colors.Border, 2);
     }
 }
 
@@ -179,7 +181,7 @@ sealed class PalladionClearCut(BossModule module) : Components.GenericAOEs(modul
 {
     private readonly Palladion? _palladion = module.FindComponent<Palladion>();
 
-    private static readonly AOEShapeCircle _shape = new(4); // note: it's really a 270? degree cone, but we don't really know rotation early enough, and we just shouldn't stay in center anyway
+    private readonly AOEShapeCircle _shape = new(4f); // note: it's really a 270? degree cone, but we don't really know rotation early enough, and we just shouldn't stay in center anyway
 
     public override ReadOnlySpan<AOEInstance> ActiveAOEs(int slot, Actor actor)
     {

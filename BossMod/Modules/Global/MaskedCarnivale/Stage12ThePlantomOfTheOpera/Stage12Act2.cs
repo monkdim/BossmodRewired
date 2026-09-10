@@ -22,7 +22,7 @@ sealed class InflammableFumes(BossModule module) : Components.CastInterruptHint(
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add($"Use Bomb Toss to stun {Module.PrimaryActor.Name} when he casts Inflammable Fumes.\nUse Ice Spikes to instantly kill roselets once they become aggressive.\n{Module.PrimaryActor.Name} is weak against water and strong against earth spells.");
     }
