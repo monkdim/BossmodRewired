@@ -1,9 +1,6 @@
-﻿using System.Reflection;
-
-namespace BossMod;
+﻿namespace BossMod;
 
 // allowed categories of targets for an action
-[Flags]
 public enum ActionTargets
 {
     None = 0,
@@ -94,8 +91,11 @@ public sealed record class ActionDefinition(ActionID ID)
     // the way game works is - when you use first charge, total is set to cd*max-at-cap, and elapsed is set to cd*(max-at-level - 1)
     public int MaxChargesAtCap()
     {
-        foreach (ref var o in MaxChargesOverride.AsSpan())
+        var charges = MaxChargesOverride.AsSpan();
+        var len = charges.Length;
+        for (var i = 0; i < len; ++i)
         {
+            ref var o = ref charges[i];
             if (LinkUnlocked(o.UnlockLink))
             {
                 return o.Charges;
@@ -107,8 +107,11 @@ public sealed record class ActionDefinition(ActionID ID)
 
     public int MaxChargesAtLevel(int level)
     {
-        foreach (ref var o in MaxChargesOverride.AsSpan())
+        var charges = MaxChargesOverride.AsSpan();
+        var len = charges.Length;
+        for (var i = 0; i < len; ++i)
         {
+            ref var o = ref charges[i];
             if (level >= o.Level && LinkUnlocked(o.UnlockLink))
             {
                 return o.Charges;
@@ -228,8 +231,7 @@ public sealed class ActionDefinitions
 
     private ActionDefinitions()
     {
-        foreach (var d in Utils.GetDerivedTypes<Defs>(Assembly.GetExecutingAssembly()))
-            ((Defs)Activator.CreateInstance(d)!).Define(this);
+        GeneratedRegistries.RegisterActionDefinitions(this);
 
         // items (TODO: more generic approach is needed...)
         RegisterItem(IDPotionStr);
@@ -266,11 +268,14 @@ public sealed class ActionDefinitions
             RegisterDeepDungeon(new(ActionType.Magicite, i));
         }
 
-        foreach (var act in typeof(EurekaActionID).GetEnumValues())
+        var eurekaactions = (EurekaActionID[])typeof(EurekaActionID).GeneratedEnumValues();
+        var len = eurekaactions.Length;
+        for (var i = 0; i < len; ++i)
         {
-            if ((uint)act > 0)
+            var act = eurekaactions[i];
+            if ((uint)act > 0u)
             {
-                RegisterSpell((EurekaActionID)act);
+                RegisterSpell(act);
             }
         }
 
@@ -279,12 +284,12 @@ public sealed class ActionDefinitions
             var petAction = new ActionID(ActionType.PetAction, i);
             var def = new ActionDefinition(petAction)
             {
-                CastAnimLock = 0,
-                InstantAnimLock = 0,
+                CastAnimLock = 0f,
+                InstantAnimLock = 0f,
             };
             if (i == 3) // PetAction 3 "Place" is area-targeted
             {
-                def.Range = 30;
+                def.Range = 30f;
                 def.AllowedTargets = ActionTargets.Area;
             }
             Register(def.ID, def);
@@ -297,14 +302,16 @@ public sealed class ActionDefinitions
     // smart targeting utility: return target (if friendly) or other tank (if available) or null (otherwise)
     public static Actor? FindCoTank(WorldState ws, Actor player)
     {
-        foreach (var a in ws.Party.WithoutSlot())
+        var raid = ws.Party.WithoutSlot(false, true, true); // doubt we care about dead co tanks, alliance, or npcs
+        var len = raid.Length;
+        for (var i = 0; i < len; ++i)
         {
+            var a = raid[i];
             if (a != player && a.Role == Role.Tank)
             {
                 return a;
             }
         }
-
         return null;
     }
     public static Actor? SmartTargetCoTank(WorldState ws, Actor player, Actor? primaryTarget, AIHints hints) => SmartTargetFriendly(primaryTarget) ?? FindCoTank(ws, player);
@@ -312,10 +319,16 @@ public sealed class ActionDefinitions
     // smart targeting utility: return target (if friendly) or any esunable player (if any) or self (otherwise)
     public static Actor? FindEsunaTarget(WorldState ws)
     {
-        foreach (var p in ws.Party.WithoutSlot())
+        var raid = ws.Party.WithoutSlot(false, true, true); // doubt we care about dead co tanks, alliance, or npcs
+        var len = raid.Length;
+        for (var i = 0; i < len; ++i)
         {
-            foreach (var s in p.Statuses)
+            var p = raid[i];
+            var statuses = p.Statuses;
+            var lenS = statuses.Length;
+            for (var j = 0; j < lenS; ++j)
             {
+                ref var s = ref statuses[j];
                 if (Utils.StatusIsRemovable(s.ID))
                 {
                     return p;
@@ -332,7 +345,8 @@ public sealed class ActionDefinitions
         var cjc = _cjcSheet?.GetRowOrDefault(data.ClassJobCategory.RowId);
         if (cjc != null)
         {
-            for (var i = 1; i < _cjcSheet!.Columns.Count; ++i)
+            var count = _cjcSheet!.Columns.Count;
+            for (var i = 1; i < count; ++i)
             {
                 res[i - 1] = cjc.Value.ReadBoolColumn(i);
             }

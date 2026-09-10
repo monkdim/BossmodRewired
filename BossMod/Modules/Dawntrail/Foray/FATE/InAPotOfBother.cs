@@ -16,7 +16,7 @@ public enum OID : uint
 
 public enum AID : uint
 {
-    AutoAttack_ = 40542, // 4D8D/4D8E->player, no cast, single-target
+    AutoAttack = 40542, // 4D8D/4D8E->player, no cast, single-target
     TightTornado1 = 50221, // 4D8D->self, 3.0s cast, range 15 width 4 rect
     TightTornado2 = 50222, // 4D8E->self, 3.0s cast, range 15 width 4 rect
     AeroIII = 50223, // 4D8E->self, 6.0s cast, range 20 circle
@@ -32,7 +32,6 @@ sealed class AeroIII : Components.SimpleAOEs
     }
 }
 
-[SkipLocalsInit]
 sealed class InAPotOfBotherStates : StateMachineBuilder
 {
     public InAPotOfBotherStates(BossModule module) : base(module)
@@ -61,7 +60,6 @@ sealed class InAPotOfBotherStates : StateMachineBuilder
     NameID = 2073u,
     SortOrder = 2,
     PlanLevel = 0)]
-[SkipLocalsInit]
 public sealed class InAPotOfBother(WorldState ws, Actor primary) : OpenWorldFate(ws, primary);
 // no singular actor we can use to trigger arena draw
 // really onlt want this for FATE completion and so AI doesn't move for Aero III

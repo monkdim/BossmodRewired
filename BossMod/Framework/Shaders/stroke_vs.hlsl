@@ -14,10 +14,10 @@ struct VS_INPUT
 struct PS_INPUT
 {
     float4 pos                         : SV_POSITION;
-    float4 col                         : COLOR0;
-    float4 shadowCol                   : COLOR1;
-    float acrossPx                     : TEXCOORD0;
-    float alongPx                      : TEXCOORD1;
+    nointerpolation float4 col         : COLOR0;
+    nointerpolation float4 shadowCol   : COLOR1;
+    noperspective float acrossPx       : TEXCOORD0;
+    noperspective float alongPx        : TEXCOORD1;
     nointerpolation float3 params      : TEXCOORD2; // x/y widths, z segment length
     nointerpolation uint flags         : TEXCOORD3;
 };

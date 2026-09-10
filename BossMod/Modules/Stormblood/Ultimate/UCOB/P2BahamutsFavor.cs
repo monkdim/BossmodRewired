@@ -1,6 +1,6 @@
 ﻿namespace BossMod.Stormblood.Ultimate.UCOB;
 
-class P2BahamutsFavorFireball(BossModule module) : Components.UniformStackSpread(module, 4, 0, 1)
+sealed class P2BahamutsFavorFireball(BossModule module) : Components.UniformStackSpread(module, 4f, 0u, 1)
 {
     public Actor? Target;
     private BitMask _forbidden;
@@ -53,7 +53,7 @@ class P2BahamutsFavorFireball(BossModule module) : Components.UniformStackSpread
 }
 
 // note: if player dies immediately after chain lightning cast, he won't get a status or have aoe cast; if he dies after status application, aoe will be triggered immediately
-class P2BahamutsFavorChainLightning(BossModule module) : Components.UniformStackSpread(module, default, 5f)
+sealed class P2BahamutsFavorChainLightning(BossModule module) : Components.UniformStackSpread(module, default, 5f)
 {
     private BitMask _pendingTargets;
     private DateTime _expectedStatuses;
@@ -85,9 +85,9 @@ class P2BahamutsFavorChainLightning(BossModule module) : Components.UniformStack
     }
 }
 
-class P2BahamutsFavorDeathstorm(BossModule module) : BossComponent(module)
+sealed class P2BahamutsFavorDeathstorm(BossModule module) : BossComponent(module)
 {
-    public int NumDeathstorms { get; private set; }
+    public int NumDeathstorms;
     private readonly List<(Actor player, DateTime expiration, bool cleansed)> _dooms = [];
     private readonly List<(WPos predicted, Actor? voidzone)> _cleanses = [];
 
@@ -155,4 +155,4 @@ class P2BahamutsFavorDeathstorm(BossModule module) : BossComponent(module)
     }
 }
 
-class P2BahamutsFavorWingsOfSalvation(BossModule module) : Components.SimpleAOEs(module, (uint)AID.WingsOfSalvation, 4f);
+sealed class P2BahamutsFavorWingsOfSalvation(BossModule module) : Components.SimpleAOEs(module, (uint)AID.WingsOfSalvation, 4f);

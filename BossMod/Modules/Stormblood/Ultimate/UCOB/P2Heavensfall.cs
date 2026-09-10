@@ -1,6 +1,6 @@
 ﻿namespace BossMod.Stormblood.Ultimate.UCOB;
 
-class P2Heavensfall(BossModule module) : Components.GenericKnockback(module, (uint)AID.Heavensfall)
+sealed class P2Heavensfall(BossModule module) : Components.GenericKnockback(module, (uint)AID.Heavensfall)
 {
     public override ReadOnlySpan<Knockback> ActiveKnockbacks(int slot, Actor actor)
     {
@@ -8,11 +8,11 @@ class P2Heavensfall(BossModule module) : Components.GenericKnockback(module, (ui
     }
 }
 
-class P2HeavensfallPillar(BossModule module) : Components.GenericAOEs(module)
+sealed class P2HeavensfallPillar(BossModule module) : Components.GenericAOEs(module)
 {
     private AOEInstance[] _aoe = [];
 
-    private static readonly AOEShapeRect _shape = new(5f, 5f, 5f);
+    private readonly AOEShapeRect _shape = new(5f, 5f, 5f);
 
     public override ReadOnlySpan<AOEInstance> ActiveAOEs(int slot, Actor actor) => _aoe;
 
@@ -37,9 +37,9 @@ class P2HeavensfallPillar(BossModule module) : Components.GenericAOEs(module)
     }
 }
 
-class P2ThermionicBurst(BossModule module) : Components.SimpleAOEs(module, (uint)AID.ThermionicBurst, new AOEShapeCone(24.5f, 11.25f.Degrees()));
+sealed class P2ThermionicBurst(BossModule module) : Components.SimpleAOEs(module, (uint)AID.ThermionicBurst, new AOEShapeCone(24.5f, 11.25f.Degrees()));
 
-class P2MeteorStream : Components.UniformStackSpread
+sealed class P2MeteorStream : Components.UniformStackSpread
 {
     public int NumCasts;
 
@@ -69,11 +69,11 @@ class P2MeteorStream : Components.UniformStackSpread
     }
 }
 
-class P2HeavensfallDalamudDive(BossModule module) : Components.GenericBaitAway(module, (uint)AID.DalamudDive, true, true)
+sealed class P2HeavensfallDalamudDive(BossModule module) : Components.GenericBaitAway(module, (uint)AID.DalamudDive, true, true)
 {
     private readonly Actor? _target = module.WorldState.Actors.Find(module.PrimaryActor.TargetID);
 
-    private static readonly AOEShapeCircle _shape = new(5f);
+    private readonly AOEShapeCircle _shape = new(5f);
 
     public void Show()
     {

@@ -1,12 +1,12 @@
 ﻿namespace BossMod.Stormblood.Ultimate.UCOB;
 
-class Quote(BossModule module) : BossComponent(module)
+sealed class Quote(BossModule module) : BossComponent(module)
 {
     public Actor? Source;
     public List<uint> PendingMechanics = [];
     public DateTime NextActivation;
 
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         var count = PendingMechanics.Count;
         if (count > 0)
@@ -70,12 +70,12 @@ class Quote(BossModule module) : BossComponent(module)
     }
 }
 
-class QuoteIronChariotLunarDynamo(BossModule module) : Components.GenericAOEs(module)
+sealed class QuoteIronChariotLunarDynamo(BossModule module) : Components.GenericAOEs(module)
 {
     private readonly Quote? _quote = module.FindComponent<Quote>();
 
-    private static readonly AOEShapeCircle _shapeChariot = new(8.55f);
-    private static readonly AOEShapeDonut _shapeDynamo = new(6, 22); // TODO: verify inner radius
+    private readonly AOEShapeCircle _shapeChariot = new(8.55f);
+    private readonly AOEShapeDonut _shapeDynamo = new(6f, 22f); // TODO: verify inner radius
 
     public override ReadOnlySpan<AOEInstance> ActiveAOEs(int slot, Actor actor)
     {
@@ -91,7 +91,7 @@ class QuoteIronChariotLunarDynamo(BossModule module) : Components.GenericAOEs(mo
     }
 }
 
-class QuoteThermionicBeam(BossModule module) : Components.UniformStackSpread(module, 4f, default, 8, 8)
+sealed class QuoteThermionicBeam(BossModule module) : Components.UniformStackSpread(module, 4f, default, 8, 8)
 {
     private readonly Quote? _quote = module.FindComponent<Quote>();
 
@@ -106,7 +106,7 @@ class QuoteThermionicBeam(BossModule module) : Components.UniformStackSpread(mod
     }
 }
 
-class QuoteRavenDive(BossModule module) : Components.UniformStackSpread(module, default, 3f)
+sealed class QuoteRavenDive(BossModule module) : Components.UniformStackSpread(module, default, 3f)
 {
     private readonly Quote? _quote = module.FindComponent<Quote>();
 
@@ -121,7 +121,7 @@ class QuoteRavenDive(BossModule module) : Components.UniformStackSpread(module, 
     }
 }
 
-class QuoteMeteorStream(BossModule module) : Components.UniformStackSpread(module, default, 4f)
+sealed class QuoteMeteorStream(BossModule module) : Components.UniformStackSpread(module, default, 4f)
 {
     private readonly Quote? _quote = module.FindComponent<Quote>();
 
@@ -136,7 +136,7 @@ class QuoteMeteorStream(BossModule module) : Components.UniformStackSpread(modul
     }
 }
 
-class QuoteDalamudDive(BossModule module) : Components.GenericBaitAway(module, (uint)AID.DalamudDive, true, true)
+sealed class QuoteDalamudDive(BossModule module) : Components.GenericBaitAway(module, (uint)AID.DalamudDive, true, true)
 {
     private readonly Quote? _quote = module.FindComponent<Quote>();
 

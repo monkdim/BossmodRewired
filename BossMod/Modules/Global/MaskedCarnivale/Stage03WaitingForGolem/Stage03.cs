@@ -40,7 +40,7 @@ sealed class Obliterate(BossModule module) : Components.CastInterruptHint(module
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add($"{Module.PrimaryActor.Name} is weak against water based spells.\nFlying Sardine is recommended to interrupt raidwide.");
     }
@@ -48,7 +48,7 @@ sealed class Hints(BossModule module) : BossComponent(module)
 
 sealed class Hints2(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add($"{Module.PrimaryActor.Name} is weak against water based spells.\nEarth based spells are useless against {Module.PrimaryActor.Name}.");
     }

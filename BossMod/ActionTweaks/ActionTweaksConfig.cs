@@ -71,6 +71,9 @@ public sealed class ActionTweaksConfig : ConfigNode
     [PropertyDisplay("Automatically dismount to execute actions")]
     public bool AutoDismount = true;
 
+    [PropertyDisplay("Allow forbidding targets", tooltip: "Some modules want to prevent attacking certain targets, for example to prevent an early enrage. This setting gets ignored while AI is on.")]
+    public bool PreventForbiddenTargets = true;
+
     public enum GroundTargetingMode
     {
         [PropertyDisplay("Manually select position by extra click (normal game behaviour)")]

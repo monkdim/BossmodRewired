@@ -1,20 +1,19 @@
 namespace BossMod.Components;
 
-[SkipLocalsInit]
 public class GenericTowers(BossModule module, uint aid = default, bool prioritizeInsufficient = false, AIHints.PredictedDamageType damageType = AIHints.PredictedDamageType.Raidwide) : CastCounter(module, aid)
 {
     public struct Tower
     {
         public Tower(WPos position, float radius, int minSoakers = 1, int maxSoakers = 1, BitMask forbiddenSoakers = default, DateTime activation = default, ulong actorID = default,
-        ShapeDistance? shapeDistance = null, ShapeDistance? invertedShapeDistance = null)
+        ShapeDistance? shapeDistance = null, ShapeDistance? invertedShapeDistance = null, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = false)
         {
             var shape = new AOEShapeCircle(radius);
             this = new(position, shape, minSoakers, maxSoakers, forbiddenSoakers, activation, default, actorID,
-                shapeDistance ?? shape.Distance(position, default), invertedShapeDistance ?? shape.InvertedDistance(position, default));
+                shapeDistance ?? shape.Distance(position, default), invertedShapeDistance ?? shape.InvertedDistance(position, default), arenaProjectionLayer, restrictToArenaProjectionLayer);
         }
 
         public Tower(WPos position, AOEShape shape, int minSoakers = 1, int maxSoakers = 1, BitMask forbiddenSoakers = default, DateTime activation = default, Angle rotation = default,
-            ulong actorID = default, ShapeDistance? shapeDistance = null, ShapeDistance? invertedShapeDistance = null)
+            ulong actorID = default, ShapeDistance? shapeDistance = null, ShapeDistance? invertedShapeDistance = null, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = false)
         {
             Position = position;
             Rotation = rotation;
@@ -26,6 +25,8 @@ public class GenericTowers(BossModule module, uint aid = default, bool prioritiz
             ActorID = actorID;
             ShapeDistance = shapeDistance;
             InvertedShapeDistance = invertedShapeDistance;
+            ArenaProjectionLayer = arenaProjectionLayer;
+            RestrictToArenaProjectionLayer = restrictToArenaProjectionLayer;
         }
 
         public WPos Position;
@@ -38,6 +39,8 @@ public class GenericTowers(BossModule module, uint aid = default, bool prioritiz
         public ulong ActorID;
         public ShapeDistance? ShapeDistance;
         public ShapeDistance? InvertedShapeDistance;
+        public int? ArenaProjectionLayer;
+        public bool? RestrictToArenaProjectionLayer;
 
         public readonly bool IsInside(WPos pos) => Shape.Check(pos, Position, Rotation);
         public readonly bool IsInside(Actor actor) => IsInside(actor.Position);
@@ -50,7 +53,9 @@ public class GenericTowers(BossModule module, uint aid = default, bool prioritiz
             for (var i = 0; i < len; ++i)
             {
                 ref var indexActor = ref party[i];
-                if (!ForbiddenSoakers[indexActor.Item1] && Shape.Check(indexActor.Item2.Position, Position, Rotation))
+                if (!ForbiddenSoakers[indexActor.Item1]
+                    && module.ActorMatchesArenaProjectionLayer(indexActor.Item2, ArenaProjectionLayer, RestrictToArenaProjectionLayer)
+                    && Shape.Check(indexActor.Item2.Position, Position, Rotation))
                 {
                     ++count;
                 }
@@ -68,6 +73,9 @@ public class GenericTowers(BossModule module, uint aid = default, bool prioritiz
 
     public virtual ReadOnlySpan<Tower> ActiveTowers(int slot, Actor actor) => CollectionsMarshal.AsSpan(Towers);
 
+    protected bool TowerAppliesToArenaProjectionLayer(Actor actor, in Tower tower)
+        => ArenaProjectionLayerParticipantApplies(actor, tower.ArenaProjectionLayer, tower.RestrictToArenaProjectionLayer);
+
     public override void AddHints(int slot, Actor actor, TextHints hints)
     {
         var towers = ActiveTowers(slot, actor);
@@ -80,6 +88,10 @@ public class GenericTowers(BossModule module, uint aid = default, bool prioritiz
         for (var i = 0; i < len; ++i)
         {
             ref readonly var t = ref towers[i];
+            if (!TowerAppliesToArenaProjectionLayer(actor, t))
+            {
+                continue;
+            }
             if (t.ForbiddenSoakers[slot] && t.IsInside(actor))
             {
                 gtfoFromTower = true;
@@ -98,6 +110,10 @@ public class GenericTowers(BossModule module, uint aid = default, bool prioritiz
             {
 
                 ref readonly var t = ref towers[i];
+                if (!TowerAppliesToArenaProjectionLayer(actor, t))
+                {
+                    continue;
+                }
                 if (!t.ForbiddenSoakers[slot] && t.IsInside(actor))
                 {
                     soakedIndex = i;
@@ -128,6 +144,10 @@ public class GenericTowers(BossModule module, uint aid = default, bool prioritiz
                 for (var i = 0; i < len; ++i)
                 {
                     ref readonly var t = ref towers[i];
+                    if (!TowerAppliesToArenaProjectionLayer(actor, t))
+                    {
+                        continue;
+                    }
                     if (!t.ForbiddenSoakers[slot] && t.InsufficientAmountInside(Module))
                     {
                         insufficientSoakers = true;
@@ -158,11 +178,17 @@ public class GenericTowers(BossModule module, uint aid = default, bool prioritiz
             var safe = numInside < t.MaxSoakers || isInside && numInside <= t.MaxSoakers;
             if (safe)
             {
-                t.Shape.Outline(Arena, t.Position, t.Rotation, Colors.Safe, 2f);
+                using (Arena.WorldProjectionLayer(t.ArenaProjectionLayer, t.RestrictToArenaProjectionLayer))
+                {
+                    t.Shape.Outline(Arena, t.Position, t.Rotation, Colors.Safe, 2f);
+                }
             }
             else if (isInside && numInside > t.MaxSoakers) // player is inside but tower has more players than needed
             {
-                t.Shape.Outline(Arena, t.Position, t.Rotation, default, 2f);
+                using (Arena.WorldProjectionLayer(t.ArenaProjectionLayer, t.RestrictToArenaProjectionLayer))
+                {
+                    t.Shape.Outline(Arena, t.Position, t.Rotation, default, 2f);
+                }
             }
         }
     }
@@ -176,14 +202,21 @@ public class GenericTowers(BossModule module, uint aid = default, bool prioritiz
             ref readonly var t = ref towers[i];
             if (t.ForbiddenSoakers[pcSlot] || !t.IsInside(pc) && t.NumInside(Module) >= t.MaxSoakers)
             {
-                t.Shape.Draw(Arena, t.Position, t.Rotation);
+                using (Arena.WorldProjectionLayer(t.ArenaProjectionLayer, t.RestrictToArenaProjectionLayer))
+                {
+                    t.Shape.Draw(Arena, t.Position, t.Rotation);
+                }
                 continue;
             }
         }
     }
 
     // default tower styling
-    public static void DrawTower(MiniArena arena, ref Tower tower, bool safe) => tower.Shape.Outline(arena, tower.Position, tower.Rotation, safe ? Colors.Safe : default, 2f);
+    public static void DrawTower(MiniArena arena, ref Tower tower, bool safe)
+    {
+        using (arena.WorldProjectionLayer(tower.ArenaProjectionLayer, tower.RestrictToArenaProjectionLayer))
+            tower.Shape.Outline(arena, tower.Position, tower.Rotation, safe ? Colors.Safe : default, 2f);
+    }
     public static void DrawTower(MiniArena arena, WPos pos, float radius, bool safe) => arena.ZoneCircleOutline(pos, radius, safe ? Colors.Safe : default, 2f);
 
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
@@ -195,8 +228,25 @@ public class GenericTowers(BossModule module, uint aid = default, bool prioritiz
             return;
         }
 
+        var firstActivation = DateTime.MaxValue;
+        var haveApplicableTower = false;
+        for (var i = 0; i < len; ++i)
+        {
+            ref readonly var tower = ref towers[i];
+            if (TowerAppliesToArenaProjectionLayer(actor, tower))
+            {
+                haveApplicableTower = true;
+                firstActivation = firstActivation < tower.Activation ? firstActivation : tower.Activation;
+            }
+        }
+        if (!haveApplicableTower)
+        {
+            return;
+        }
+
         var forbiddenInverted = new List<ShapeDistance>(len);
-        var forbidden = new List<ShapeDistance>(len);
+        var forbiddenInvertedLayer = -2; // -2 = empty, -1 = unlayered/mixed
+        var forbidden = new List<(ShapeDistance Shape, int? Layer)>(len);
 
         if (PrioritizeInsufficient)
         {
@@ -205,6 +255,10 @@ public class GenericTowers(BossModule module, uint aid = default, bool prioritiz
             for (var i = 0; i < len; ++i)
             {
                 ref readonly var t = ref towers[i];
+                if (!TowerAppliesToArenaProjectionLayer(actor, t))
+                {
+                    continue;
+                }
                 if (t.ForbiddenSoakers[slot])
                 {
                     continue;
@@ -217,7 +271,7 @@ public class GenericTowers(BossModule module, uint aid = default, bool prioritiz
                 }
 
                 if (mostRelevantTower == null || mostRelevantTower is Tower towe && towe.NumInside(Module) is var num && numInside >= num
-                && (t.Position - pos).LengthSq() < (towe.Position - pos).LengthSq())
+                    && (t.Position - pos).LengthSq() < (towe.Position - pos).LengthSq())
                 {
                     mostRelevantTower = t;
                 }
@@ -226,12 +280,17 @@ public class GenericTowers(BossModule module, uint aid = default, bool prioritiz
             {
                 ref var to = ref tow;
                 forbiddenInverted.Add(to.InvertedShapeDistance ?? to.Shape.InvertedDistance(to.Position, to.Rotation));
+                forbiddenInvertedLayer = ArenaProjectionLayerForAI(to.ArenaProjectionLayer, to.RestrictToArenaProjectionLayer) ?? -1;
             }
         }
         var inTower = false;
         for (var i = 0; i < len; ++i)
         {
             ref readonly var t = ref towers[i];
+            if (!TowerAppliesToArenaProjectionLayer(actor, t))
+            {
+                continue;
+            }
             if (t.IsInside(actor) && t.CorrectAmountInside(Module))
             {
                 inTower = true;
@@ -245,6 +304,10 @@ public class GenericTowers(BossModule module, uint aid = default, bool prioritiz
             for (var i = 0; i < len; ++i)
             {
                 ref readonly var t = ref towers[i];
+                if (!TowerAppliesToArenaProjectionLayer(actor, t))
+                {
+                    continue;
+                }
                 if (t.InsufficientAmountInside(Module))
                 {
                     missingSoakers = true;
@@ -257,6 +320,10 @@ public class GenericTowers(BossModule module, uint aid = default, bool prioritiz
             for (var i = 0; i < len; ++i)
             {
                 ref readonly var t = ref towers[i];
+                if (!TowerAppliesToArenaProjectionLayer(actor, t))
+                {
+                    continue;
+                }
                 var isInside = t.IsInside(actor);
                 var numInside = t.NumInside(Module);
                 var max = t.MaxSoakers;
@@ -265,24 +332,26 @@ public class GenericTowers(BossModule module, uint aid = default, bool prioritiz
                 if (!forbiddenSlot && (numInside < max || isInside && correctAmount))
                 {
                     forbiddenInverted.Add(t.InvertedShapeDistance ?? t.Shape.InvertedDistance(t.Position, t.Rotation));
+                    var layer = ArenaProjectionLayerForAI(t.ArenaProjectionLayer, t.RestrictToArenaProjectionLayer) ?? -1;
+                    forbiddenInvertedLayer = forbiddenInvertedLayer == -2 || forbiddenInvertedLayer == layer ? layer : -1;
                 }
                 else if (forbiddenSlot || numInside > max || !isInside && correctAmount)
                 {
-                    forbidden.Add(t.ShapeDistance ?? t.Shape.Distance(t.Position, t.Rotation));
+                    forbidden.Add((t.ShapeDistance ?? t.Shape.Distance(t.Position, t.Rotation), ArenaProjectionLayerForAI(t.ArenaProjectionLayer, t.RestrictToArenaProjectionLayer)));
                 }
             }
         }
         var fcount = forbidden.Count;
         if ((fcount == 0 || inTower || missingSoakers) && forbiddenInverted.Count != 0)
         {
-            hints.AddForbiddenZone(new SDIntersection([.. forbiddenInverted]), towers[0].Activation);
+            hints.AddForbiddenZone(new SDIntersection([.. forbiddenInverted]), firstActivation,
+                arenaProjectionLayer: forbiddenInvertedLayer >= 0 ? forbiddenInvertedLayer : null);
         }
         else if (fcount != 0 && !inTower)
         {
-            var act = towers[0].Activation;
             for (var i = 0; i < fcount; ++i)
             {
-                hints.AddForbiddenZone(forbidden[i], act);
+                hints.AddForbiddenZone(forbidden[i].Shape, firstActivation, arenaProjectionLayer: forbidden[i].Layer);
             }
         }
 
@@ -292,22 +361,29 @@ public class GenericTowers(BossModule module, uint aid = default, bool prioritiz
         for (var i = 0; i < len; ++i)
         {
             ref readonly var t = ref towers[i];
+            if (!TowerAppliesToArenaProjectionLayer(actor, t))
+            {
+                continue;
+            }
             for (var j = 0; j < acount; ++j)
             {
                 ref var indexActor = ref actors[j];
-                if (!t.ForbiddenSoakers[indexActor.Item1] && t.IsInside(indexActor.Item2))
+                if (!t.ForbiddenSoakers[indexActor.Item1]
+                    && Module.ActorMatchesArenaProjectionLayer(indexActor.Item2, t.ArenaProjectionLayer, t.RestrictToArenaProjectionLayer)
+                    && t.IsInside(indexActor.Item2))
                 {
                     mask.Set(indexActor.Item1);
                 }
             }
         }
-        hints.AddPredictedDamage(mask, towers[0].Activation, DamageType);
+        hints.AddPredictedDamage(mask, firstActivation, DamageType);
     }
 }
 
-[SkipLocalsInit]
-public class CastTowers(BossModule module, uint aid, float radius, int minSoakers = 1, int maxSoakers = 1, AIHints.PredictedDamageType damageType = AIHints.PredictedDamageType.Raidwide) : GenericTowers(module, aid, damageType: damageType)
+public class CastTowers(BossModule module, uint aid, float radius, int minSoakers = 1, int maxSoakers = 1, AIHints.PredictedDamageType damageType = AIHints.PredictedDamageType.Raidwide, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = false) : GenericTowers(module, aid, damageType: damageType)
 {
+    public int? ArenaProjectionLayer = arenaProjectionLayer;
+    public bool? RestrictToArenaProjectionLayer = restrictToArenaProjectionLayer;
     public readonly float Radius = radius;
     public readonly int MinSoakers = minSoakers;
     public readonly int MaxSoakers = maxSoakers;
@@ -316,7 +392,7 @@ public class CastTowers(BossModule module, uint aid, float radius, int minSoaker
     {
         if (spell.Action.ID == WatchedAction)
         {
-            Towers.Add(new(spell.LocXZ, Radius, MinSoakers, MaxSoakers, activation: Module.CastFinishAt(spell), actorID: caster.InstanceID));
+            Towers.Add(new(spell.LocXZ, Radius, MinSoakers, MaxSoakers, activation: Module.CastFinishAt(spell), actorID: caster.InstanceID, arenaProjectionLayer: ArenaProjectionLayer, restrictToArenaProjectionLayer: RestrictToArenaProjectionLayer));
         }
     }
 
@@ -340,15 +416,14 @@ public class CastTowers(BossModule module, uint aid, float radius, int minSoaker
 }
 
 // for tower mechanics in open world since likely not everyone is in your party
-[SkipLocalsInit]
 public class GenericTowersOpenWorld(BossModule module, uint aid = default, bool prioritizeInsufficient = false, bool prioritizeEmpty = false, AIHints.PredictedDamageType damageType = AIHints.PredictedDamageType.Raidwide) : CastCounter(module, aid)
 {
     public class Tower(WPos position, AOEShape shape, int minSoakers = 1, int maxSoakers = 1, HashSet<Actor>? allowedSoakers = null, DateTime activation = default, Angle rotation = default,
-        ulong actorID = default, ShapeDistance? shapeDistance = null, ShapeDistance? invertedShapeDistance = null)
+        ulong actorID = default, ShapeDistance? shapeDistance = null, ShapeDistance? invertedShapeDistance = null, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = false)
     {
         public Tower(WPos position, float radius, int minSoakers = 1, int maxSoakers = 1, HashSet<Actor>? allowedSoakers = null,
-            DateTime activation = default, ulong actorID = default, ShapeDistance? shapeDistance = null, ShapeDistance? invertedShapeDistance = null)
-            : this(position, new AOEShapeCircle(radius), minSoakers, maxSoakers, allowedSoakers, activation, default, actorID, shapeDistance, invertedShapeDistance) { }
+            DateTime activation = default, ulong actorID = default, ShapeDistance? shapeDistance = null, ShapeDistance? invertedShapeDistance = null, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = false)
+            : this(position, new AOEShapeCircle(radius), minSoakers, maxSoakers, allowedSoakers, activation, default, actorID, shapeDistance, invertedShapeDistance, arenaProjectionLayer, restrictToArenaProjectionLayer) { }
 
         public WPos Position = position;
         public Angle Rotation = rotation;
@@ -360,6 +435,8 @@ public class GenericTowersOpenWorld(BossModule module, uint aid = default, bool 
         public ulong ActorID = actorID;
         public ShapeDistance? ShapeDistance = shapeDistance;
         public ShapeDistance? InvertedShapeDistance = invertedShapeDistance;
+        public int? ArenaProjectionLayer = arenaProjectionLayer;
+        public bool? RestrictToArenaProjectionLayer = restrictToArenaProjectionLayer;
 
         public bool IsInside(WPos pos) => Shape.Check(pos, Position, Rotation);
         public bool IsInside(Actor actor) => IsInside(actor.Position);
@@ -370,7 +447,7 @@ public class GenericTowersOpenWorld(BossModule module, uint aid = default, bool 
             var allowedSoakers = AllowedSoakers ??= Soakers(module);
             foreach (var a in allowedSoakers)
             {
-                if (Shape.Check(a.Position, Position, Rotation))
+                if (module.ActorMatchesArenaProjectionLayer(a, ArenaProjectionLayer, RestrictToArenaProjectionLayer) && Shape.Check(a.Position, Position, Rotation))
                 {
                     ++count;
                 }
@@ -415,6 +492,9 @@ public class GenericTowersOpenWorld(BossModule module, uint aid = default, bool 
 
     public virtual ReadOnlySpan<Tower> ActiveTowers(int slot, Actor actor) => CollectionsMarshal.AsSpan(Towers);
 
+    protected bool TowerAppliesToArenaProjectionLayer(Actor actor, Tower tower)
+        => ArenaProjectionLayerParticipantApplies(actor, tower.ArenaProjectionLayer, tower.RestrictToArenaProjectionLayer);
+
     public readonly bool PrioritizeEmpty = prioritizeEmpty; // give priority to towers with 0 soakers
 
     public override void AddHints(int slot, Actor actor, TextHints hints)
@@ -429,6 +509,10 @@ public class GenericTowersOpenWorld(BossModule module, uint aid = default, bool 
         for (var i = 0; i < len; ++i)
         {
             var t = towers[i];
+            if (!TowerAppliesToArenaProjectionLayer(actor, t))
+            {
+                continue;
+            }
             t.InitializeAllowedSoakers(Module);
             if (!t.AllowedSoakers!.Contains(actor) && t.IsInside(actor))
             {
@@ -447,6 +531,10 @@ public class GenericTowersOpenWorld(BossModule module, uint aid = default, bool 
             for (var i = 0; i < len; ++i)
             {
                 var t = towers[i];
+                if (!TowerAppliesToArenaProjectionLayer(actor, t))
+                {
+                    continue;
+                }
                 if (t.AllowedSoakers!.Contains(actor) && t.IsInside(actor))
                 {
                     soakedIndex = i;
@@ -477,6 +565,10 @@ public class GenericTowersOpenWorld(BossModule module, uint aid = default, bool 
                 for (var i = 0; i < len; ++i)
                 {
                     var t = towers[i];
+                    if (!TowerAppliesToArenaProjectionLayer(actor, t))
+                    {
+                        continue;
+                    }
                     if (t.AllowedSoakers!.Contains(actor) && t.InsufficientAmountInside(Module))
                     {
                         insufficientSoakers = true;
@@ -508,11 +600,17 @@ public class GenericTowersOpenWorld(BossModule module, uint aid = default, bool 
             var safe = numInside < t.MaxSoakers || isInside && numInside <= t.MaxSoakers;
             if (safe)
             {
-                t.Shape.Outline(Arena, t.Position, t.Rotation, Colors.Safe, 2f);
+                using (Arena.WorldProjectionLayer(t.ArenaProjectionLayer, t.RestrictToArenaProjectionLayer))
+                {
+                    t.Shape.Outline(Arena, t.Position, t.Rotation, Colors.Safe, 2f);
+                }
             }
             else if (isInside && numInside > t.MaxSoakers) // player is inside but tower has more players than needed
             {
-                t.Shape.Outline(Arena, t.Position, t.Rotation, default, 2f);
+                using (Arena.WorldProjectionLayer(t.ArenaProjectionLayer, t.RestrictToArenaProjectionLayer))
+                {
+                    t.Shape.Outline(Arena, t.Position, t.Rotation, default, 2f);
+                }
             }
         }
     }
@@ -527,13 +625,22 @@ public class GenericTowersOpenWorld(BossModule module, uint aid = default, bool 
             t.InitializeAllowedSoakers(Module);
             if (!t.AllowedSoakers!.Contains(pc) || !t.IsInside(pc) && t.NumInside(Module) >= t.MaxSoakers)
             {
-                t.Shape.Draw(Arena, t.Position, t.Rotation);
+                using (Arena.WorldProjectionLayer(t.ArenaProjectionLayer, t.RestrictToArenaProjectionLayer))
+                {
+                    t.Shape.Draw(Arena, t.Position, t.Rotation);
+                }
                 continue;
             }
         }
     }
 
-    public static void DrawTower(MiniArena arena, ref Tower tower, bool safe) => tower.Shape.Outline(arena, tower.Position, tower.Rotation, safe ? Colors.Safe : default, 2f);
+    public static void DrawTower(MiniArena arena, ref Tower tower, bool safe)
+    {
+        using (arena.WorldProjectionLayer(tower.ArenaProjectionLayer, tower.RestrictToArenaProjectionLayer))
+        {
+            tower.Shape.Outline(arena, tower.Position, tower.Rotation, safe ? Colors.Safe : default, 2f);
+        }
+    }
     public static void DrawTower(MiniArena arena, WPos pos, float radius, bool safe) => arena.ZoneCircleOutline(pos, radius, safe ? Colors.Safe : default, 2f);
 
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
@@ -545,8 +652,25 @@ public class GenericTowersOpenWorld(BossModule module, uint aid = default, bool 
             return;
         }
 
+        var firstActivation = DateTime.MaxValue;
+        var haveApplicableTower = false;
+        for (var i = 0; i < len; ++i)
+        {
+            var tower = towers[i];
+            if (TowerAppliesToArenaProjectionLayer(actor, tower))
+            {
+                haveApplicableTower = true;
+                firstActivation = firstActivation < tower.Activation ? firstActivation : tower.Activation;
+            }
+        }
+        if (!haveApplicableTower)
+        {
+            return;
+        }
+
         var forbiddenInverted = new List<ShapeDistance>(len);
-        var forbidden = new List<ShapeDistance>(len);
+        var forbiddenInvertedLayer = -2; // -2 = empty, -1 = unlayered/mixed
+        var forbidden = new List<(ShapeDistance Shape, int? Layer)>(len);
 
         if (PrioritizeInsufficient)
         {
@@ -555,6 +679,10 @@ public class GenericTowersOpenWorld(BossModule module, uint aid = default, bool 
             for (var i = 0; i < len; ++i)
             {
                 var t = towers[i];
+                if (!TowerAppliesToArenaProjectionLayer(actor, t))
+                {
+                    continue;
+                }
                 t.InitializeAllowedSoakers(Module);
                 if (!t.AllowedSoakers!.Contains(actor))
                 {
@@ -577,12 +705,17 @@ public class GenericTowersOpenWorld(BossModule module, uint aid = default, bool 
             {
                 var to = tow;
                 forbiddenInverted.Add(to.InvertedShapeDistance ?? to.Shape.InvertedDistance(to.Position, to.Rotation));
+                forbiddenInvertedLayer = ArenaProjectionLayerForAI(to.ArenaProjectionLayer, to.RestrictToArenaProjectionLayer) ?? -1;
             }
         }
         var inTower = false;
         for (var i = 0; i < len; ++i)
         {
             var t = towers[i];
+            if (!TowerAppliesToArenaProjectionLayer(actor, t))
+            {
+                continue;
+            }
             if (t.IsInside(actor) && t.CorrectAmountInside(Module))
             {
                 inTower = true;
@@ -596,6 +729,10 @@ public class GenericTowersOpenWorld(BossModule module, uint aid = default, bool 
             for (var i = 0; i < len; ++i)
             {
                 var t = towers[i];
+                if (!TowerAppliesToArenaProjectionLayer(actor, t))
+                {
+                    continue;
+                }
                 if (t.InsufficientAmountInside(Module))
                 {
                     missingSoakers = true;
@@ -608,6 +745,10 @@ public class GenericTowersOpenWorld(BossModule module, uint aid = default, bool 
             for (var i = 0; i < len; ++i)
             {
                 var t = towers[i];
+                if (!TowerAppliesToArenaProjectionLayer(actor, t))
+                {
+                    continue;
+                }
                 var isInside = t.IsInside(actor);
                 var numInside = t.NumInside(Module);
                 var max = t.MaxSoakers;
@@ -617,24 +758,26 @@ public class GenericTowersOpenWorld(BossModule module, uint aid = default, bool 
                 if (!forbiddenSlot && (numInside < max || isInside && correctAmount))
                 {
                     forbiddenInverted.Add(t.InvertedShapeDistance ?? t.Shape.InvertedDistance(t.Position, t.Rotation));
+                    var layer = ArenaProjectionLayerForAI(t.ArenaProjectionLayer, t.RestrictToArenaProjectionLayer) ?? -1;
+                    forbiddenInvertedLayer = forbiddenInvertedLayer == -2 || forbiddenInvertedLayer == layer ? layer : -1;
                 }
                 else if (forbiddenSlot || numInside > max || !isInside && correctAmount)
                 {
-                    forbidden.Add(t.ShapeDistance ?? t.Shape.Distance(t.Position, t.Rotation));
+                    forbidden.Add((t.ShapeDistance ?? t.Shape.Distance(t.Position, t.Rotation), ArenaProjectionLayerForAI(t.ArenaProjectionLayer, t.RestrictToArenaProjectionLayer)));
                 }
             }
         }
         var fcount = forbidden.Count;
         if ((fcount == 0 || inTower || missingSoakers) && forbiddenInverted.Count != 0)
         {
-            hints.AddForbiddenZone(new SDIntersection([.. forbiddenInverted]), towers[0].Activation);
+            hints.AddForbiddenZone(new SDIntersection([.. forbiddenInverted]), firstActivation,
+                arenaProjectionLayer: forbiddenInvertedLayer >= 0 ? forbiddenInvertedLayer : null);
         }
         else if (fcount != 0 && !inTower)
         {
-            var act = towers[0].Activation;
             for (var i = 0; i < fcount; ++i)
             {
-                hints.AddForbiddenZone(forbidden[i], act);
+                hints.AddForbiddenZone(forbidden[i].Shape, firstActivation, arenaProjectionLayer: forbidden[i].Layer);
             }
         }
 
@@ -644,23 +787,30 @@ public class GenericTowersOpenWorld(BossModule module, uint aid = default, bool 
         for (var i = 0; i < len; ++i)
         {
             var t = towers[i];
+            if (!TowerAppliesToArenaProjectionLayer(actor, t))
+            {
+                continue;
+            }
             for (var j = 0; j < acount; ++j)
             {
                 ref var indexActor = ref actors[j];
                 t.InitializeAllowedSoakers(Module);
-                if (t.AllowedSoakers!.Contains(actor) && t.IsInside(indexActor.Item2))
+                if (t.AllowedSoakers!.Contains(indexActor.Item2)
+                    && Module.ActorMatchesArenaProjectionLayer(indexActor.Item2, t.ArenaProjectionLayer, t.RestrictToArenaProjectionLayer)
+                    && t.IsInside(indexActor.Item2))
                 {
                     mask.Set(indexActor.Item1);
                 }
             }
         }
-        hints.AddPredictedDamage(mask, towers[0].Activation, DamageType);
+        hints.AddPredictedDamage(mask, firstActivation, DamageType);
     }
 }
 
-[SkipLocalsInit]
-public class CastTowersOpenWorld(BossModule module, uint aid, float radius, int minSoakers = 1, int maxSoakers = 1, bool prioritizeInsufficient = false, bool prioritizeEmpty = false, AIHints.PredictedDamageType damageType = AIHints.PredictedDamageType.Raidwide) : GenericTowersOpenWorld(module, aid, prioritizeInsufficient, prioritizeEmpty, damageType)
+public class CastTowersOpenWorld(BossModule module, uint aid, float radius, int minSoakers = 1, int maxSoakers = 1, bool prioritizeInsufficient = false, bool prioritizeEmpty = false, AIHints.PredictedDamageType damageType = AIHints.PredictedDamageType.Raidwide, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = false) : GenericTowersOpenWorld(module, aid, prioritizeInsufficient, prioritizeEmpty, damageType)
 {
+    public int? ArenaProjectionLayer = arenaProjectionLayer;
+    public bool? RestrictToArenaProjectionLayer = restrictToArenaProjectionLayer;
     public readonly float Radius = radius;
     public readonly int MinSoakers = minSoakers;
     public readonly int MaxSoakers = maxSoakers;
@@ -669,7 +819,7 @@ public class CastTowersOpenWorld(BossModule module, uint aid, float radius, int 
     {
         if (spell.Action.ID == WatchedAction)
         {
-            Towers.Add(new(spell.LocXZ, Radius, MinSoakers, MaxSoakers, activation: Module.CastFinishAt(spell), actorID: caster.InstanceID));
+            Towers.Add(new(spell.LocXZ, Radius, MinSoakers, MaxSoakers, activation: Module.CastFinishAt(spell), actorID: caster.InstanceID, arenaProjectionLayer: ArenaProjectionLayer, restrictToArenaProjectionLayer: RestrictToArenaProjectionLayer));
         }
     }
 

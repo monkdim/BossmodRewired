@@ -1,7 +1,6 @@
 Texture2D<float> ArenaSdf : register(t1);
 Texture2D<float> CustomSdf : register(t2);
 SamplerState SdfSampler : register(s1);
-static const float SdfMipGradScale = 0.70710678f; // 2^-0.5 => -0.5 LOD bias
 static const float OutlineCoverageScale = 1.5f;
 static const float ShadowCoverageScale = 1.75f;
 
@@ -9,50 +8,55 @@ cbuffer ArenaSdfConstants : register(b1)
 {
     float4 ArenaUvRow0;
     float4 ArenaUvRow1;
+    float4 ArenaOutsideScale;
+    float4 ArenaMipGrad;
 };
 
 cbuffer CustomSdfConstants : register(b2)
 {
     float4 CustomUvRow0;
     float4 CustomUvRow1;
+    float4 CustomOutsideScale;
+    float4 CustomMipGrad;
 };
 
 struct PS_INPUT
 {
     float4 pos       : SV_POSITION;
     float2 localPx   : TEXCOORD0;
-    float2 direction : TEXCOORD1;
-    float4 params    : TEXCOORD2;
-    float2 widthsPx  : TEXCOORD3;
-    float2 extra     : TEXCOORD4;
-    float4 col       : COLOR0;
-    float4 shadowCol : COLOR1;
+    nointerpolation float2 direction : TEXCOORD1;
+    nointerpolation float4 params    : TEXCOORD2;
+    nointerpolation float2 widthsPx  : TEXCOORD3;
+    nointerpolation float2 extra     : TEXCOORD4;
+    nointerpolation float4 col       : COLOR0;
+    nointerpolation float4 shadowCol : COLOR1;
 };
 
-float extendOutside(float sampledPx, float2 uv, float4 row0, float4 row1)
+float extendOutside(float sampledPx, float2 uv, float2 clampedUv, float2 outsideScale)
+{
+    float result = sampledPx;
+    [branch]
+    if (any(uv != clampedUv))
+    {
+        float2 outsideUv = uv - clampedUv;
+        float2 outsidePxAxes = outsideUv * outsideScale;
+        result += length(outsidePxAxes);
+    }
+    return result;
+}
+
+float arenaSdUv(float2 uv)
 {
     float2 clampedUv = saturate(uv);
-    float2 outsideUv = uv - clampedUv;
-    float gradU = max(length(row0.xy), 1e-7f);
-    float gradV = max(length(row1.xy), 1e-7f);
-    float2 outsidePxAxes = float2(outsideUv.x / gradU, outsideUv.y / gradV);
-    return sampledPx + length(outsidePxAxes);
+    float sampledPx = ArenaSdf.SampleGrad(SdfSampler, clampedUv, ArenaMipGrad.xy, ArenaMipGrad.zw).r * ArenaUvRow1.w;
+    return extendOutside(sampledPx, uv, clampedUv, ArenaOutsideScale.xy);
 }
 
-float arenaSdPx(float2 framebufferPx)
+float customSdUv(float2 uv)
 {
-    float3 hp = float3(framebufferPx, 1.0f);
-    float2 uv = float2(dot(hp, ArenaUvRow0.xyz), dot(hp, ArenaUvRow1.xyz));
-    float sampledPx = ArenaSdf.SampleGrad(SdfSampler, saturate(uv), float2(ArenaUvRow0.x, ArenaUvRow1.x) * SdfMipGradScale, float2(ArenaUvRow0.y, ArenaUvRow1.y) * SdfMipGradScale).r * ArenaUvRow1.w;
-    return extendOutside(sampledPx, uv, ArenaUvRow0, ArenaUvRow1);
-}
-
-float customSdPx(float2 framebufferPx)
-{
-    float3 hp = float3(framebufferPx, 1.0f);
-    float2 uv = float2(dot(hp, CustomUvRow0.xyz), dot(hp, CustomUvRow1.xyz));
-    float sampledPx = CustomSdf.SampleGrad(SdfSampler, saturate(uv), float2(CustomUvRow0.x, CustomUvRow1.x) * SdfMipGradScale, float2(CustomUvRow0.y, CustomUvRow1.y) * SdfMipGradScale).r * CustomUvRow1.w;
-    return extendOutside(sampledPx, uv, CustomUvRow0, CustomUvRow1);
+    float2 clampedUv = saturate(uv);
+    float sampledPx = CustomSdf.SampleGrad(SdfSampler, clampedUv, CustomMipGrad.xy, CustomMipGrad.zw).r * CustomUvRow1.w;
+    return extendOutside(sampledPx, uv, clampedUv, CustomOutsideScale.xy);
 }
 
 float positiveSquare(float x)
@@ -61,18 +65,13 @@ float positiveSquare(float x)
     return x * x;
 }
 
-float halfPlaneCoverage(float edgeDistance, float2 gradient, float coverageScale)
+float halfPlaneCoverage(float edgeDistance, float2 gradientAxes, float coverageScale)
 {
     // Exact box-filter coverage of a locally straight boundary over the unit pixel square.
     // Keep only gradient direction: the distance fields are already expressed in framebuffer
     // pixels, and ignoring derivative magnitude avoids the corner inflation of raw fwidth().
-    float gl = length(gradient);
-    if (gl <= 1e-5f)
-        return edgeDistance <= 0.0f ? 1.0f : 0.0f;
-
-    float2 n = abs(gradient / gl);
-    float a = max(n.x, n.y) * coverageScale;
-    float b = min(n.x, n.y) * coverageScale;
+    float a = gradientAxes.x * coverageScale;
+    float b = gradientAxes.y * coverageScale;
 
     // Axis-aligned limit of the convolution below.
     if (b <= 1e-4f)
@@ -89,17 +88,17 @@ float halfPlaneCoverage(float edgeDistance, float2 gradient, float coverageScale
     return saturate(area / (2.0f * a * b));
 }
 
-float bandCoverage(float signedDistance, float halfWidth, float2 gradient, float coverageScale)
+float bandCoverage(float signedDistance, float halfWidth, float2 gradientAxes, float coverageScale)
 {
     // Area between the two locally parallel boundaries d=-w and d=+w. Keeping the signed
     // distance avoids the abs() cusp at the centerline and is smoother under rotation.
-    return saturate(halfPlaneCoverage(signedDistance - halfWidth, gradient, coverageScale)
-                  - halfPlaneCoverage(signedDistance + halfWidth, gradient, coverageScale));
+    return saturate(halfPlaneCoverage(signedDistance - halfWidth, gradientAxes, coverageScale)
+                  - halfPlaneCoverage(signedDistance + halfWidth, gradientAxes, coverageScale));
 }
 
-float clippedSdAt(float2 framebufferPx)
+float clippedSdAt(float2 arenaUv, float2 customUv)
 {
-    return max(customSdPx(framebufferPx), arenaSdPx(framebufferPx));
+    return max(customSdUv(customUv), arenaSdUv(arenaUv));
 }
 
 float4 composeExclusiveHalo(float4 shadowCol, float shadowCoverage, float4 col, float colorCoverage)
@@ -120,24 +119,35 @@ float4 composeExclusiveHalo(float4 shadowCol, float shadowCoverage, float4 col, 
 float4 main(PS_INPUT i) : SV_Target
 {
     float2 p = i.pos.xy;
+    float3 hp = float3(p, 1.0f);
+    float2 arenaUv = float2(dot(hp, ArenaUvRow0.xyz), dot(hp, ArenaUvRow1.xyz));
+    float2 customUv = float2(dot(hp, CustomUvRow0.xyz), dot(hp, CustomUvRow1.xyz));
 #ifdef CLIP_EDGE_ONLY
-    float arenaSd = arenaSdPx(p);
+    float arenaSd = arenaSdUv(arenaUv);
     float replayBand = max(i.widthsPx.y + 2.5f, 4.0f);
     if (abs(arenaSd) > replayBand)
         discard;
+    // Reuse the center arena sample below; only the four offset evaluations need both fields.
+    float clippedSd = max(customSdUv(customUv), arenaSd);
+#else
+    float clippedSd = clippedSdAt(arenaUv, customUv);
 #endif
-
-    float clippedSd = clippedSdAt(p);
     if (abs(clippedSd) > i.widthsPx.y + 1.25f)
         discard;
 
     // Sample the complete Boolean field at symmetric half-pixel offsets. This makes the
     // estimated edge normal continuous instead of depending on pixel-quad derivatives.
+    float2 arenaUvDx = 0.5f * float2(ArenaUvRow0.x, ArenaUvRow1.x);
+    float2 arenaUvDy = 0.5f * float2(ArenaUvRow0.y, ArenaUvRow1.y);
+    float2 customUvDx = 0.5f * float2(CustomUvRow0.x, CustomUvRow1.x);
+    float2 customUvDy = 0.5f * float2(CustomUvRow0.y, CustomUvRow1.y);
     float2 g = float2(
-        clippedSdAt(p + float2(0.5f, 0.0f)) - clippedSdAt(p - float2(0.5f, 0.0f)),
-        clippedSdAt(p + float2(0.0f, 0.5f)) - clippedSdAt(p - float2(0.0f, 0.5f)));
-    float c = bandCoverage(clippedSd, i.widthsPx.x, g, OutlineCoverageScale);
-    float s = bandCoverage(clippedSd, i.widthsPx.y, g, ShadowCoverageScale);
+        clippedSdAt(arenaUv + arenaUvDx, customUv + customUvDx) - clippedSdAt(arenaUv - arenaUvDx, customUv - customUvDx),
+        clippedSdAt(arenaUv + arenaUvDy, customUv + customUvDy) - clippedSdAt(arenaUv - arenaUvDy, customUv - customUvDy));
+    float2 n = abs(g) * rsqrt(max(dot(g, g), 1e-10f));
+    float2 gradientAxes = float2(max(n.x, n.y), min(n.x, n.y));
+    float c = bandCoverage(clippedSd, i.widthsPx.x, gradientAxes, OutlineCoverageScale);
+    float s = bandCoverage(clippedSd, i.widthsPx.y, gradientAxes, ShadowCoverageScale);
     float4 o = composeExclusiveHalo(i.shadowCol, s, i.col, c);
     clip(o.a - 0.001f);
     return o;

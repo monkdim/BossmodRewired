@@ -1,6 +1,6 @@
 ﻿namespace BossMod.Stormblood.Ultimate.UCOB;
 
-class P5Teraflare(BossModule module) : Components.CastCounter(module, (uint)AID.Teraflare)
+sealed class P5Teraflare(BossModule module) : Components.CastCounter(module, (uint)AID.Teraflare)
 {
     public bool DownForTheCountAssigned;
 
@@ -11,4 +11,4 @@ class P5Teraflare(BossModule module) : Components.CastCounter(module, (uint)AID.
     }
 }
 
-class P5FlamesOfRebirth(BossModule module) : Components.CastCounter(module, (uint)AID.FlamesOfRebirth);
+sealed class P5FlamesOfRebirth(BossModule module) : Components.CastCounter(module, (uint)AID.FlamesOfRebirth);

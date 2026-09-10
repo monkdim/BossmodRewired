@@ -12,9 +12,10 @@ struct PS_INPUT
 {
     float4 pos       : SV_POSITION;
     float2 localPx   : TEXCOORD0;
-    float2 direction : TEXCOORD1;
-    float4 params    : TEXCOORD2;
-    float4 col       : COLOR0;
+    nointerpolation float2 direction : TEXCOORD1;
+    nointerpolation float4 params    : TEXCOORD2;
+    nointerpolation float2 arcEndDirection : TEXCOORD3;
+    nointerpolation float4 col       : COLOR0;
 };
 
 static const float2 Quad[4] =
@@ -37,6 +38,15 @@ PS_INPUT main(VS_INPUT input, uint vertexId : SV_VertexID)
     output.localPx = corner * input.extentPx;
     output.direction = input.direction;
     output.params = input.params;
+    output.arcEndDirection = 0.0f;
+    if (input.params.w >= 3.5f && input.params.w < 4.5f)
+    {
+        float sinSweep, cosSweep;
+        sincos(input.params.z, sinSweep, cosSweep);
+        output.arcEndDirection = float2(
+            input.direction.x * cosSweep + input.direction.y * sinSweep,
+            input.direction.y * cosSweep - input.direction.x * sinSweep);
+    }
     output.col = input.col;
     return output;
 }

@@ -29,7 +29,6 @@ public enum SID : uint
     MotionTracker = 5191, // none->41EF/41F0/41F1/player, extra=0x0
 }
 
-[SkipLocalsInit]
 
 sealed class PetrifyingBeam(BossModule module) : Components.SimpleAOEGroups(module, [(uint)AID.PetrifyingBeam, (uint)AID.PetrifyingBeam2], new AOEShapeCone(70f, 50f.Degrees()), maxCasts: 2);
 
@@ -44,6 +43,8 @@ sealed class AntiPersonnelMissile(BossModule module) : Components.SpreadFromCast
 sealed class MotionTracker(BossModule module) : Components.StayMove(module)
 {
     public Actor? TrackingBeam;
+    private readonly AOEShapeRect rect = new(9f, 20f, 9f);
+
     public override void OnStatusGain(Actor actor, ref ActorStatus status)
     {
         if (status.ID == (uint)SID.MotionTracker && Raid.FindSlot(actor.InstanceID) is var slot && slot >= 0)
@@ -71,6 +72,8 @@ sealed class MotionTracker(BossModule module) : Components.StayMove(module)
             else if (renderflags == 16384)
             {
                 TrackingBeam = null;
+                // clear the special state when the thing despawns, just in case you're hanging out right at the edge.
+                Array.Clear(PlayerStates);
             }
         }
     }
@@ -79,14 +82,15 @@ sealed class MotionTracker(BossModule module) : Components.StayMove(module)
     {
         if (TrackingBeam != null)
         {
-            var _rect = new AOEShapeRect(9f, 20f, 9f);
-            _rect.Draw(Arena, TrackingBeam.Position, TrackingBeam.Rotation);
+            rect.Draw(Arena, TrackingBeam.Position, TrackingBeam.Rotation);
             if (pc.Position.InRect(TrackingBeam.Position, TrackingBeam.Rotation, 10f, 10f, 20f))
             {
                 PlayerStates[pcSlot] = new(Requirement.Stay, WorldState.CurrentTime);
             }
             else
+            {
                 PlayerStates[pcSlot] = default; // In theory the status should have fallen off by this point but better safe than sorry.
+            }
         }
     }
     public override void AddHints(int slot, Actor actor, TextHints hints)
@@ -114,22 +118,5 @@ sealed class D131EyeOfTheScorpionStates : StateMachineBuilder
     }
 }
 
-[ModuleInfo(BossModuleInfo.Maturity.Verified,
-StatesType = typeof(D131EyeOfTheScorpionStates),
-ConfigType = null, // replace null with typeof(EyeOfTheScorpionConfig) if applicable
-ObjectIDType = typeof(OID),
-ActionIDType = typeof(AID), // replace null with typeof(AID) if applicable
-StatusIDType = null, // replace null with typeof(SID) if applicable
-TetherIDType = null, // replace null with typeof(TetherID) if applicable
-IconIDType = null, // replace null with typeof(IconID) if applicable
-PrimaryActorOID = (uint)OID.EyeOfTheScorpion,
-Contributors = "HerStolenLight",
-Expansion = BossModuleInfo.Expansion.Dawntrail,
-Category = BossModuleInfo.Category.Dungeon,
-GroupType = BossModuleInfo.GroupType.CFC,
-GroupID = 1011u,
-NameID = 14716u,
-SortOrder = 1,
-PlanLevel = 0)]
-[SkipLocalsInit]
+[ModuleInfo(BossModuleInfo.Maturity.Verified, PrimaryActorOID = (uint)OID.EyeOfTheScorpion, Contributors = "HerStolenLight", GroupType = BossModuleInfo.GroupType.CFC, GroupID = 1011u, NameID = 14716u, SortOrder = 1)]
 public sealed class D131EyeOfTheScorpion(WorldState ws, Actor primary) : BossModule(ws, primary, new(-615f, 575f), new ArenaBoundsSquare(20f));

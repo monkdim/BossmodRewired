@@ -8,17 +8,31 @@ namespace BossMod;
 // note: this class to represent *relative* arena bounds (relative to arena center) - the reason being that in some cases effective center moves every frame, and bounds caches a lot (clip poly & base map for pathfinding)
 // note: if arena bounds are changed, new instance is recreated; max approx error can change without recreating the instance
 
-[SkipLocalsInit]
-public abstract class ArenaBounds(float radius, float mapResolution, float scaleFactor = 1f, bool allowObstacleMap = false)
+public abstract class ArenaBounds(float radius, float mapResolution, float scaleFactor = 1f, bool allowObstacleMap = false, bool allowDrawing3DArenaBounds = true)
 {
+    public const float DefaultWorldProjectionHeight = 2.5f;
     public readonly float Radius = radius;
     public readonly float InvRadius = 1f / radius;
     public readonly float MapResolution = mapResolution;
     public readonly float ScaleFactor = scaleFactor;
     public readonly bool AllowObstacleMap = allowObstacleMap;
+    public readonly bool AllowDrawing3DArenaBounds = allowDrawing3DArenaBounds; // doesn't make sense for every arena, such as hunt marks
+
+    // World-space reference plane for projected shapes. NaN uses the boss-height fallback
+    public float Y = float.NaN;
+    // Optional independent base plane for the 3D arena border. NaN inherits resolved Y (including its
+    // boss-height fallback).
+    public float BorderY = float.NaN;
+    // Maximum vertical receiver band for projected shapes. Zero is valid and disables height
+    // projection; NaN values fall back to DefaultWorldProjectionHeight.
+    public float WorldProjectionHeight = DefaultWorldProjectionHeight;
+    // World-space morphological radius (yalms) used to close small, fully surrounded receiver holes.
+    // Zero disables closing; runtime use clamps finite values to [0, 2].
+    // it is strongly advised to only use this as a last resort, since it is very expensive, especially when zoomed in
+    // try using WorldProjectionHeight = 0, a small y offset and extra stencil shapes for big holes if needed instead
+    public float WorldProjectionHoleFillRadius = 0f;
 
     // fields below are used for clipping & drawing borders
-    public float MaxApproxError;
     public RelSimplifiedComplexPolygon Shape;
 
     public float ScreenHalfSize
@@ -29,30 +43,37 @@ public abstract class ArenaBounds(float radius, float mapResolution, float scale
             if (field != value)
             {
                 field = value;
-                MaxApproxError = CurveApprox.ScreenError / value * Radius;
-                Shape ??= BuildClipPoly();
             }
         }
     }
 
-    protected abstract RelSimplifiedComplexPolygon BuildClipPoly();
     public abstract void PathfindMap(Pathfinding.Map map, WPos center);
     public abstract bool Contains(in WDir offset);
     public abstract float IntersectRay(in WDir originOffset, in WDir dir);
     public abstract WDir ClampToBounds(in WDir offset);
+
+    public int GetVerticeCount()
+    {
+        var parts = Shape.Parts;
+        var count = parts.Count;
+        var vertsCount = 0;
+        for (var i = 0; i < count; ++i)
+        {
+            vertsCount += parts[i].Vertices.Count;
+        }
+        return vertsCount;
+    }
 }
 
-[SkipLocalsInit]
-public sealed class ArenaBoundsCircle(float Radius, float MapResolution = 0.5f, bool AllowObstacleMap = false) : ArenaBounds(Radius, MapResolution, allowObstacleMap: AllowObstacleMap)
+public sealed class ArenaBoundsCircle : ArenaBounds
 {
-    private Pathfinding.Map? _cachedMap;
-
-    protected override RelSimplifiedComplexPolygon BuildClipPoly()
+    public ArenaBoundsCircle(float Radius, float MapResolution = 0.5f, bool AllowObstacleMap = false, bool AllowDrawing3DArenaBounds = true) : base(Radius, MapResolution, allowObstacleMap: AllowObstacleMap, allowDrawing3DArenaBounds: AllowDrawing3DArenaBounds)
     {
-        RelSimplifiedComplexPolygon poly = new(CurveApprox.Circle(Radius, MaxApproxError));
-        poly.InitPolygonIndex();
-        return poly;
+        Shape = new(new Polygon(default, Radius, 128).Contour(default));
+        Shape.InitPolygonIndex();
     }
+
+    private Pathfinding.Map? _cachedMap;
 
     public override void PathfindMap(Pathfinding.Map map, WPos center) => map.Init(_cachedMap ??= BuildMap(), center);
 
@@ -143,16 +164,22 @@ public sealed class ArenaBoundsCircle(float Radius, float MapResolution = 0.5f, 
 }
 
 // if rotation is 0, half-width is along X and half-height is along Z
-[SkipLocalsInit]
+
 public abstract class ABRect : ArenaBounds
 {
-    public ABRect(float halfWidth, float halfHeight, Angle rotation = default, float MapResolution = 0.5f, bool AllowObstacleMap = false) : base(Math.Max(halfWidth, halfHeight), MapResolution, rotation != default ? CalculateScaleFactor(rotation) : 1f, AllowObstacleMap)
+    public ABRect(float halfWidth, float halfHeight, Angle rotation = default, float MapResolution = 0.5f, bool AllowObstacleMap = false, bool AllowDrawing3DArenaBounds = true) : base(Math.Max(halfWidth, halfHeight), MapResolution, rotation != default ? CalculateScaleFactor(rotation) : 1f, AllowObstacleMap, AllowDrawing3DArenaBounds)
     {
         HalfWidth = halfWidth;
         HalfHeight = halfHeight;
         Rotation = rotation;
         Orientation = Rotation.ToDirection();
+
+        var dx = Orientation.OrthoL() * HalfWidth;
+        var dz = Orientation * HalfHeight;
+        Shape = new([dx - dz, -dx - dz, -dx + dz, dx + dz]);
+        Shape.InitPolygonIndex();
     }
+
     public readonly float HalfWidth;
     public readonly float HalfHeight;
     public readonly Angle Rotation;
@@ -163,15 +190,6 @@ public abstract class ABRect : ArenaBounds
     {
         var (sin, cos) = MathF.SinCos(Rotation.Rad);
         return Math.Abs(cos) + Math.Abs(sin);
-    }
-
-    protected override RelSimplifiedComplexPolygon BuildClipPoly()
-    {
-        var dx = Orientation.OrthoL() * HalfWidth;
-        var dz = Orientation * HalfHeight;
-        RelSimplifiedComplexPolygon poly = new([dx - dz, -dx - dz, -dx + dz, dx + dz]);
-        poly.InitPolygonIndex();
-        return poly;
     }
 
     public override void PathfindMap(Pathfinding.Map map, WPos center)
@@ -242,39 +260,77 @@ public abstract class ABRect : ArenaBounds
     }
 }
 
-[SkipLocalsInit]
-public sealed class ArenaBoundsRect(float halfWidth, float halfHeight, Angle rotation = default, float mapResolution = 0.5f, bool allowObstacleMap = false) : ABRect(halfWidth, halfHeight, rotation, mapResolution, allowObstacleMap)
+public sealed class ArenaBoundsRect(float halfWidth, float halfHeight, Angle rotation = default, float mapResolution = 0.5f, bool allowObstacleMap = false, bool allowDrawing3DArenaBounds = true) : ABRect(halfWidth, halfHeight, rotation, mapResolution, allowObstacleMap, allowDrawing3DArenaBounds)
 {
     public override string ToString() => $"{nameof(ArenaBoundsRect)}, Radius {Radius}, HalfWidth: {HalfWidth}, HalfHeight: {HalfHeight}, MapResolution: {MapResolution}, ScaleFactor: {ScaleFactor}";
 }
-[SkipLocalsInit]
-public sealed class ArenaBoundsSquare(float halfWidth, Angle rotation = default, float mapResolution = 0.5f, bool allowObstacleMap = false) : ABRect(halfWidth, halfWidth, rotation, mapResolution, allowObstacleMap)
+
+public sealed class ArenaBoundsSquare(float halfWidth, Angle rotation = default, float mapResolution = 0.5f, bool allowObstacleMap = false, bool allowDrawing3DArenaBounds = true) : ABRect(halfWidth, halfWidth, rotation, mapResolution, allowObstacleMap, allowDrawing3DArenaBounds)
 {
     public override string ToString() => $"{nameof(ArenaBoundsSquare)}, Radius {Radius}, HalfWidth: {HalfWidth}, MapResolution: {MapResolution}, ScaleFactor: {ScaleFactor}";
+}
+
+// Optional 3D-world projection layer for vertically complex custom arenas. Shape uses the same
+// arena-local X/Z coordinate system as ArenaBoundsCustom.Polygon; Y is the world-space floor
+// reference used by terrain projection. NaN ProjectionHeight inherits its ArenaBounds value.
+// BorderY optionally places the 3D border on a different plane and otherwise inherits Y.
+// PathfindOffset is applied only to this layer's cached pathfinding source; NaN inherits the custom
+// arena's global Offset value. Layers with the same non-null Shared2DGroup share one combined 2D
+// stencil/border, restriction domain and pathfinding map while retaining independent physical Y.
+// NaN WorldProjectionHoleFillRadius inherits ArenaBounds.WorldProjectionHoleFillRadius. Null
+// ArenaStencilExclusions inherits ArenaBoundsCustom.ArenaStencilExclusions; an empty array
+// explicitly disables the inherited exclusions for this layer.
+public readonly struct ArenaProjectionLayer(RelSimplifiedComplexPolygon shape, float y, float projectionHeight = float.NaN, float pathfindOffset = float.NaN, int? shared2DGroup = null, float worldProjectionHoleFillRadius = float.NaN, float borderY = float.NaN, Shape[]? arenaStencilExclusions = null)
+{
+    public readonly RelSimplifiedComplexPolygon Shape = shape;
+    public readonly float Y = y;
+    public readonly float ProjectionHeight = projectionHeight;
+    public readonly float PathfindOffset = pathfindOffset;
+    public readonly int? Shared2DGroup = shared2DGroup;
+    public readonly float WorldProjectionHoleFillRadius = worldProjectionHoleFillRadius;
+    public readonly float BorderY = borderY;
+    public readonly Shape[]? ArenaStencilExclusions = arenaStencilExclusions;
 }
 
 // custom complex polygon bounds
 // for creating complex bounds by using arrays of shapes
 // first array contains platforms that will be united, second optional array contains shapes that will be subtracted
 // for convenience third array will optionally perform additional unions at the end
+// ArenaStencilExclusions use the same X/Z coordinate system as the constructor's Shape arrays, but
+// are subtracted only from the immutable 3D-world projection clip.
 // offset shrinks the pathfinding map only, for example if the edges of the arena are deadly and floating point errors cause the AI to fall of the map or problems like that
 // AdjustForHitbox adjusts both the visible map and the pathfinding map (ignores additional unions)
-[SkipLocalsInit]
+
 public sealed class ArenaBoundsCustom : ArenaBounds
 {
     private Pathfinding.Map? _cachedMap;
-    public readonly RelSimplifiedComplexPolygon Polygon;
+    private Pathfinding.Map?[]? _cachedLayerMaps;
+    private readonly (RelSimplifiedComplexPolygon Shape, WDir CenterOffset, float Radius)[]? _projectionLayer2DBounds;
+    private readonly RelSimplifiedComplexPolygon _worldProjectionClip;
+    private readonly RelSimplifiedComplexPolygon[]? _worldProjectionLayerClips;
+    // Null keeps the single-floor path. Polygon remains the global logical boundary used by
+    // Contains/ClampToBounds/IntersectRay; authored layers opt the 2D renderer, world projection and
+    // AI pathfinding source into layer-aware behavior without changing those geometry calls.
+    public readonly ArenaProjectionLayer[]? WorldProjectionLayers;
+    // Render-only world-projection holes. These never participate in the 2D MiniArena or logical/
+    // pathfinding geometry. Individual projection layers can inherit or override this array.
+    public readonly Shape[] ArenaStencilExclusions;
     public readonly float HalfWidth, HalfHeight;
     private readonly float offset;
     public readonly WPos Center;
 
-    public ArenaBoundsCustom(Shape[] UnionShapes, Shape[]? DifferenceShapes = null, Shape[]? AdditionalShapes = null, float MapResolution = 0.5f, float ScaleFactor = 1f, bool AllowObstacleMap = false, float Offset = default, bool AdjustForHitboxInwards = false, bool AdjustForHitboxOutwards = false)
-    : base(BuildBounds(UnionShapes, DifferenceShapes ?? [], AdditionalShapes ?? [], ScaleFactor, AdjustForHitboxInwards, AdjustForHitboxOutwards, out var poly, out var center, out var halfWidth, out var halfHeight), MapResolution, ScaleFactor, AllowObstacleMap)
+    public ArenaBoundsCustom(Shape[] UnionShapes, Shape[]? DifferenceShapes = null, Shape[]? AdditionalShapes = null, float MapResolution = 0.5f, float ScaleFactor = 1f, bool AllowObstacleMap = false, float Offset = default, bool AdjustForHitboxInwards = false, bool AdjustForHitboxOutwards = false, ArenaProjectionLayer[]? WorldProjectionLayers = null, Shape[]? ArenaStencilExclusions = null, bool AllowDrawing3DArenaBounds = true)
+    : base(BuildBounds(UnionShapes, DifferenceShapes ?? [], AdditionalShapes ?? [], ScaleFactor, AdjustForHitboxInwards, AdjustForHitboxOutwards, out var poly, out var center, out var halfWidth, out var halfHeight), MapResolution, ScaleFactor, AllowObstacleMap, AllowDrawing3DArenaBounds)
     {
         Center = center;
         HalfWidth = halfWidth + Offset;
         HalfHeight = halfHeight + Offset;
-        Polygon = poly;
+        Shape = poly;
+        this.WorldProjectionLayers = WorldProjectionLayers;
+        this.ArenaStencilExclusions = ArenaStencilExclusions is { Length: > 0 } exclusions ? [.. exclusions] : [];
+        _projectionLayer2DBounds = BuildProjectionLayer2DBounds(WorldProjectionLayers);
+        _worldProjectionClip = BuildWorldProjectionClip(poly, this.ArenaStencilExclusions, Center);
+        _worldProjectionLayerClips = BuildWorldProjectionLayerClips(WorldProjectionLayers, this.ArenaStencilExclusions, Center);
         offset = Offset;
     }
 
@@ -322,23 +378,168 @@ public sealed class ArenaBoundsCustom : ArenaBounds
         }
     }
 
-    protected override RelSimplifiedComplexPolygon BuildClipPoly() => Polygon;
-
     public override void PathfindMap(Pathfinding.Map map, WPos center)
     {
-        var source = _cachedMap ??= BuildMap();
+        var source = _cachedMap ??= BuildMap(Shape, offset);
         map.Init(source, center + source.Center.ToWDir());
     }
 
+    // Initializes from one authored layer when the ID is valid, otherwise preserves the legacy
+    // global-polygon behavior. Layers in one Shared2DGroup use the same lazily built source map.
+    public void PathfindMap(Pathfinding.Map map, WPos center, int? layerID)
+    {
+        if (layerID is not int index || WorldProjectionLayers is not { Length: > 0 } layers || (uint)index >= (uint)layers.Length)
+        {
+            PathfindMap(map, center);
+            return;
+        }
+
+        var cached = _cachedLayerMaps ??= new Pathfinding.Map?[layers.Length];
+        var source = cached[index];
+        ref readonly var layer = ref layers[index];
+        if (source == null)
+        {
+            if (layer.Shared2DGroup is int sharedGroup)
+            {
+                source = BuildProjectionLayerGroupMap(layers, sharedGroup);
+                for (var i = 0; i < layers.Length; ++i)
+                {
+                    if (layers[i].Shared2DGroup == sharedGroup)
+                    {
+                        cached[i] = source;
+                    }
+                }
+            }
+            else
+            {
+                var pathfindOffset = !float.IsNaN(layer.PathfindOffset) ? layer.PathfindOffset : offset;
+                source = cached[index] = BuildMap(layer.Shape, pathfindOffset);
+            }
+        }
+        map.Init(source, center + source.Center.ToWDir());
+    }
+
+    public bool IsValidProjectionLayer(int? layerID)
+        => layerID is int index && WorldProjectionLayers is { Length: > 0 } layers && (uint)index < (uint)layers.Length;
+
+    // Returns the combined presentation polygon for a layer. Invalid IDs intentionally fall back to
+    // the global logical polygon
+    public RelSimplifiedComplexPolygon ProjectionLayer2DShape(int? layerID) => ProjectionLayer2DBounds(layerID).Shape;
+
+    // Presentation-only viewport for the layer or shared group. The polygon stays in arena-local
+    // coordinates; only the 2D camera is recentered. Logical bounds and world projection are unchanged.
+    public (RelSimplifiedComplexPolygon Shape, WDir CenterOffset, float Radius) ProjectionLayer2DBounds(int? layerID)
+        => layerID is int index && _projectionLayer2DBounds != null && (uint)index < (uint)_projectionLayer2DBounds.Length
+            ? _projectionLayer2DBounds[index]
+            : (Shape, default, Radius);
+
+    // Returns the immutable world-only clip for one physical projection layer. Invalid/null IDs use
+    // the global custom-arena polygon and exclusions
+    public RelSimplifiedComplexPolygon WorldProjectionClip(int? layerID = null)
+        => layerID is int index && _worldProjectionLayerClips != null && (uint)index < (uint)_worldProjectionLayerClips.Length
+            ? _worldProjectionLayerClips[index]
+            : _worldProjectionClip;
+
+    // Ungrouped layers remain isolated. A shared non-null group turns several physical floors into
+    // one 2D visibility/restriction domain without changing their world-projection Y or clip shape.
+    public bool ProjectionLayersShare2DGroup(int? firstLayerID, int? secondLayerID)
+    {
+        if (firstLayerID is not int first || secondLayerID is not int second || WorldProjectionLayers is not { Length: > 0 } layers
+            || (uint)first >= (uint)layers.Length || (uint)second >= (uint)layers.Length)
+        {
+            return false;
+        }
+        if (first == second)
+        {
+            return true;
+        }
+        return layers[first].Shared2DGroup is int group && layers[second].Shared2DGroup == group;
+    }
+
+    // Finds the nearest authored floor. Supplying a valid current index applies hysteresis, which
+    // keeps ordinary jumps around a floor midpoint from rapidly switching the active layer.
+    public int ResolveProjectionLayer(float y, int currentLayer = -1, float switchHysteresis = 0.75f)
+    {
+        if (WorldProjectionLayers is not { Length: > 0 } layers)
+        {
+            return -1;
+        }
+
+        var nearest = 0;
+        var nearestDelta = Math.Abs(y - layers[0].Y);
+        for (var i = 1; i < layers.Length; ++i)
+        {
+            var delta = Math.Abs(y - layers[i].Y);
+            if (delta < nearestDelta)
+            {
+                nearest = i;
+                nearestDelta = delta;
+            }
+        }
+
+        if ((uint)currentLayer >= (uint)layers.Length || currentLayer == nearest)
+        {
+            return nearest;
+        }
+
+        var currentDelta = Math.Abs(y - layers[currentLayer].Y);
+        return nearestDelta + Math.Max(0f, switchHysteresis) < currentDelta ? nearest : currentLayer;
+    }
+
+    // Disjoint floors can share the same elevation (for example, islands joined by teleporters), so
+    // prefer polygons containing the actor's X/Z position. If several polygons contain it, they are
+    // vertically overlapping floors and the normal Y/hysteresis rule selects between that subset.
+    // Outside every authored polygon (during a teleport/fall), fall back to the Y-only rule.
+    public int ResolveProjectionLayer(in WDir positionOffset, float y, int currentLayer = -1, float switchHysteresis = 0.75f)
+    {
+        if (WorldProjectionLayers is not { Length: > 0 } layers)
+        {
+            return -1;
+        }
+
+        var nearest = -1;
+        var nearestDelta = float.MaxValue;
+        var currentContains = false;
+        for (var i = 0; i < layers.Length; ++i)
+        {
+            var shape = layers[i].Shape;
+            shape.VerifyPolygonIndexExistance();
+            if (!shape.Contains(positionOffset))
+            {
+                continue;
+            }
+
+            currentContains |= i == currentLayer;
+            var delta = Math.Abs(y - layers[i].Y);
+            if (delta < nearestDelta)
+            {
+                nearest = i;
+                nearestDelta = delta;
+            }
+        }
+
+        if (nearest < 0)
+        {
+            return ResolveProjectionLayer(y, currentLayer, switchHysteresis);
+        }
+        if (!currentContains || currentLayer == nearest)
+        {
+            return nearest;
+        }
+
+        var currentDelta = Math.Abs(y - layers[currentLayer].Y);
+        return nearestDelta + Math.Max(0f, switchHysteresis) < currentDelta ? nearest : currentLayer;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public override bool Contains(in WDir offset) => Polygon.Contains(offset);
+    public override bool Contains(in WDir offset) => Shape.Contains(offset);
 
     // useful to get forbidden directions if the player is origin of a self knockback
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void AddForbiddenDirections(in WDir centerOffset, Angle offset, AIHints hints, DateTime activation, float forbiddenDist, float safetyMargin = 1f) => Polygon.AddForbiddenDirections(centerOffset, offset, hints, activation, forbiddenDist, safetyMargin);
+    public void AddForbiddenDirections(in WDir centerOffset, Angle offset, AIHints hints, DateTime activation, float forbiddenDist, float safetyMargin = 1f) => Shape.AddForbiddenDirections(centerOffset, offset, hints, activation, forbiddenDist, safetyMargin);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public override float IntersectRay(in WDir originOffset, in WDir dir) => Intersect.RayPolygon(originOffset, dir, Polygon);
+    public override float IntersectRay(in WDir originOffset, in WDir dir) => Intersect.RayPolygon(originOffset, dir, Shape);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public override WDir ClampToBounds(in WDir offset)
@@ -347,28 +548,22 @@ public sealed class ArenaBoundsCustom : ArenaBounds
         {
             return offset;
         }
-        return Polygon.ClosestPointOnBoundary(offset);
+        return Shape.ClosestPointOnBoundary(offset);
     }
 
-    private Pathfinding.Map BuildMap()
+    private Pathfinding.Map BuildMap(RelSimplifiedComplexPolygon sourcePolygon, float pathfindOffset)
     {
-        var polygon = offset != default ? Polygon.Offset(offset) : Polygon;
+        var polygon = pathfindOffset != default ? sourcePolygon.Offset(pathfindOffset) : sourcePolygon;
         var resolution = MapResolution;
 
         var bounds = CalculateOptimalGridBounds(polygon, resolution);
 
         // The axis-aligned candidate is evaluated first and wins all equal-cell-count ties. If it wins, keep the
         // polygon in its existing coordinate frame so offset == 0 can reuse Polygon's already-built boundary index.
-        // Only a rotation that strictly reduces the pathfinding cell count pays for transform + reindex.
+        // Only a rotation that strictly reduces the pathfinding cell count pays for a transform.
         if (bounds.RequiresTransform)
         {
             polygon = TransformToGrid(polygon, bounds);
-            polygon.InitPolygonIndex();
-        }
-        else if (offset != default)
-        {
-            // Offset() creates a new polygon and therefore still needs an index even when no rotation is useful
-            polygon.InitPolygonIndex();
         }
 
         var map = new Pathfinding.Map();
@@ -392,6 +587,13 @@ public sealed class ArenaBoundsCustom : ArenaBounds
         var rasterCenter = bounds.RequiresTransform ? default : map.Center.ToWDir();
         var startPos = rasterCenter - ((width >> 1) - 0.5f) * dx - ((height >> 1) - 0.5f) * dy;
 
+        // Reuse a full index when one already exists (the global custom-arena polygon normally has one).
+        // Offset, transformed and layer-only polygons otherwise get a temporary six-field index containing
+        // exactly what ClassifyAABBRect needs
+        var existingRasterIndex = polygon.ExistingPolygonIndex;
+        using var lightweightRasterIndex = existingRasterIndex == null ? PolygonBoundaryIndex2D.BuildForAABBRectClassification(polygon) : null;
+        var rasterIndex = existingRasterIndex ?? lightweightRasterIndex!;
+
         Parallel.ForEach(Partitioner.Create(0, height), range =>
         {
             var r1 = range.Item1;
@@ -405,7 +607,7 @@ public sealed class ArenaBoundsCustom : ArenaBounds
                 for (var x = 0; x < width; ++x)
                 {
                     var cellCenter = posY + x * dx;
-                    var relation = polygon.PolygonAABBIntersection(cellCenter, halfCell, halfCell);
+                    var relation = rasterIndex.ClassifyAABBRect(cellCenter, halfCell, halfCell);
                     if (relation == PolygonShapeRelation.Inside)
                     {
                         continue;
@@ -421,6 +623,132 @@ public sealed class ArenaBoundsCustom : ArenaBounds
         // Service.Log($"raster time: {(rasterFinish - startTime) * 1000d / Stopwatch.Frequency}ms");
         CropRasterizedMap(map);
         return map;
+    }
+
+    // Offsets are applied per physical floor before unioning, allowing grouped islands to keep
+    // independent edge cushions while still producing one source grid for teleporter pathfinding.
+    private Pathfinding.Map BuildProjectionLayerGroupMap(ArenaProjectionLayer[] layers, int sharedGroup)
+    {
+        var operand = new PolygonClipper.Operand();
+        var len = layers.Length;
+        for (var i = 0; i < len; ++i)
+        {
+            ref readonly var layer = ref layers[i];
+            if (layer.Shared2DGroup != sharedGroup)
+            {
+                continue;
+            }
+            var pathfindOffset = !float.IsNaN(layer.PathfindOffset) ? layer.PathfindOffset : offset;
+            operand.AddPolygon(pathfindOffset != default ? layer.Shape.Offset(pathfindOffset) : layer.Shape);
+        }
+        var combined = new PolygonClipper().Simplify(operand);
+        return BuildMap(combined, default);
+    }
+
+    private static RelSimplifiedComplexPolygon BuildWorldProjectionClip(RelSimplifiedComplexPolygon baseShape, Shape[] exclusions, WPos center)
+    {
+        var len = exclusions.Length;
+        if (len == 0)
+        {
+            return baseShape;
+        }
+
+        var remove = new PolygonClipper.Operand();
+
+        for (var i = 0; i < len; ++i)
+        {
+            remove.AddPolygon(exclusions[i].ToPolygon(center));
+        }
+        return new PolygonClipper().Difference(new PolygonClipper.Operand(baseShape), remove);
+    }
+
+    private static RelSimplifiedComplexPolygon[]? BuildWorldProjectionLayerClips(ArenaProjectionLayer[]? layers, Shape[] globalExclusions, WPos center)
+    {
+        if (layers is not { Length: > 0 })
+        {
+            return null;
+        }
+        var len = layers.Length;
+        var result = new RelSimplifiedComplexPolygon[len];
+        for (var i = 0; i < len; ++i)
+        {
+            ref readonly var layer = ref layers[i];
+            result[i] = BuildWorldProjectionClip(layer.Shape, layer.ArenaStencilExclusions ?? globalExclusions, center);
+        }
+        return result;
+    }
+
+    private (RelSimplifiedComplexPolygon Shape, WDir CenterOffset, float Radius)[]? BuildProjectionLayer2DBounds(ArenaProjectionLayer[]? layers)
+    {
+        if (layers is not { Length: > 0 })
+        {
+            return null;
+        }
+        var len = layers.Length;
+        var result = new (RelSimplifiedComplexPolygon Shape, WDir CenterOffset, float Radius)[len];
+        for (var i = 0; i < len; ++i)
+        {
+            if (result[i].Shape != null)
+            {
+                continue;
+            }
+
+            if (layers[i].Shared2DGroup is not int sharedGroup)
+            {
+                result[i] = CalculateProjectionLayer2DBounds(layers[i].Shape);
+                continue;
+            }
+
+            var operand = new PolygonClipper.Operand();
+            var members = 0;
+            for (var j = i; j < len; ++j)
+            {
+                if (layers[j].Shared2DGroup == sharedGroup)
+                {
+                    operand.AddPolygon(layers[j].Shape);
+                    ++members;
+                }
+            }
+            var combined = CalculateProjectionLayer2DBounds(members == 1 ? layers[i].Shape : new PolygonClipper().Simplify(operand));
+            for (var j = i; j < len; ++j)
+            {
+                if (layers[j].Shared2DGroup == sharedGroup)
+                {
+                    result[j] = combined;
+                }
+            }
+        }
+        return result;
+    }
+
+    private (RelSimplifiedComplexPolygon Shape, WDir CenterOffset, float Radius) CalculateProjectionLayer2DBounds(RelSimplifiedComplexPolygon shape)
+    {
+        var minX = float.PositiveInfinity;
+        var maxX = float.NegativeInfinity;
+        var minZ = float.PositiveInfinity;
+        var maxZ = float.NegativeInfinity;
+        var parts = shape.Parts;
+        var count = parts.Count;
+        for (var i = 0; i < count; ++i)
+        {
+            var exterior = parts[i].Exterior;
+            var len = exterior.Length;
+            for (var j = 0; j < len; ++j)
+            {
+                var vertex = exterior[j];
+                minX = Math.Min(minX, vertex.X);
+                maxX = Math.Max(maxX, vertex.X);
+                minZ = Math.Min(minZ, vertex.Z);
+                maxZ = Math.Max(maxZ, vertex.Z);
+            }
+        }
+
+        // Match the global custom-arena radius convention, including its authored scale factor.
+        // Empty/degenerate layers retain a finite viewport without changing their clipping polygon.
+        var radius = 0.5f * Math.Max(maxX - minX, maxZ - minZ) / ScaleFactor;
+        return radius > 0f && float.IsFinite(radius)
+            ? (shape, new WDir(0.5f * (minX + maxX), 0.5f * (minZ + maxZ)), radius)
+            : (shape, default, Radius);
     }
 
     private static int GridExtent(float extent, float resolution)
@@ -471,14 +799,7 @@ public sealed class ArenaBoundsCustom : ArenaBounds
 
     public override string ToString()
     {
-        var parts = Polygon.Parts;
-        var count = parts.Count;
-        var vertsCount = 0;
-        for (var i = 0; i < count; ++i)
-        {
-            vertsCount += parts[i].Vertices.Count;
-        }
-        return $"{nameof(ArenaBoundsCustom)}, Radius {Radius}, HalfWidth: {HalfWidth}, HalfHeight: {HalfHeight}, MapResolution: {MapResolution}, Pathfinding offset: {offset}, Vertices: {vertsCount}, ScaleFactor: {ScaleFactor}";
+        return $"{nameof(ArenaBoundsCustom)}, Radius {Radius}, HalfWidth: {HalfWidth}, HalfHeight: {HalfHeight}, MapResolution: {MapResolution}, Pathfinding offset: {offset}, Vertices: {GetVerticeCount()}, ScaleFactor: {ScaleFactor}";
     }
 
     private readonly struct OrientedGridBounds(WPos center, Angle rotation, int width, int height, bool requiresTransform)

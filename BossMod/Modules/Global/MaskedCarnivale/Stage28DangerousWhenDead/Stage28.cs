@@ -98,7 +98,7 @@ sealed class Brainstorm(BossModule module) : Components.StatusDrivenForcedMarch(
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add($"{Module.PrimaryActor.Name} will spawn upto 4 waves of adds which are weak to fire.\nA way to quickly heal yourself to full is mandatory and a ranged fire\nability such as Mustard Bomb and Flying Sardine for interrupts\nare highly recommended.");
     }

@@ -23,6 +23,7 @@ sealed class A30ShantotoStates : StateMachineBuilder
             .ActivateOnEnter<FallingRubble2>()
             .ActivateOnEnter<FallingRubble3>()
             .ActivateOnEnter<AeroDynamics>()
-            .ActivateOnEnter<FinalExam>();
+            .ActivateOnEnter<FinalExam>()
+            .Raw.Update = () => Module.PrimaryActor is var primary && primary.IsDeadOrDestroyed || primary.HPMP.CurHP <= 1u;
     }
 }

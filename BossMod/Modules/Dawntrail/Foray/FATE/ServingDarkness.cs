@@ -41,7 +41,7 @@ sealed class SweepingMenacingCharge(BossModule module) : Components.SimpleCharge
         }
     }
 
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         if (Module.PrimaryActor.CastInfo is var spell && spell != null && spell.Action.ID == (uint)AID.SweepingCharge)
         {
@@ -55,7 +55,7 @@ sealed class HallOfSorrow(BossModule module) : Components.SimpleAOEs(module, (ui
 sealed class MenaceCharge(BossModule module) : Components.GenericAOEs(module)
 {
     private AOEInstance[] _aoe = [];
-    private static readonly AOEShapeCircle circle = new(20f);
+    private readonly AOEShapeCircle circle = new(20f);
 
     public override ReadOnlySpan<AOEInstance> ActiveAOEs(int slot, Actor actor) => _aoe;
 

@@ -53,7 +53,7 @@ sealed class LaserFocus(BossModule module) : Components.StackWithCastTargets(mod
 
 sealed class AethericBoom(BossModule module) : Components.SimpleKnockbacks(module, (uint)AID.AethericBoom, 30f, stopAtWall: true)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         if (Casters.Count > 0)
             hints.Add("Prepare to soak the orbs!");
@@ -89,7 +89,7 @@ sealed class Aetheroplasm(BossModule module) : BossComponent(module)
         return filteredorbs;
     }
 
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         if (GetOrbs(Module).Count != 0)
             hints.Add("Soak the orbs!");
@@ -160,8 +160,18 @@ sealed class T04PortaDecumana2States : StateMachineBuilder
 }
 
 [ModuleInfo(BossModuleInfo.Maturity.Verified, Contributors = "Malediktus", GroupType = BossModuleInfo.GroupType.CFC, GroupID = 830u, NameID = 2137u, SortOrder = 2)]
-public sealed class T04PortaDecumana2(WorldState ws, Actor primary) : BossModule(ws, primary, new(-704f, 480f), new ArenaBoundsCircle(19.5f))
+public sealed class T04PortaDecumana2 : BossModule
 {
+    public T04PortaDecumana2(WorldState ws, Actor primary) : this(ws, primary, BuildArena()) { }
+
+    private T04PortaDecumana2(WorldState ws, Actor primary, (WPos center, ArenaBoundsCustom arena) a) : base(ws, primary, a.center, a.arena) { }
+
+    private static (WPos center, ArenaBoundsCustom arena) BuildArena()
+    {
+        var arena = new ArenaBoundsCustom([new Polygon(new(-704f, 480f), 19.5f, 64)]);
+        return (arena.Center, arena);
+    }
+
     protected override void DrawEnemies(int pcSlot, Actor pc)
     {
         Arena.Actor(PrimaryActor, Colors.Enemy, true);

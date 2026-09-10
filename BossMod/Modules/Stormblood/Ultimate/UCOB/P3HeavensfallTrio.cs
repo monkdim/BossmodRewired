@@ -1,6 +1,6 @@
 ﻿namespace BossMod.Stormblood.Ultimate.UCOB;
 
-class P3HeavensfallTrio(BossModule module) : BossComponent(module)
+sealed class P3HeavensfallTrio(BossModule module) : BossComponent(module)
 {
     private Actor? _nael;
     private Actor? _twin;
@@ -10,8 +10,8 @@ class P3HeavensfallTrio(BossModule module) : BossComponent(module)
 
     public bool Active => _nael != null;
 
-    private static readonly Angle[] _offsetsNaelCenter = [10.Degrees(), 80.Degrees(), 100.Degrees(), 170.Degrees()];
-    private static readonly Angle[] _offsetsNaelSide = [60.Degrees(), 80.Degrees(), 100.Degrees(), 120.Degrees()];
+    private readonly Angle[] _offsetsNaelCenter = [10.Degrees(), 80.Degrees(), 100.Degrees(), 170.Degrees()];
+    private readonly Angle[] _offsetsNaelSide = [60.Degrees(), 80.Degrees(), 100.Degrees(), 120.Degrees()];
 
     public override void DrawArenaForeground(int pcSlot, Actor pc)
     {
@@ -23,17 +23,17 @@ class P3HeavensfallTrio(BossModule module) : BossComponent(module)
 
     public override void OnActorPlayActionTimelineEvent(Actor actor, ushort id)
     {
-        if (actor.OID == (uint)OID.NaelDeusDarnus && id == 0x1E43)
+        if (actor.OID is var oid && oid == (uint)OID.NaelDeusDarnus && id == 0x1E43)
         {
             _nael = actor;
             InitIfReady();
         }
-        else if (actor.OID == (uint)OID.Twintania && id == 0x1E44)
+        else if (oid == (uint)OID.Twintania && id == 0x1E44)
         {
             _twin = actor;
             InitIfReady();
         }
-        else if (actor.OID == (uint)OID.BahamutPrime && id == 0x1E43)
+        else if (oid == (uint)OID.BahamutPrime && id == 0x1E43)
         {
             _baha = actor;
             InitIfReady();

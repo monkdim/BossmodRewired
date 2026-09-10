@@ -149,7 +149,7 @@ sealed class Explosion(BossModule module) : Components.GenericAOEs(module)
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add($"{Module.PrimaryActor.Name} will spawn Bombs and Magitek Explosives throughout the fight.\nUse Snort to push away Bombs from Magitek Explosives and bait Fireballs\naway from the MEs. Meanwhile destroy the MEs asap because they will blow\nup on their own after about 35s. If any ME detonates you will be wiped.\nThe MEs are weak against water abilities and strong against fire attacks.");
     }
@@ -159,7 +159,7 @@ sealed class Hints2(BossModule module) : BossComponent(module)
 {
     private DateTime _activation;
 
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         var explosives = Module.Enemies((uint)OID.MagitekExplosive);
         var count = explosives.Count;

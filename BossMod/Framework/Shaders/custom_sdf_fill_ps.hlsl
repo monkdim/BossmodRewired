@@ -1,12 +1,13 @@
 Texture2D<float> CustomSdf : register(t2);
 SamplerState SdfSampler : register(s1);
-static const float SdfMipGradScale = 0.70710678f; // 2^-0.5 => -0.5 LOD bias
 static const float FillCoverageScale = 1.5f;
 
 cbuffer CustomSdfConstants : register(b2)
 {
     float4 CustomUvRow0;
     float4 CustomUvRow1;
+    float4 CustomOutsideScale;
+    float4 CustomMipGrad;
 };
 
 struct PS_INPUT
@@ -22,7 +23,7 @@ float customSdPx(float2 framebufferPx)
     // is needed here.
     float3 hp = float3(framebufferPx, 1.0f);
     float2 uv = float2(dot(hp, CustomUvRow0.xyz), dot(hp, CustomUvRow1.xyz));
-    return CustomSdf.SampleGrad(SdfSampler, uv, float2(CustomUvRow0.x, CustomUvRow1.x) * SdfMipGradScale, float2(CustomUvRow0.y, CustomUvRow1.y) * SdfMipGradScale).r * CustomUvRow1.w;
+    return CustomSdf.SampleGrad(SdfSampler, uv, CustomMipGrad.xy, CustomMipGrad.zw).r * CustomUvRow1.w;
 }
 
 float positiveSquare(float x)

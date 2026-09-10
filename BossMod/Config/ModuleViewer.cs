@@ -37,13 +37,13 @@ public sealed class ModuleViewer : IDisposable
         _ws = ws;
 
         const uint defaultIcon = 61762u;
-        var expansionNames = Enum.GetNames<BossModuleInfo.Expansion>();
+        var expansionNames = GeneratedEnumMetadata.Names<BossModuleInfo.Expansion>();
         for (var i = 0; i < (int)BossModuleInfo.Expansion.Count; ++i)
         {
             _expansions[i] = (expansionNames[i], defaultIcon);
         }
 
-        var categoryNames = Enum.GetNames<BossModuleInfo.Category>();
+        var categoryNames = GeneratedEnumMetadata.Names<BossModuleInfo.Category>();
         for (var i = 0; i < (int)BossModuleInfo.Category.Count; ++i)
         {
             _categories[i] = (categoryNames[i], defaultIcon);
@@ -72,6 +72,7 @@ public sealed class ModuleViewer : IDisposable
         Customize(BossModuleInfo.Category.Ultimate, contentType.GetRow(28u));
         Customize(BossModuleInfo.Category.VariantCriterion, contentType.GetRow(30u));
         Customize(BossModuleInfo.Category.HallOfTheNovice, contentType.GetRow(20u), "Hall of the Novice");
+        Customize(BossModuleInfo.Category.CrucibleOfTheUnbroken, contentType.GetRow(40u));
 
         var playStyle = Service.LuminaSheet<CharaCardPlayStyle>()!;
         Customize(BossModuleInfo.Category.Foray, playStyle.GetRow(6u));
@@ -373,6 +374,12 @@ public sealed class ModuleViewer : IDisposable
                 var mcSort = uint.Parse(mcRow.ShortCode.ToString().AsSpan(3), CultureInfo.InvariantCulture); // 'aozNNN'
                 var mcName = $"Stage {mcSort}: {FixCase(mcRow.Name)}";
                 return (new(mcName, groupId, mcSort), new(module, BNpcName(module.NameID), module.SortOrder));
+            case BossModuleInfo.GroupType.CrucibleOfTheUnbroken:
+                groupId |= module.GroupID;
+                var bmRow = Service.LuminaRow<ContentFinderCondition>(module.GroupID)!.Value;
+                var bmSort = uint.Parse(bmRow.ShortCode.ToString().AsSpan(3), CultureInfo.InvariantCulture);
+                var bmName = $"Crucible of the Unbroken: {FixCase(bmRow.Name)}";
+                return (new(bmName, groupId, bmSort), new(module, BNpcName(module.NameID), module.SortOrder));
             case BossModuleInfo.GroupType.RemovedUnreal:
                 return (new("Removed Content", groupId, groupId), new(module, BNpcName(module.NameID), module.SortOrder));
             case BossModuleInfo.GroupType.BaldesionArsenal:
@@ -383,8 +390,10 @@ public sealed class ModuleViewer : IDisposable
                 return (new("The Dalriada", groupId, groupId), new(module, BNpcName(module.NameID), module.SortOrder));
             case BossModuleInfo.GroupType.TheForkedTowerBlood:
                 return (new("The Forked Tower: Blood", groupId, groupId), new(module, BNpcName(module.NameID), module.SortOrder));
-            case BossModuleInfo.GroupType.TheForkedTowerMagic:
-                return (new("The Forked Tower: Magic", groupId, groupId), new(module, BNpcName(module.NameID), module.SortOrder));
+            case BossModuleInfo.GroupType.TheForkedTowerMagicNormal:
+                return (new("The Forked Tower: Magic (Normal)", groupId, groupId), new(module, BNpcName(module.NameID), module.SortOrder));
+            case BossModuleInfo.GroupType.TheForkedTowerMagicExtreme:
+                return (new("The Forked Tower: Magic (Extreme)", groupId, groupId), new(module, BNpcName(module.NameID), module.SortOrder));
             case BossModuleInfo.GroupType.ForayFATE:
                 groupId |= module.GroupID;
                 var fateRowBozjaSkirmish = Service.LuminaRow<Fate>(module.NameID)!.Value;

@@ -35,7 +35,7 @@ sealed class SnortKB(BossModule module) : Components.SimpleKnockbacks(module, (u
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add($"This act is act 1+2 combined with tentacles on top.\nThe Final Sting combo (Off-guard->Bristle->Moonflute->Final Sting) makes\nthis act including the achievement much easier. {Module.PrimaryActor.Name} is weak to fire.");
     }

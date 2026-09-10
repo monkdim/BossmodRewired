@@ -10,7 +10,6 @@ public enum PolygonShapeRelation : byte
     Intersecting
 }
 
-[SkipLocalsInit]
 internal sealed unsafe class PolygonBoundaryIndex2D : IDisposable
 {
     // Only used to collapse trig-generated cardinal directions (e.g. cos(pi/2) != exactly 0 in float)
@@ -73,7 +72,7 @@ internal sealed unsafe class PolygonBoundaryIndex2D : IDisposable
             this.radius = radius;
             radiusSq = this.radius * this.radius;
 
-            var (sin, cos) = ((float, float))Math.SinCos(halfAngle);
+            var (sin, cos) = MathF.SinCos(halfAngle);
             cosHalfAngle = cos;
             cosHalfAngleSq = cos * cos;
             leftX = ox + (fx * cos - fz * sin) * this.radius;
@@ -130,7 +129,7 @@ internal sealed unsafe class PolygonBoundaryIndex2D : IDisposable
             innerSq = inner * inner;
             outerSq = outer * outer;
 
-            var (sin, cos) = ((float, float))Math.SinCos(halfAngle);
+            var (sin, cos) = MathF.SinCos(halfAngle);
             cosHalfAngle = cos;
             cosHalfAngleSq = cos * cos;
             var leftDirX = fx * cos - fz * sin;
@@ -282,6 +281,20 @@ internal sealed unsafe class PolygonBoundaryIndex2D : IDisposable
     }
 
     ~PolygonBoundaryIndex2D() => Dispose(false);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void GetBounds(out WDir min, out WDir max)
+    {
+        min = new(_bbMinX, _bbMinY);
+        max = new(_bbMaxX, _bbMaxY);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void GetBounds(out Vector2 min, out Vector2 max)
+    {
+        min = new(_bbMinX, _bbMinY);
+        max = new(_bbMaxX, _bbMaxY);
+    }
 
     public void Dispose()
     {
@@ -680,102 +693,377 @@ internal sealed unsafe class PolygonBoundaryIndex2D : IDisposable
         return new PolygonBoundaryIndex2D(y0Ptr, y1Ptr, x0Ptr, kPtr, bPtr, minXPtr, maxXPtr, dxPtr, dyPtr, invL2Ptr, total,
             rowOffsets, rowEndingStarts, rowNewStarts, rowSingleStarts, rowEnds, hEdgesByRow, hRowOffsets, rows, lenEdges + lenH, bbMinY, cellH, invCellH,
             bbMinX, bbMinY, bbMaxX, bbMaxY, rowMinX, rowMaxX, [.. contourSamples], rawBlock);
+    }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static int RoundUp(int v, int m) => (v + m - 1) & -m;
+    // Reduced index for temporary grid rasterization. ClassifyAABBRect only needs point containment
+    // plus segment/AABB intersection, so we omit x0, dx, dy, inverse-length, contour-sample and
+    // closest-point row metadata. The returned index must not be used for other query families.
+    public static PolygonBoundaryIndex2D BuildForAABBRectClassification(RelSimplifiedComplexPolygon complex)
+    {
+        var (eList, hList, bbMinX, bbMinY, bbMaxX, bbMaxY) = CollectEdgesForAABBRectClassification(complex);
+        var edges = CollectionsMarshal.AsSpan(eList);
+        var hEdges = CollectionsMarshal.AsSpan(hList);
+        var lenEdges = edges.Length;
+        var lenH = hEdges.Length;
+        var nEdges = Math.Max(lenEdges + lenH, 1);
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static void ProcessExteriorContour(ReadOnlySpan<WDir> contour, List<E> eList, List<H> hList,
-            ref float bbMinX, ref float bbMinY, ref float bbMaxX, ref float bbMaxY)
+        const int MaxRows = 512;
+        const int MinRows = 4;
+        var rows = nEdges switch
         {
-            var count = contour.Length;
-            if (count == 0)
+            <= 4 => 1,
+            <= 8 => 2,
+            <= 16 => 4,
+            _ => Math.Clamp((int)MathF.Round(MathF.Sqrt(nEdges) * 0.9f) + 8, MinRows, MaxRows)
+        };
+
+        var height = bbMaxY - bbMinY;
+        if (height <= 0f)
+        {
+            rows = 1;
+        }
+        var cellH = height > 0f ? height / rows : 1f;
+        var invCellH = 1f / cellH;
+
+        Span<int> counts = stackalloc int[rows];
+        Span<int> countDeltas = stackalloc int[rows + 1];
+        Span<int> newCounts = stackalloc int[rows];
+        Span<int> hCounts = stackalloc int[rows];
+        counts.Clear();
+        countDeltas.Clear();
+        newCounts.Clear();
+        hCounts.Clear();
+
+        const int MaxStackEdges = 4096;
+        var stackEdges = lenEdges <= MaxStackEdges;
+        var edgeRowStarts = stackEdges ? stackalloc int[lenEdges] : new int[lenEdges];
+        var edgeRowEnds = stackEdges ? stackalloc int[lenEdges] : new int[lenEdges];
+
+        for (var idx = 0; idx < lenEdges; ++idx)
+        {
+            ref readonly var edge = ref edges[idx];
+            var lastY = MathF.BitDecrement(edge.y1);
+            var r0 = (int)((edge.y0 - bbMinY) * invCellH);
+            var r1 = (int)((lastY - bbMinY) * invCellH);
+
+            if (r0 < 0)
             {
-                return;
+                r0 = 0;
+            }
+            else if (r0 >= rows)
+            {
+                r0 = rows - 1;
+            }
+            if (r1 < 0)
+            {
+                r1 = 0;
+            }
+            else if (r1 >= rows)
+            {
+                r1 = rows - 1;
             }
 
-            if (count == 1)
+            edgeRowStarts[idx] = r0;
+            edgeRowEnds[idx] = r1;
+            ++countDeltas[r0];
+            --countDeltas[r1 + 1];
+            ++newCounts[r0];
+        }
+
+        var activeCount = 0;
+        for (var row = 0; row < rows; ++row)
+        {
+            activeCount += countDeltas[row];
+            counts[row] = activeCount;
+        }
+
+        for (var idx = 0; idx < lenH; ++idx)
+        {
+            ref readonly var edge = ref hEdges[idx];
+            var row = (int)((edge.y - bbMinY) * invCellH);
+            if (row < 0)
             {
-                var point = contour[0];
-                var pointX = point.X;
-                var pointZ = point.Z;
-                bbMinX = Math.Min(bbMinX, pointX);
-                bbMaxX = Math.Max(bbMaxX, pointX);
-                bbMinY = Math.Min(bbMinY, pointZ);
-                bbMaxY = Math.Max(bbMaxY, pointZ);
-                return;
+                row = 0;
             }
-
-            var prev = contour[count - 1];
-            for (var i = 0; i < count; ++i)
+            else if (row >= rows)
             {
-                var curr = contour[i];
-                var ax = prev.X;
-                var ay = prev.Z;
-                var bx = curr.X;
-                var by = curr.Z;
+                row = rows - 1;
+            }
+            ++hCounts[row];
+        }
 
-                if (bx < bbMinX)
-                {
-                    bbMinX = bx;
-                }
-                if (bx > bbMaxX)
-                {
-                    bbMaxX = bx;
-                }
-                if (by < bbMinY)
-                {
-                    bbMinY = by;
-                }
-                if (by > bbMaxY)
-                {
-                    bbMaxY = by;
-                }
+        var padWidth = Avx512F.IsSupported ? 16 : Avx2.IsSupported ? 8 : 1;
+        var rowOffsets = new int[rows + 1];
+        var rowNewStarts = new int[rows];
+        var rowEnds = new int[rows];
+        var total = 0;
+        for (var row = 0; row < rows; ++row)
+        {
+            rowOffsets[row] = total;
+            var count = counts[row];
+            rowNewStarts[row] = total + count - newCounts[row];
+            rowEnds[row] = total + count;
+            total += padWidth == 1 ? count : RoundUp(count, padWidth);
+        }
+        rowOffsets[rows] = total;
 
-                if (ay == by)
-                {
-                    hList.Add(new(ax, ay, bx));
-                }
-                else
-                {
-                    eList.Add(new(ax, ay, bx, by));
-                }
+        var hRowOffsets = new int[rows + 1];
+        var hTotal = 0;
+        for (var row = 0; row < rows; ++row)
+        {
+            hRowOffsets[row] = hTotal;
+            hTotal += hCounts[row];
+        }
+        hRowOffsets[rows] = hTotal;
+        var hEdgesByRow = new H[hTotal];
 
-                prev = curr;
+        // y0, y1, k, b, minX, maxX: the complete per-edge dependency set of
+        // Contains and KernelAABBRectIntersectsDispatch.
+        const int Fields = 6;
+        var rawBlock = AllocAlignedBlock(Fields * (nuint)total * sizeof(float), (nuint)(padWidth * sizeof(float)));
+        var basePtr = (byte*)rawBlock;
+        var stride = (nuint)(total * sizeof(float));
+        var y0Ptr = (float*)(basePtr + stride * 0);
+        var y1Ptr = (float*)(basePtr + stride * 1);
+        var kPtr = (float*)(basePtr + stride * 2);
+        var bPtr = (float*)(basePtr + stride * 3);
+        var minXPtr = (float*)(basePtr + stride * 4);
+        var maxXPtr = (float*)(basePtr + stride * 5);
+
+        // Carry-in edges precede edges starting in this row. This is the only ordering distinction
+        // AABB classification needs: after one complete active set, later rows test new edges only.
+        Span<int> carryWpos = stackalloc int[rows];
+        Span<int> newWpos = stackalloc int[rows];
+        rowOffsets.AsSpan(0, rows).CopyTo(carryWpos);
+        rowNewStarts.AsSpan().CopyTo(newWpos);
+
+        var rowMinX = new float[rows];
+        var rowMaxX = new float[rows];
+        Array.Fill(rowMinX, float.PositiveInfinity);
+        Array.Fill(rowMaxX, float.NegativeInfinity);
+
+        for (var idx = 0; idx < lenEdges; ++idx)
+        {
+            ref readonly var edge = ref edges[idx];
+            var r0 = edgeRowStarts[idx];
+            var r1 = edgeRowEnds[idx];
+            var edgeY0 = edge.y0;
+            var edgeY1 = edge.y1;
+            var edgeX0 = edge.x0;
+            var edgeK = edge.k;
+            var edgeB = edgeX0 - edgeK * edgeY0;
+            var rowMinY = bbMinY + r0 * cellH;
+
+            for (var row = r0; row <= r1; ++row, rowMinY += cellH)
+            {
+                var write = row == r0 ? newWpos[row]++ : carryWpos[row]++;
+                y0Ptr[write] = edgeY0;
+                y1Ptr[write] = edgeY1;
+                kPtr[write] = edgeK;
+                bPtr[write] = edgeB;
+                minXPtr[write] = edge.minX;
+                maxXPtr[write] = edge.maxX;
+
+                var clippedY0 = Math.Max(edgeY0, rowMinY);
+                var clippedY1 = Math.Min(edgeY1, rowMinY + cellH);
+                var clippedX0 = edgeX0 + edgeK * (clippedY0 - edgeY0);
+                var clippedX1 = edgeX0 + edgeK * (clippedY1 - edgeY0);
+                var lo = Math.Min(clippedX0, clippedX1);
+                var hi = Math.Max(clippedX0, clippedX1);
+                if (lo < rowMinX[row])
+                {
+                    rowMinX[row] = lo;
+                }
+                if (hi > rowMaxX[row])
+                {
+                    rowMaxX[row] = hi;
+                }
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static void ProcessContour(ReadOnlySpan<WDir> contour, List<E> eList, List<H> hList)
+        // Contains scans padded row slices; NaN sentinels make every padded lane inactive.
+        for (var row = 0; row < rows; ++row)
         {
-            var count = contour.Length;
-            if (count < 2)
+            for (var i = rowEnds[row]; i < rowOffsets[row + 1]; ++i)
             {
-                return;
+                y0Ptr[i] = float.NaN;
+                y1Ptr[i] = float.NaN;
+                kPtr[i] = 0f;
+                bPtr[i] = float.NaN;
+                minXPtr[i] = float.NaN;
+                maxXPtr[i] = float.NaN;
+            }
+        }
+
+        Span<int> horizontalWpos = stackalloc int[rows];
+        hRowOffsets.AsSpan(0, rows).CopyTo(horizontalWpos);
+        for (var idx = 0; idx < lenH; ++idx)
+        {
+            ref readonly var edge = ref hEdges[idx];
+            var row = (int)((edge.y - bbMinY) * invCellH);
+            if (row < 0)
+            {
+                row = 0;
+            }
+            else if (row >= rows)
+            {
+                row = rows - 1;
+            }
+            hEdgesByRow[horizontalWpos[row]++] = edge;
+            if (edge.minX < rowMinX[row])
+            {
+                rowMinX[row] = edge.minX;
+            }
+            if (edge.maxX > rowMaxX[row])
+            {
+                rowMaxX[row] = edge.maxX;
+            }
+        }
+
+        for (var row = 0; row < rows; ++row)
+        {
+            if (rowMinX[row] != float.PositiveInfinity)
+            {
+                rowMinX[row] = MathF.BitDecrement(rowMinX[row]);
+                rowMaxX[row] = MathF.BitIncrement(rowMaxX[row]);
             }
 
-            var prev = contour[count - 1];
-
-            for (var i = 0; i < count; ++i)
+            var start = hRowOffsets[row];
+            var count = hRowOffsets[row + 1] - start;
+            if (count > 1)
             {
-                var curr = contour[i];
-
-                var ax = prev.X;
-                var ay = prev.Z;
-                var bx = curr.X;
-                var by = curr.Z;
-
-                if (ay == by)
-                {
-                    hList.Add(new(ax, ay, bx));
-                }
-                else
-                {
-                    eList.Add(new(ax, ay, bx, by));
-                }
-
-                prev = curr;
+                Array.Sort(hEdgesByRow, start, count, HorizontalComparer);
             }
+        }
+
+        return new PolygonBoundaryIndex2D(y0Ptr, y1Ptr, null, kPtr, bPtr, minXPtr, maxXPtr, null, null, null, total,
+            rowOffsets, [], rowNewStarts, [], rowEnds, hEdgesByRow, hRowOffsets, rows, 0, bbMinY, cellH, invCellH,
+            bbMinX, bbMinY, bbMaxX, bbMaxY, rowMinX, rowMaxX, [], rawBlock);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int RoundUp(int v, int m) => (v + m - 1) & -m;
+
+    private static (List<E> edges, List<H> horizontals, float bbMinX, float bbMinY, float bbMaxX, float bbMaxY) CollectEdgesForAABBRectClassification(RelSimplifiedComplexPolygon complex)
+    {
+        var parts = CollectionsMarshal.AsSpan(complex.Parts);
+        var lenP = parts.Length;
+        var vertsCount = 0;
+        for (var i = 0; i < lenP; ++i)
+        {
+            vertsCount += parts[i].Vertices.Count;
+        }
+
+        var eList = new List<E>(vertsCount);
+        var hList = new List<H>(Math.Max(8, vertsCount / 2));
+        float bbMinX = float.MaxValue, bbMinY = float.MaxValue;
+        float bbMaxX = float.MinValue, bbMaxY = float.MinValue;
+
+        for (var i = 0; i < lenP; ++i)
+        {
+            var part = parts[i];
+            var ext = part.Exterior;
+            ProcessExteriorContour(ext, eList, hList, ref bbMinX, ref bbMinY, ref bbMaxX, ref bbMaxY);
+            var countHoles = part.HoleStarts.Count;
+            for (var h = 0; h < countHoles; ++h)
+            {
+                var interior = part.Interior(h);
+                ProcessContour(interior, eList, hList);
+            }
+        }
+
+        return (eList, hList, bbMinX, bbMinY, bbMaxX, bbMaxY);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ProcessExteriorContour(ReadOnlySpan<WDir> contour, List<E> eList, List<H> hList,
+        ref float bbMinX, ref float bbMinY, ref float bbMaxX, ref float bbMaxY)
+    {
+        var count = contour.Length;
+        if (count == 0)
+        {
+            return;
+        }
+
+        if (count == 1)
+        {
+            var point = contour[0];
+            var pointX = point.X;
+            var pointZ = point.Z;
+            bbMinX = Math.Min(bbMinX, pointX);
+            bbMaxX = Math.Max(bbMaxX, pointX);
+            bbMinY = Math.Min(bbMinY, pointZ);
+            bbMaxY = Math.Max(bbMaxY, pointZ);
+            return;
+        }
+
+        var prev = contour[count - 1];
+        for (var i = 0; i < count; ++i)
+        {
+            var curr = contour[i];
+            var ax = prev.X;
+            var ay = prev.Z;
+            var bx = curr.X;
+            var by = curr.Z;
+
+            if (bx < bbMinX)
+            {
+                bbMinX = bx;
+            }
+            if (bx > bbMaxX)
+            {
+                bbMaxX = bx;
+            }
+            if (by < bbMinY)
+            {
+                bbMinY = by;
+            }
+            if (by > bbMaxY)
+            {
+                bbMaxY = by;
+            }
+
+            if (ay == by)
+            {
+                hList.Add(new(ax, ay, bx));
+            }
+            else
+            {
+                eList.Add(new(ax, ay, bx, by));
+            }
+
+            prev = curr;
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ProcessContour(ReadOnlySpan<WDir> contour, List<E> eList, List<H> hList)
+    {
+        var count = contour.Length;
+        if (count < 2)
+        {
+            return;
+        }
+
+        var prev = contour[count - 1];
+        for (var i = 0; i < count; ++i)
+        {
+            var curr = contour[i];
+            var ax = prev.X;
+            var ay = prev.Z;
+            var bx = curr.X;
+            var by = curr.Z;
+
+            if (ay == by)
+            {
+                hList.Add(new(ax, ay, bx));
+            }
+            else
+            {
+                eList.Add(new(ax, ay, bx, by));
+            }
+
+            prev = curr;
         }
     }
 
@@ -1643,29 +1931,39 @@ internal sealed unsafe class PolygonBoundaryIndex2D : IDisposable
         return bestSq;
     }
 
-    // Renderer-oriented bulk SDF builder. All samples on one output scanline share the same
-    // polygon-index row, avoiding a ClampRow and row selection for every texel.
+    // Renderer-oriented bulk SDF builder. All samples on one output scanline share the same polygon-index row, avoiding a ClampRow and row selection for every texel
     internal void FillSignedDistanceGrid(float[] destination, int width, int height, float minX, float minZ, float spanX, float spanZ)
     {
-        ArgumentNullException.ThrowIfNull(destination);
-        if (width <= 0 || height <= 0 || destination.Length < checked(width * height))
-            throw new ArgumentOutOfRangeException(nameof(destination));
-
         var stepX = spanX / width;
         var stepZ = spanZ / height;
+        // for very small grids we should skip the parallel computing
+        if ((long)width * height < 64L)
+        {
+            for (var y = 0; y < height; ++y)
+            {
+                FillSignedDistanceRow(destination, width, y, minX, minZ, stepX, stepZ);
+            }
+            return;
+        }
+
         Parallel.For(0, height, y =>
         {
-            var pz = minZ + (y + 0.5f) * stepZ;
-            var indexRow = ClampRow(pz);
-            var dstRow = y * width;
-            for (var x = 0; x < width; ++x)
-            {
-                var px = minX + (x + 0.5f) * stepX;
-                var distanceSq = DistanceSqToBoundaryAtKnownRow(px, pz, indexRow);
-                var distance = MathF.Sqrt(MathF.Max(0f, distanceSq));
-                destination[dstRow + x] = ContainsAtKnownRow(px, pz, indexRow) ? -distance : distance;
-            }
+            FillSignedDistanceRow(destination, width, y, minX, minZ, stepX, stepZ);
         });
+    }
+
+    private void FillSignedDistanceRow(float[] destination, int width, int y, float minX, float minZ, float stepX, float stepZ)
+    {
+        var pz = minZ + (y + 0.5f) * stepZ;
+        var indexRow = ClampRow(pz);
+        var dstRow = y * width;
+        for (var x = 0; x < width; ++x)
+        {
+            var px = minX + (x + 0.5f) * stepX;
+            var distanceSq = DistanceSqToBoundaryAtKnownRow(px, pz, indexRow);
+            var distance = MathF.Sqrt(MathF.Max(0f, distanceSq));
+            destination[dstRow + x] = ContainsAtKnownRow(px, pz, indexRow) ? -distance : distance;
+        }
     }
 
     public WDir[] VisibilityFrom(in WDir origin, RelSimplifiedComplexPolygon polygon)
@@ -5984,7 +6282,7 @@ internal sealed unsafe class PolygonBoundaryIndex2D : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void Rotate(float x, float z, float angle, out float rotatedX, out float rotatedZ)
     {
-        var (sin, cos) = ((float, float))Math.SinCos(angle);
+        var (sin, cos) = MathF.SinCos(angle);
         rotatedX = x * cos - z * sin;
         rotatedZ = x * sin + z * cos;
     }

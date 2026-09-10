@@ -19,7 +19,6 @@ public enum StrategyTarget
     Count
 }
 
-[Flags]
 public enum StrategyContext
 {
     None = 0,
@@ -30,7 +29,6 @@ public enum StrategyContext
 }
 
 // parameter for party member filtering
-[Flags]
 public enum StrategyPartyFiltering : int
 {
     None = 0,
@@ -288,7 +286,7 @@ public record class StrategyValueTrack : StrategyValue
         if (js.TryGetProperty(nameof(PriorityOverride), out var jprio))
             PriorityOverride = jprio.GetSingle();
         if (js.TryGetProperty(nameof(Target), out var jtarget))
-            Target = Enum.Parse<StrategyTarget>(jtarget.GetString() ?? "");
+            Target = GeneratedEnumMetadata.Parse<StrategyTarget>(jtarget.GetString() ?? "");
         if (js.TryGetProperty(nameof(TargetParam), out var jtp))
             TargetParam = jtp.GetInt32();
         if (js.TryGetProperty(nameof(Offset1), out var joff1))
@@ -414,28 +412,5 @@ public record struct Track<T>(T Value, StrategyValue Raw, float DefaultPriority)
 
 static class ValueConverter
 {
-    public static T FromValues<T>(StrategyValues values) where T : struct
-    {
-        object val = default(T);
-
-        var i = 0;
-        foreach (var field in typeof(T).GetFields())
-        {
-            switch (values.Values[i])
-            {
-                case StrategyValueTrack t:
-                    field.SetValue(val, Activator.CreateInstance(field.FieldType, [Enum.ToObject(field.FieldType.GenericTypeArguments[0], t.Option), t, ((StrategyConfigTrack)values.Configs[i]).Options[t.Option].DefaultPriority]));
-                    break;
-                case StrategyValueFloat f:
-                    field.SetValue(val, new Track<float>(f.Value, f, float.NaN));
-                    break;
-                case StrategyValueInt i2:
-                    field.SetValue(val, new Track<long>(i2.Value, i2, float.NaN));
-                    break;
-            }
-            ++i;
-        }
-
-        return (T)val;
-    }
+    public static T FromValues<T>(StrategyValues values) where T : struct => GeneratedStrategies.ConvertValues<T>(values);
 }

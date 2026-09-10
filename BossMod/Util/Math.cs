@@ -1,8 +1,8 @@
 namespace BossMod;
 
-[SkipLocalsInit]
 public static class UIntExtensions
 {
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool IsPrime(this uint number)
     {
         if (number <= 1u)
@@ -33,5 +33,6 @@ public static class UIntExtensions
         return true;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool IsDivisible(this uint dividend, uint divisor) => dividend % divisor == 0f;
 }

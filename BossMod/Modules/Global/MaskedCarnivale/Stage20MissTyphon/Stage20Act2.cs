@@ -23,7 +23,7 @@ sealed class ImpSong(BossModule module) : Components.CastInterruptHint(module, (
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add($"{Module.PrimaryActor.Name} is weak to fire. Interrupt Imp Song.");
     }

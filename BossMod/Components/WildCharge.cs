@@ -1,9 +1,10 @@
 ﻿namespace BossMod.Components;
 
 // generic 'wild charge': various mechanics that consist of charge aoe on some target that other players have to stay in; optionally some players can be marked as 'having to be closest to source' (usually tanks)
-[SkipLocalsInit]
-public class GenericWildCharge(BossModule module, float halfWidth, uint aid = default, float fixedLength = default) : CastCounter(module, aid)
+public class GenericWildCharge(BossModule module, float halfWidth, uint aid = default, float fixedLength = default, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = false) : CastCounter(module, aid)
 {
+    public int? ArenaProjectionLayer = arenaProjectionLayer;
+    public bool? RestrictToArenaProjectionLayer = restrictToArenaProjectionLayer;
     public enum PlayerRole
     {
         Ignore, // player completely ignores the mechanic; no hints for such players are displayed
@@ -22,6 +23,11 @@ public class GenericWildCharge(BossModule module, float halfWidth, uint aid = de
 
     public override void AddHints(int slot, Actor actor, TextHints hints)
     {
+        if (!ArenaProjectionLayerParticipantApplies(actor, ArenaProjectionLayer, RestrictToArenaProjectionLayer))
+        {
+            return;
+        }
+
         if (Source == null)
         {
             return;
@@ -36,7 +42,11 @@ public class GenericWildCharge(BossModule module, float halfWidth, uint aid = de
                 var inOtherCharge = false;
                 foreach (var aoe in EnumerateAOEs(slot))
                 {
-                    if (InAOE(aoe, actor)) { inOtherCharge = true; break; }
+                    if (InAOE(aoe, actor))
+                    {
+                        inOtherCharge = true;
+                        break;
+                    }
                 }
 
                 if (inOtherCharge)
@@ -87,7 +97,11 @@ public class GenericWildCharge(BossModule module, float halfWidth, uint aid = de
                 var inCharge = false;
                 foreach (var aoe in EnumerateAOEs())
                 {
-                    if (InAOE(aoe, actor)) { inCharge = true; break; }
+                    if (InAOE(aoe, actor))
+                    {
+                        inCharge = true;
+                        break;
+                    }
                 }
 
                 if (inCharge)
@@ -101,6 +115,11 @@ public class GenericWildCharge(BossModule module, float halfWidth, uint aid = de
 
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
+        if (!ArenaProjectionLayerApplies(actor, ArenaProjectionLayer, RestrictToArenaProjectionLayer))
+        {
+            return;
+        }
+
         if (Source == null)
         {
             return;
@@ -108,7 +127,7 @@ public class GenericWildCharge(BossModule module, float halfWidth, uint aid = de
 
         var forbiddenInverted = new List<ShapeDistance>();
         var forbidden = new List<ShapeDistance>();
-        switch (PlayerRoles[slot])
+        switch (ArenaProjectionLayerParticipantApplies(actor, ArenaProjectionLayer, RestrictToArenaProjectionLayer) ? PlayerRoles[slot] : PlayerRole.Avoid)
         {
             case PlayerRole.Ignore:
                 break;
@@ -117,7 +136,21 @@ public class GenericWildCharge(BossModule module, float halfWidth, uint aid = de
                 // TODO: improve this - for now, just stack with closest player...
                 if (Source != null)
                 {
-                    var closest = Raid.WithSlot().WhereSlot(i => PlayerRoles[i] is PlayerRole.Share or PlayerRole.ShareNotFirst).Actors().Closest(actor.Position);
+                    Actor? closest = null;
+                    var minDistanceSq = float.MaxValue;
+                    foreach (var (partySlot, member) in Raid.WithSlot())
+                    {
+                        if (PlayerRoles[partySlot] is not (PlayerRole.Share or PlayerRole.ShareNotFirst) || !ArenaProjectionLayerParticipantApplies(member, ArenaProjectionLayer, RestrictToArenaProjectionLayer))
+                        {
+                            continue;
+                        }
+                        var distanceSq = (member.Position - actor.Position).LengthSq();
+                        if (distanceSq < minDistanceSq)
+                        {
+                            minDistanceSq = distanceSq;
+                            closest = member;
+                        }
+                    }
                     if (closest != null)
                     {
                         var stack = GetAOEForTarget(Source.Position, closest.Position);
@@ -159,16 +192,17 @@ public class GenericWildCharge(BossModule module, float halfWidth, uint aid = de
 
         if (forbiddenInverted.Count != 0)
         {
-            hints.AddForbiddenZone(new SDOutsideOfUnion([.. forbiddenInverted]), Activation);
+            hints.AddForbiddenZone(new SDOutsideOfUnion([.. forbiddenInverted]), Activation, arenaProjectionLayer: ArenaProjectionLayerForAI(ArenaProjectionLayer, RestrictToArenaProjectionLayer));
         }
         if (forbidden.Count != 0)
         {
-            hints.AddForbiddenZone(new SDUnion([.. forbidden]), Activation);
+            hints.AddForbiddenZone(new SDUnion([.. forbidden]), Activation, arenaProjectionLayer: ArenaProjectionLayerForAI(ArenaProjectionLayer, RestrictToArenaProjectionLayer));
         }
     }
 
     public override void DrawArenaBackground(int pcSlot, Actor pc)
     {
+        using var projection = Arena.WorldProjectionLayer(ArenaProjectionLayer, RestrictToArenaProjectionLayer);
         if (Source == null || PlayerRoles[pcSlot] == PlayerRole.Ignore)
         {
             return;
@@ -176,7 +210,7 @@ public class GenericWildCharge(BossModule module, float halfWidth, uint aid = de
 
         foreach (var aoe in EnumerateAOEs())
         {
-            var dangerous = PlayerRoles[pcSlot] == PlayerRole.Avoid; // TODO: reconsider this condition
+            var dangerous = !ArenaProjectionLayerParticipantApplies(pc, ArenaProjectionLayer, RestrictToArenaProjectionLayer) || PlayerRoles[pcSlot] == PlayerRole.Avoid; // TODO: reconsider this condition
             Arena.ZoneRect(aoe.origin, aoe.dir, aoe.length, 0, HalfWidth, dangerous ? Colors.AOE : Colors.SafeFromAOE);
         }
     }
@@ -189,7 +223,8 @@ public class GenericWildCharge(BossModule module, float halfWidth, uint aid = de
         return (sourcePos, dir, length);
     }
 
-    protected bool InAOE((WPos origin, WDir dir, float length) aoe, Actor actor) => actor.Position.InRect(aoe.origin, aoe.dir, aoe.length, 0, HalfWidth);
+    protected bool InAOE((WPos origin, WDir dir, float length) aoe, Actor actor) => ArenaProjectionLayerParticipantApplies(actor, ArenaProjectionLayer, RestrictToArenaProjectionLayer)
+        && actor.Position.InRect(aoe.origin, aoe.dir, aoe.length, 0, HalfWidth);
 
     protected IEnumerable<(WPos origin, WDir dir, float length)> EnumerateAOEs(int targetSlotToSkip = -1)
     {
@@ -200,7 +235,10 @@ public class GenericWildCharge(BossModule module, float halfWidth, uint aid = de
 
         foreach (var (i, p) in Module.Raid.WithSlot().WhereSlot(i => i != targetSlotToSkip && PlayerRoles[i] is PlayerRole.Target or PlayerRole.TargetNotFirst))
         {
-            yield return GetAOEForTarget(Source.Position, p.Position);
+            if (ArenaProjectionLayerParticipantApplies(p, ArenaProjectionLayer, RestrictToArenaProjectionLayer))
+            {
+                yield return GetAOEForTarget(Source.Position, p.Position);
+            }
         }
     }
 
@@ -218,9 +256,11 @@ public class GenericWildCharge(BossModule module, float halfWidth, uint aid = de
     }
 }
 
-//Variation on Generic Wild Charge, but where the origin is 'behind' the target, and the charge 'toward' the Source.
-public class InverseWildCharge(BossModule module, float halfWidth, float distancebehind, uint aid = default, float fixedLength = default) : CastCounter(module, aid)
+// Variation on Generic Wild Charge, but where the origin is 'behind' the target, and the charge 'toward' the Source.
+public class InverseWildCharge(BossModule module, float halfWidth, float distancebehind, uint aid = default, float fixedLength = default, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = false) : CastCounter(module, aid)
 {
+    public int? ArenaProjectionLayer = arenaProjectionLayer;
+    public bool? RestrictToArenaProjectionLayer = restrictToArenaProjectionLayer;
     public enum PlayerRole
     {
         Ignore, // player completely ignores the mechanic; no hints for such players are displayed
@@ -239,6 +279,11 @@ public class InverseWildCharge(BossModule module, float halfWidth, float distanc
 
     public override void AddHints(int slot, Actor actor, TextHints hints)
     {
+        if (!ArenaProjectionLayerParticipantApplies(actor, ArenaProjectionLayer, RestrictToArenaProjectionLayer))
+        {
+            return;
+        }
+
         if (Source == null)
         {
             return;
@@ -253,7 +298,11 @@ public class InverseWildCharge(BossModule module, float halfWidth, float distanc
                 var inOtherChargeInv = false;
                 foreach (var aoe in EnumerateAOEs(slot))
                 {
-                    if (InAOE(aoe, actor)) { inOtherChargeInv = true; break; }
+                    if (InAOE(aoe, actor))
+                    {
+                        inOtherChargeInv = true;
+                        break;
+                    }
                 }
 
                 if (inOtherChargeInv)
@@ -304,7 +353,11 @@ public class InverseWildCharge(BossModule module, float halfWidth, float distanc
                 var inChargeInv = false;
                 foreach (var aoe in EnumerateAOEs())
                 {
-                    if (InAOE(aoe, actor)) { inChargeInv = true; break; }
+                    if (InAOE(aoe, actor))
+                    {
+                        inChargeInv = true;
+                        break;
+                    }
                 }
 
                 if (inChargeInv)
@@ -318,6 +371,11 @@ public class InverseWildCharge(BossModule module, float halfWidth, float distanc
 
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
+        if (!ArenaProjectionLayerApplies(actor, ArenaProjectionLayer, RestrictToArenaProjectionLayer))
+        {
+            return;
+        }
+
         if (Source == null)
         {
             return;
@@ -325,7 +383,7 @@ public class InverseWildCharge(BossModule module, float halfWidth, float distanc
 
         var forbiddenInverted = new List<ShapeDistance>();
         var forbidden = new List<ShapeDistance>();
-        switch (PlayerRoles[slot])
+        switch (ArenaProjectionLayerParticipantApplies(actor, ArenaProjectionLayer, RestrictToArenaProjectionLayer) ? PlayerRoles[slot] : PlayerRole.Avoid)
         {
             case PlayerRole.Ignore:
                 break;
@@ -334,7 +392,21 @@ public class InverseWildCharge(BossModule module, float halfWidth, float distanc
                 // TODO: improve this - for now, just stack with closest player...
                 if (Source != null)
                 {
-                    var closest = Raid.WithSlot().WhereSlot(i => PlayerRoles[i] is PlayerRole.Share or PlayerRole.ShareNotFirst).Actors().Closest(actor.Position);
+                    Actor? closest = null;
+                    var minDistanceSq = float.MaxValue;
+                    foreach (var (partySlot, member) in Raid.WithSlot())
+                    {
+                        if (PlayerRoles[partySlot] is not (PlayerRole.Share or PlayerRole.ShareNotFirst) || !ArenaProjectionLayerParticipantApplies(member, ArenaProjectionLayer, RestrictToArenaProjectionLayer))
+                        {
+                            continue;
+                        }
+                        var distanceSq = (member.Position - actor.Position).LengthSq();
+                        if (distanceSq < minDistanceSq)
+                        {
+                            minDistanceSq = distanceSq;
+                            closest = member;
+                        }
+                    }
                     if (closest != null)
                     {
                         var stack = GetAOEForTarget(Source.Position, closest.Position, distancebehind);
@@ -376,16 +448,17 @@ public class InverseWildCharge(BossModule module, float halfWidth, float distanc
 
         if (forbiddenInverted.Count != 0)
         {
-            hints.AddForbiddenZone(new SDOutsideOfUnion([.. forbiddenInverted]), Activation);
+            hints.AddForbiddenZone(new SDOutsideOfUnion([.. forbiddenInverted]), Activation, arenaProjectionLayer: ArenaProjectionLayerForAI(ArenaProjectionLayer, RestrictToArenaProjectionLayer));
         }
         if (forbidden.Count != 0)
         {
-            hints.AddForbiddenZone(new SDUnion([.. forbidden]), Activation);
+            hints.AddForbiddenZone(new SDUnion([.. forbidden]), Activation, arenaProjectionLayer: ArenaProjectionLayerForAI(ArenaProjectionLayer, RestrictToArenaProjectionLayer));
         }
     }
 
     public override void DrawArenaBackground(int pcSlot, Actor pc)
     {
+        using var projection = Arena.WorldProjectionLayer(ArenaProjectionLayer, RestrictToArenaProjectionLayer);
         if (Source == null || PlayerRoles[pcSlot] == PlayerRole.Ignore)
         {
             return;
@@ -393,7 +466,7 @@ public class InverseWildCharge(BossModule module, float halfWidth, float distanc
 
         foreach (var aoe in EnumerateAOEs())
         {
-            var dangerous = PlayerRoles[pcSlot] == PlayerRole.Avoid; // TODO: reconsider this condition
+            var dangerous = !ArenaProjectionLayerParticipantApplies(pc, ArenaProjectionLayer, RestrictToArenaProjectionLayer) || PlayerRoles[pcSlot] == PlayerRole.Avoid; // TODO: reconsider this condition
             Arena.ZoneRect(aoe.origin, aoe.dir, aoe.length, 0, HalfWidth, dangerous ? Colors.AOE : Colors.SafeFromAOE);
         }
     }
@@ -410,7 +483,8 @@ public class InverseWildCharge(BossModule module, float halfWidth, float distanc
         return (invertedOrigin, dir, length);
     }
 
-    protected bool InAOE((WPos origin, WDir dir, float length) aoe, Actor actor) => actor.Position.InRect(aoe.origin, aoe.dir, aoe.length, 0, HalfWidth);
+    protected bool InAOE((WPos origin, WDir dir, float length) aoe, Actor actor) => ArenaProjectionLayerParticipantApplies(actor, ArenaProjectionLayer, RestrictToArenaProjectionLayer)
+        && actor.Position.InRect(aoe.origin, aoe.dir, aoe.length, 0, HalfWidth);
 
     protected IEnumerable<(WPos origin, WDir dir, float length)> EnumerateAOEs(int targetSlotToSkip = -1)
     {
@@ -421,7 +495,10 @@ public class InverseWildCharge(BossModule module, float halfWidth, float distanc
 
         foreach (var (i, p) in Module.Raid.WithSlot().WhereSlot(i => i != targetSlotToSkip && PlayerRoles[i] is PlayerRole.Target or PlayerRole.TargetNotFirst))
         {
-            yield return GetAOEForTarget(Source.Position, p.Position, distancebehind);
+            if (ArenaProjectionLayerParticipantApplies(p, ArenaProjectionLayer, RestrictToArenaProjectionLayer))
+            {
+                yield return GetAOEForTarget(Source.Position, p.Position, distancebehind);
+            }
         }
     }
     // Invert this too so that tanks don't get bad directions.  Just swap the '<' for a '>'

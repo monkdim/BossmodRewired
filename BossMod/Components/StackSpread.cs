@@ -3,10 +3,9 @@
 // generic 'stack/spread' mechanic has some players that have to spread away from raid, some other players that other players need to stack with
 // there are various variants (e.g. everyone should spread, or everyone should stack in one or more groups, or some combination of that)
 
-[SkipLocalsInit]
 public abstract class GenericStackSpread(BossModule module, bool raidwideOnResolve = true, bool includeDeadTargets = false) : BossComponent(module)
 {
-    public struct Stack(Actor target, float radius, int minSize = 2, int maxSize = int.MaxValue, DateTime activation = default, BitMask forbiddenPlayers = default)
+    public struct Stack(Actor target, float radius, int minSize = 2, int maxSize = int.MaxValue, DateTime activation = default, BitMask forbiddenPlayers = default, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = true)
     {
         public Actor Target = target;
         public float Radius = radius;
@@ -14,6 +13,12 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
         public int MaxSize = maxSize;
         public DateTime Activation = activation;
         public BitMask ForbiddenPlayers = forbiddenPlayers; // raid members that aren't allowed to participate in the stack
+        public int? ArenaProjectionLayer = arenaProjectionLayer;
+        public bool? RestrictToArenaProjectionLayer = restrictToArenaProjectionLayer;
+
+        // Null keeps the target-following default; explicit IDs and all-layer mode take precedence.
+        public readonly int? ResolveArenaProjectionLayer(BossModule module)
+            => module.ResolveTargetArenaProjectionLayer(Target, ArenaProjectionLayer, RestrictToArenaProjectionLayer);
 
         public readonly int NumInside(BossModule module)
         {
@@ -21,10 +26,13 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
             var party = module.Raid.WithSlot();
             var len = party.Length;
             var pos = Target.Position.Quantized();
+            var layer = ResolveArenaProjectionLayer(module);
             for (var i = 0; i < len; ++i)
             {
                 ref var indexActor = ref party[i];
-                if (!ForbiddenPlayers[indexActor.Item1] && indexActor.Item2.Position.InCircle(pos, Radius))
+                if (!ForbiddenPlayers[indexActor.Item1]
+                    && module.ActorMatchesArenaProjectionLayer(indexActor.Item2, layer, RestrictToArenaProjectionLayer)
+                    && indexActor.Item2.Position.InCircle(pos, Radius))
                 {
                     ++count;
                 }
@@ -36,11 +44,17 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
         public readonly bool IsInside(Actor actor) => IsInside(actor.Position);
     }
 
-    public struct Spread(Actor target, float radius, DateTime activation = default)
+    public struct Spread(Actor target, float radius, DateTime activation = default, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = true)
     {
         public Actor Target = target;
         public float Radius = radius;
         public DateTime Activation = activation;
+        public int? ArenaProjectionLayer = arenaProjectionLayer;
+        public bool? RestrictToArenaProjectionLayer = restrictToArenaProjectionLayer;
+
+        // Null keeps the target-following default; explicit IDs and all-layer mode take precedence.
+        public readonly int? ResolveArenaProjectionLayer(BossModule module)
+            => module.ResolveTargetArenaProjectionLayer(Target, ArenaProjectionLayer, RestrictToArenaProjectionLayer);
     }
 
     public readonly bool RaidwideOnResolve = raidwideOnResolve; // if true, assume even if mechanic is correctly resolved everyone will still take damage
@@ -131,6 +145,50 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
         return false;
     }
 
+    protected bool StackAppliesToArenaProjectionLayer(Actor actor, in Stack stack)
+        => ArenaProjectionLayerApplies(actor, stack.ResolveArenaProjectionLayer(Module), stack.RestrictToArenaProjectionLayer);
+
+    protected bool SpreadAppliesToArenaProjectionLayer(Actor actor, in Spread spread)
+        => ArenaProjectionLayerApplies(actor, spread.ResolveArenaProjectionLayer(Module), spread.RestrictToArenaProjectionLayer);
+
+    protected bool StackParticipantAppliesToArenaProjectionLayer(Actor actor, in Stack stack)
+        => ArenaProjectionLayerParticipantApplies(actor, stack.ResolveArenaProjectionLayer(Module), stack.RestrictToArenaProjectionLayer);
+
+    protected bool SpreadParticipantAppliesToArenaProjectionLayer(Actor actor, in Spread spread)
+        => ArenaProjectionLayerParticipantApplies(actor, spread.ResolveArenaProjectionLayer(Module), spread.RestrictToArenaProjectionLayer);
+
+    private bool IsStackTargetFor(Actor? target, Actor viewer)
+    {
+        var stacks = CollectionsMarshal.AsSpan(Stacks);
+        var len = stacks.Length;
+        for (var i = 0; i < len; ++i)
+        {
+            ref var stack = ref stacks[i];
+            if (stack.Target == target && StackAppliesToArenaProjectionLayer(viewer, stack)
+                && (target == null || StackParticipantAppliesToArenaProjectionLayer(target, stack)))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private bool IsSpreadTargetFor(Actor? target, Actor viewer)
+    {
+        var spreads = CollectionsMarshal.AsSpan(Spreads);
+        var len = spreads.Length;
+        for (var i = 0; i < len; ++i)
+        {
+            ref var spread = ref spreads[i];
+            if (spread.Target == target && SpreadAppliesToArenaProjectionLayer(viewer, spread)
+                && (target == null || SpreadParticipantAppliesToArenaProjectionLayer(target, spread)))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public override void AddHints(int slot, Actor actor, TextHints hints)
     {
         var spreads = CollectionsMarshal.AsSpan(ActiveSpreads);
@@ -138,8 +196,12 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
         for (var i = 0; i < lenSpreads; ++i)
         {
             ref var s = ref spreads[i];
+            if (!SpreadAppliesToArenaProjectionLayer(actor, s))
+            {
+                continue;
+            }
             var t = s.Target;
-            if (t == actor)
+            if (t == actor && SpreadParticipantAppliesToArenaProjectionLayer(actor, s))
             {
                 var targetPos = t.Position.Quantized();
                 var partyWOS = Raid.WithoutSlot();
@@ -149,7 +211,7 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
                 for (var j = 0; j < lenPWOS; ++j)
                 {
                     var p = partyWOS[j];
-                    if (p == actor)
+                    if (p == actor || !SpreadParticipantAppliesToArenaProjectionLayer(p, s))
                     {
                         continue;
                     }
@@ -169,8 +231,12 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
         for (var i = 0; i < lenStacks; ++i)
         {
             ref var s = ref stacks[i];
+            if (!StackAppliesToArenaProjectionLayer(actor, s))
+            {
+                continue;
+            }
             var t = s.Target;
-            if (t == actor)
+            if (t == actor && StackParticipantAppliesToArenaProjectionLayer(actor, s))
             {
                 var partyWS = Raid.WithSlot();
                 var lenPWS = partyWS.Length;
@@ -182,14 +248,14 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
                 {
                     ref var p = ref partyWS[j];
                     var a = p.Item2;
-                    if (a == actor)
+                    if (a == actor || !StackParticipantAppliesToArenaProjectionLayer(a, s))
                     {
                         continue;
                     }
                     if (a.Position.InCircle(targetPos, s.Radius))
                     {
                         ++numStacked;
-                        stackedWithOtherStackOrAvoid |= s.ForbiddenPlayers[p.Item1] || IsStackTarget(a);
+                        stackedWithOtherStackOrAvoid |= s.ForbiddenPlayers[p.Item1] || IsStackTargetFor(a, actor);
                     }
                 }
                 hints.Add(StackHint, stackedWithOtherStackOrAvoid || numStacked < s.MinSize || numStacked > s.MaxSize);
@@ -204,6 +270,10 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
         for (var i = 0; i < lenStacks; ++i)
         {
             ref var s = ref stacks[i];
+            if (!StackParticipantAppliesToArenaProjectionLayer(actor, s))
+            {
+                continue;
+            }
             var t = s.Target;
             var targetPos = t.Position.Quantized();
             if (s.ForbiddenPlayers[slot])
@@ -219,12 +289,12 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
             }
 
             // count other party members in radius (excluding target itself)
-            var numInside = 1;  // start with actor
+            var numInside = StackParticipantAppliesToArenaProjectionLayer(t, s) ? 1 : 0; // include the target only on the mechanic's floor
             for (var j = 0; j < lenP; ++j)
             {
                 var p = party[j];
 
-                if (p != t && p.Position.InCircle(targetPos, s.Radius))
+                if (p != t && StackParticipantAppliesToArenaProjectionLayer(p, s) && p.Position.InCircle(targetPos, s.Radius))
                 {
                     ++numInside;
                 }
@@ -252,6 +322,10 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
         for (var i = 0; i < lenSpreads; ++i)
         {
             ref var s = ref spreads[i];
+            if (!SpreadParticipantAppliesToArenaProjectionLayer(actor, s))
+            {
+                continue;
+            }
             var t = s.Target;
             if (t != actor && actor.Position.InCircle(t.Position.Quantized(), s.Radius))
             {
@@ -265,6 +339,10 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
         for (var i = 0; i < lenStacks; ++i)
         {
             ref var s = ref stacks[i];
+            if (!StackParticipantAppliesToArenaProjectionLayer(actor, s))
+            {
+                continue;
+            }
             var t = s.Target;
             if (t != actor && s.ForbiddenPlayers[slot] && actor.Position.InCircle(t.Position.Quantized(), s.Radius))
             {
@@ -300,10 +378,15 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
         for (var i = 0; i < lenSpreads; ++i)
         {
             ref var s = ref spreads[i];
-            var t = s.Target;
-            if (t != actor)
+            if (!SpreadAppliesToArenaProjectionLayer(actor, s))
             {
-                hints.AddForbiddenZone(new SDCircle(t.Position.Quantized(), s.Radius + ExtraAISpreadThreshold), s.Activation);
+                continue;
+            }
+            var t = s.Target;
+            if (t != actor || !SpreadParticipantAppliesToArenaProjectionLayer(actor, s))
+            {
+                hints.AddForbiddenZone(new SDCircle(t.Position.Quantized(), s.Radius + ExtraAISpreadThreshold), s.Activation,
+                    arenaProjectionLayer: ArenaProjectionLayerForAI(s.ResolveArenaProjectionLayer(Module), s.RestrictToArenaProjectionLayer));
             }
             else
             {
@@ -314,16 +397,22 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
                 for (var j = 0; j < lenPWOS; ++j)
                 {
                     var p = partyWOS[j].Item2;
+                    if (!SpreadParticipantAppliesToArenaProjectionLayer(p, s))
+                    {
+                        continue;
+                    }
 
                     for (var k = 0; k < lenSpreads; ++k)
                     {
-                        if (spreads[k].Target == p)
+                        if (SpreadAppliesToArenaProjectionLayer(actor, spreads[k]) && spreads[k].Target == p
+                            && SpreadParticipantAppliesToArenaProjectionLayer(p, spreads[k]))
                         {
                             goto done; // no need to add avoid hints for players who are also spread targets
                         }
                     }
 
-                    hints.AddForbiddenZone(new SDCircle(p.Position.Quantized(), radius + ExtraAISpreadThreshold), act);
+                    hints.AddForbiddenZone(new SDCircle(p.Position.Quantized(), radius + ExtraAISpreadThreshold), act,
+                        arenaProjectionLayer: ArenaProjectionLayerForAI(s.ResolveArenaProjectionLayer(Module), s.RestrictToArenaProjectionLayer));
                 done:
                     ;
                 }
@@ -335,6 +424,10 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
         for (var i = 0; i < lenStacks; ++i)
         {
             ref var s = ref stacks[i];
+            if (!StackParticipantAppliesToArenaProjectionLayer(actor, s))
+            {
+                continue;
+            }
             var t = s.Target;
             if (s.Target == actor)
             {
@@ -347,7 +440,7 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
                 {
                     ref var p = ref partyWOS[j];
                     var a = p.Item2;
-                    if (t != a)
+                    if (t != a && StackParticipantAppliesToArenaProjectionLayer(a, s))
                     {
                         if (s.ForbiddenPlayers[p.Item1]) // party member is forbidden from stacking
                         {
@@ -355,14 +448,16 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
                         }
                         for (var k = 0; k < lenSpreads; ++k)
                         {
-                            if (spreads[k].Target == a)
+                            if (SpreadAppliesToArenaProjectionLayer(actor, spreads[k]) && spreads[k].Target == a
+                                && SpreadParticipantAppliesToArenaProjectionLayer(a, spreads[k]))
                             {
                                 goto skip; // player got a spread marker
                             }
                         }
                         for (var k = 0; k < lenStacks; ++k)
                         {
-                            if (stacks[k].Target == a)
+                            if (StackAppliesToArenaProjectionLayer(actor, stacks[k]) && stacks[k].Target == a
+                                && StackParticipantAppliesToArenaProjectionLayer(a, stacks[k]))
                             {
                                 goto skip; // player got a stack marker and we don't want to stack stacks
                             }
@@ -375,15 +470,22 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
                 }
                 if (stacksIFzTarget.Count > 0)
                 {
-                    hints.AddForbiddenZone(new SDIntersection([.. stacksIFzTarget]), s.Activation);
+                    hints.AddForbiddenZone(new SDIntersection([.. stacksIFzTarget]), s.Activation,
+                        arenaProjectionLayer: ArenaProjectionLayerForAI(s.ResolveArenaProjectionLayer(Module), s.RestrictToArenaProjectionLayer));
                 }
             }
         }
 
         var stacksIFz = new List<ShapeDistance>();
+        var stacksIFzLayer = -2; // -2 = empty, -1 = unlayered/mixed
+        var stacksIFzActivation = DateTime.MaxValue;
         for (var i = 0; i < lenStacks; ++i)
         {
             ref var s = ref stacks[i];
+            if (!StackParticipantAppliesToArenaProjectionLayer(actor, s))
+            {
+                continue;
+            }
             var t = s.Target;
             var targetPos = t.Position.Quantized();
             var act = s.Activation;
@@ -400,75 +502,84 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
                 if (!isSpreadTarget && (!isInside && numInside < max || isInside && numInside <= max))  // don't try to stack if spread target
                 {
                     stacksIFz.Add(new SDInvertedCircle(targetPos, radius));
+                    var layer = ArenaProjectionLayerForAI(s.ResolveArenaProjectionLayer(Module), s.RestrictToArenaProjectionLayer) ?? -1;
+                    stacksIFzLayer = stacksIFzLayer == -2 || stacksIFzLayer == layer ? layer : -1;
+                    stacksIFzActivation = stacksIFzActivation < act ? stacksIFzActivation : act;
                     continue;
                 }
             addfz:
                 // avoid stack if forbidden or enough players inside
                 // double radius if stack target to prevent standing next to other stack markers or overlapping them
-                hints.AddForbiddenZone(new SDCircle(targetPos, !isStackTarget ? radius : 2f * radius), act);
+                hints.AddForbiddenZone(new SDCircle(targetPos, !isStackTarget ? radius : 2f * radius), act,
+                    arenaProjectionLayer: ArenaProjectionLayerForAI(s.ResolveArenaProjectionLayer(Module), s.RestrictToArenaProjectionLayer));
             }
         }
 
         var countIFz = stacksIFz.Count;
         if (countIFz > 0)
         {
-            var act = stacks[0].Activation;
             if (countIFz == 1)
             {
-                hints.AddForbiddenZone(stacksIFz[0], act);
+                hints.AddForbiddenZone(stacksIFz[0], stacksIFzActivation,
+                    arenaProjectionLayer: stacksIFzLayer >= 0 ? stacksIFzLayer : null);
             }
             else
             {
-                hints.AddForbiddenZone(new SDOutsideOfUnion([.. stacksIFz]), act);
+                hints.AddForbiddenZone(new SDOutsideOfUnion([.. stacksIFz]), stacksIFzActivation,
+                    arenaProjectionLayer: stacksIFzLayer >= 0 ? stacksIFzLayer : null);
             }
         }
     skipFZs:
         if (RaidwideOnResolve)
         {
-            var firstActivation = DateTime.MaxValue;
-
-            var countSpread = ActiveSpreads.Count;
-            var countStack = ActiveStacks.Count;
-            if (countSpread != 0)
+            BitMask spreadMask = default;
+            var firstSpreadActivation = DateTime.MaxValue;
+            for (var i = 0; i < lenSpreads; ++i)
             {
-                BitMask spreadMask = default;
-
-                for (var i = 0; i < countSpread; ++i)
+                ref var s = ref spreads[i];
+                if (SpreadAppliesToArenaProjectionLayer(actor, s) && SpreadParticipantAppliesToArenaProjectionLayer(s.Target, s))
                 {
-                    ref var s = ref spreads[i];
                     spreadMask.Set(Raid.FindSlot(s.Target.InstanceID));
-                    firstActivation = firstActivation < s.Activation ? firstActivation : s.Activation;
-                }
-                if (spreadMask != default)
-                {
-                    hints.AddPredictedDamage(spreadMask, firstActivation, AIHints.PredictedDamageType.Raidwide);
+                    firstSpreadActivation = firstSpreadActivation < s.Activation ? firstSpreadActivation : s.Activation;
                 }
             }
-            if (countStack != 0)
+            if (spreadMask != default)
             {
-                BitMask stackMask = default;
-                BitMask mask = default;
-                mask.Raw = 0xFFFFFFFFFFFFFFFF;
+                hints.AddPredictedDamage(spreadMask, firstSpreadActivation, AIHints.PredictedDamageType.Raidwide);
+            }
 
-                for (var i = 0; i < countStack; ++i)
+            BitMask stackMask = default;
+            var firstStackActivation = DateTime.MaxValue;
+            var participants = Raid.WithSlot(includeDead: IncludeDeadTargets);
+            for (var i = 0; i < lenStacks; ++i)
+            {
+                ref var s = ref stacks[i];
+                if (StackAppliesToArenaProjectionLayer(actor, s))
                 {
-                    ref var s = ref stacks[i];
-                    stackMask |= mask & ~s.ForbiddenPlayers; // assume everyone will take damage except forbidden players (so-so assumption really...)
-                    firstActivation = firstActivation < s.Activation ? firstActivation : s.Activation;
+                    for (var j = 0; j < participants.Length; ++j)
+                    {
+                        ref var participant = ref participants[j];
+                        if (!s.ForbiddenPlayers[participant.Item1] && StackParticipantAppliesToArenaProjectionLayer(participant.Item2, s))
+                        {
+                            stackMask.Set(participant.Item1);
+                        }
+                    }
+                    firstStackActivation = firstStackActivation < s.Activation ? firstStackActivation : s.Activation;
                 }
-                if (stackMask != mask)
-                {
-                    hints.AddPredictedDamage(stackMask, firstActivation, AIHints.PredictedDamageType.Shared);
-                }
+            }
+            if (stackMask != default)
+            {
+                hints.AddPredictedDamage(stackMask, firstStackActivation, AIHints.PredictedDamageType.Shared);
             }
         }
     }
 
     public override PlayerPriority CalcPriority(int pcSlot, Actor pc, int playerSlot, Actor player, ref uint customColor)
     {
-        var shouldSpread = IsSpreadTarget(player);
-        var shouldStack = IsStackTarget(player);
+        var shouldSpread = IsSpreadTargetFor(player, pc);
+        var shouldStack = IsStackTargetFor(player, pc);
         var shouldAvoid = false;
+        var haveApplicableMechanic = shouldSpread || shouldStack;
         if (!shouldSpread && !shouldStack)
         {
             var stacks = CollectionsMarshal.AsSpan(Stacks);
@@ -476,15 +587,22 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
             for (var i = 0; i < lenStacks; ++i)
             {
                 ref var s = ref stacks[i];
-                if (!IncludeDeadTargets && s.Target.IsDead) // player is dead and dead players are excluded
+                if (!StackAppliesToArenaProjectionLayer(pc, s) || !IncludeDeadTargets && s.Target.IsDead) // player is dead and dead players are excluded
                 {
                     continue;
                 }
-                if (s.ForbiddenPlayers[playerSlot])
+                haveApplicableMechanic = true;
+                if (StackParticipantAppliesToArenaProjectionLayer(player, s) && s.ForbiddenPlayers[playerSlot])
                 {
                     shouldAvoid = true;
                     break;
                 }
+            }
+
+            var spreads = CollectionsMarshal.AsSpan(Spreads);
+            for (var i = 0; i < spreads.Length && !haveApplicableMechanic; ++i)
+            {
+                haveApplicableMechanic = SpreadAppliesToArenaProjectionLayer(pc, spreads[i]) && (IncludeDeadTargets || !spreads[i].Target.IsDead);
             }
         }
         if (shouldAvoid)
@@ -493,7 +611,7 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
         }
         return shouldAvoid || shouldSpread ? PlayerPriority.Danger
             : shouldStack ? PlayerPriority.Interesting
-            : Active ? PlayerPriority.Normal : PlayerPriority.Irrelevant;
+            : haveApplicableMechanic ? PlayerPriority.Normal : PlayerPriority.Irrelevant;
     }
 
     public override void DrawArenaForeground(int pcSlot, Actor pc)
@@ -509,7 +627,7 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
                 continue;
             }
             var dangerColor = false;
-            if (s.ForbiddenPlayers[pcSlot])  // player is forbidden, always draw as danger
+            if (s.ForbiddenPlayers[pcSlot] || !StackParticipantAppliesToArenaProjectionLayer(pc, s)) // unavailable stacks are drawn as danger
             {
                 dangerColor = true;
                 goto done;
@@ -523,10 +641,13 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
                 var numInside = s.NumInside(Module);
                 var isInside = s.IsInside(pc);
                 var max = s.MaxSize;
-                dangerColor = !isInside && numInside >= max || isInside && numInside > max || IsStackTarget(pc) || IsSpreadTarget(pc);
+                dangerColor = !isInside && numInside >= max || isInside && numInside > max || IsStackTargetFor(pc, pc) || IsSpreadTargetFor(pc, pc);
             }
         done:
-            Arena.ZoneCircleOutline(t.Position.Quantized(), s.Radius, dangerColor ? default : Colors.Safe);
+            using (Arena.WorldProjectionLayer(s.ResolveArenaProjectionLayer(Module), s.RestrictToArenaProjectionLayer))
+            {
+                Arena.ZoneCircleOutline(t.Position.Quantized(), s.Radius, dangerColor ? default : Colors.Safe);
+            }
         }
 
         var spreads = CollectionsMarshal.AsSpan(Spreads);
@@ -539,13 +660,15 @@ public abstract class GenericStackSpread(BossModule module, bool raidwideOnResol
             {
                 continue;
             }
-            Arena.ZoneCircleOutline(t.Position.Quantized(), s.Radius);
+            using (Arena.WorldProjectionLayer(s.ResolveArenaProjectionLayer(Module), s.RestrictToArenaProjectionLayer))
+            {
+                Arena.ZoneCircleOutline(t.Position.Quantized(), s.Radius);
+            }
         }
     }
 }
 
 // stack/spread with same properties for all stacks and all spreads (most common variant)
-[SkipLocalsInit]
 public abstract class UniformStackSpread(BossModule module, float stackRadius, float spreadRadius, int minStackSize = 2, int maxStackSize = int.MaxValue, bool raidwideOnResolve = true, bool includeDeadTargets = false)
     : GenericStackSpread(module, raidwideOnResolve, includeDeadTargets)
 {
@@ -554,29 +677,30 @@ public abstract class UniformStackSpread(BossModule module, float stackRadius, f
     public int MinStackSize = minStackSize;
     public int MaxStackSize = maxStackSize;
 
-    public void AddStack(Actor target, DateTime activation = default, BitMask forbiddenPlayers = default) => Stacks.Add(new(target, StackRadius, MinStackSize, MaxStackSize, activation, forbiddenPlayers));
-    public void AddStacks(IEnumerable<Actor> targets, DateTime activation = default)
+    public void AddStack(Actor target, DateTime activation = default, BitMask forbiddenPlayers = default, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = true) => Stacks.Add(new(target, StackRadius, MinStackSize, MaxStackSize, activation, forbiddenPlayers, arenaProjectionLayer, restrictToArenaProjectionLayer));
+    public void AddStacks(IEnumerable<Actor> targets, DateTime activation = default, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = true)
     {
         foreach (var target in targets)
         {
-            Stacks.Add(new(target, StackRadius, MinStackSize, MaxStackSize, activation));
+            Stacks.Add(new(target, StackRadius, MinStackSize, MaxStackSize, activation, arenaProjectionLayer: arenaProjectionLayer, restrictToArenaProjectionLayer: restrictToArenaProjectionLayer));
         }
     }
-    public void AddSpread(Actor target, DateTime activation = default) => Spreads.Add(new(target, SpreadRadius, activation));
-    public void AddSpreads(IEnumerable<Actor> targets, DateTime activation = default)
+    public void AddSpread(Actor target, DateTime activation = default, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = true) => Spreads.Add(new(target, SpreadRadius, activation, arenaProjectionLayer, restrictToArenaProjectionLayer));
+    public void AddSpreads(IEnumerable<Actor> targets, DateTime activation = default, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = true)
     {
         foreach (var target in targets)
         {
-            Spreads.Add(new(target, SpreadRadius, activation));
+            Spreads.Add(new(target, SpreadRadius, activation, arenaProjectionLayer, restrictToArenaProjectionLayer));
         }
     }
 }
 
 // spread/stack mechanic that selects targets by casts
-[SkipLocalsInit]
-public class CastStackSpread(BossModule module, uint stackAID, uint spreadAID, float stackRadius, float spreadRadius, int minStackSize = 2, int maxStackSize = int.MaxValue, bool alwaysShowSpreads = false)
+public class CastStackSpread(BossModule module, uint stackAID, uint spreadAID, float stackRadius, float spreadRadius, int minStackSize = 2, int maxStackSize = int.MaxValue, bool alwaysShowSpreads = false, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = true)
     : UniformStackSpread(module, stackRadius, spreadRadius, minStackSize, maxStackSize, alwaysShowSpreads)
 {
+    public int? ArenaProjectionLayer = arenaProjectionLayer;
+    public bool? RestrictToArenaProjectionLayer = restrictToArenaProjectionLayer;
     public readonly uint StackAction = stackAID;
     public readonly uint SpreadAction = spreadAID;
     public int NumFinishedStacks;
@@ -587,11 +711,11 @@ public class CastStackSpread(BossModule module, uint stackAID, uint spreadAID, f
         var id = spell.Action.ID;
         if (id == StackAction && WorldState.Actors.Find(spell.TargetID) is Actor stackTarget)
         {
-            AddStack(stackTarget, Module.CastFinishAt(spell));
+            AddStack(stackTarget, Module.CastFinishAt(spell), arenaProjectionLayer: ArenaProjectionLayer, restrictToArenaProjectionLayer: RestrictToArenaProjectionLayer);
         }
         else if (id == SpreadAction && WorldState.Actors.Find(spell.TargetID) is Actor spreadTarget)
         {
-            AddSpread(spreadTarget, Module.CastFinishAt(spell));
+            AddSpread(spreadTarget, Module.CastFinishAt(spell), arenaProjectionLayer: ArenaProjectionLayer, restrictToArenaProjectionLayer: RestrictToArenaProjectionLayer);
         }
     }
 
@@ -632,18 +756,17 @@ public class CastStackSpread(BossModule module, uint stackAID, uint spreadAID, f
 }
 
 // generic 'spread from targets of specific cast' mechanic
-[SkipLocalsInit]
-public class SpreadFromCastTargets(BossModule module, uint aid, float radius) : CastStackSpread(module, default, aid, default, radius);
+public class SpreadFromCastTargets(BossModule module, uint aid, float radius, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = true) : CastStackSpread(module, default, aid, default, radius, arenaProjectionLayer: arenaProjectionLayer, restrictToArenaProjectionLayer: restrictToArenaProjectionLayer);
 
 // generic 'stack with targets of specific cast' mechanic
-[SkipLocalsInit]
-public class StackWithCastTargets(BossModule module, uint aid, float radius, int minStackSize = 2, int maxStackSize = int.MaxValue) : CastStackSpread(module, aid, default, radius, default, minStackSize, maxStackSize);
+public class StackWithCastTargets(BossModule module, uint aid, float radius, int minStackSize = 2, int maxStackSize = int.MaxValue, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = true) : CastStackSpread(module, aid, default, radius, default, minStackSize, maxStackSize, arenaProjectionLayer: arenaProjectionLayer, restrictToArenaProjectionLayer: restrictToArenaProjectionLayer);
 
 // spread/stack mechanic that selects targets by icon and finishes by cast event
-[SkipLocalsInit]
-public class IconStackSpread(BossModule module, uint stackIcon, uint spreadIcon, uint stackAID, uint spreadAID, float stackRadius, float spreadRadius, double activationDelay, int minStackSize = 2, int maxStackSize = int.MaxValue, int maxCasts = 1)
+public class IconStackSpread(BossModule module, uint stackIcon, uint spreadIcon, uint stackAID, uint spreadAID, float stackRadius, float spreadRadius, double activationDelay, int minStackSize = 2, int maxStackSize = int.MaxValue, int maxCasts = 1, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = true)
     : UniformStackSpread(module, stackRadius, spreadRadius, minStackSize, maxStackSize)
 {
+    public int? ArenaProjectionLayer = arenaProjectionLayer;
+    public bool? RestrictToArenaProjectionLayer = restrictToArenaProjectionLayer;
     public readonly uint StackIcon = stackIcon;
     public readonly uint SpreadIcon = spreadIcon;
     public readonly uint StackAction = stackAID;
@@ -658,11 +781,11 @@ public class IconStackSpread(BossModule module, uint stackIcon, uint spreadIcon,
     {
         if (iconID == StackIcon)
         {
-            AddStack(actor, WorldState.FutureTime(ActivationDelay));
+            AddStack(actor, WorldState.FutureTime(ActivationDelay), arenaProjectionLayer: ArenaProjectionLayer, restrictToArenaProjectionLayer: RestrictToArenaProjectionLayer);
         }
         else if (iconID == SpreadIcon)
         {
-            AddSpread(actor, WorldState.FutureTime(ActivationDelay));
+            AddSpread(actor, WorldState.FutureTime(ActivationDelay), arenaProjectionLayer: ArenaProjectionLayer, restrictToArenaProjectionLayer: RestrictToArenaProjectionLayer);
         }
     }
 
@@ -736,20 +859,19 @@ public class IconStackSpread(BossModule module, uint stackIcon, uint spreadIcon,
 }
 
 // generic 'spread from actors with specific icon' mechanic
-[SkipLocalsInit]
-public class SpreadFromIcon(BossModule module, uint icon, uint aid, float radius, double activationDelay) :
-IconStackSpread(module, default, icon, default, aid, default, radius, activationDelay);
+public class SpreadFromIcon(BossModule module, uint icon, uint aid, float radius, double activationDelay, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = true) :
+IconStackSpread(module, default, icon, default, aid, default, radius, activationDelay, arenaProjectionLayer: arenaProjectionLayer, restrictToArenaProjectionLayer: restrictToArenaProjectionLayer);
 
 // generic 'stack with actors with specific icon' mechanic
-[SkipLocalsInit]
-public class StackWithIcon(BossModule module, uint icon, uint aid, float radius, double activationDelay, int minStackSize = 2, int maxStackSize = int.MaxValue, int maxCasts = 1) :
-IconStackSpread(module, icon, default, aid, default, radius, default, activationDelay, minStackSize, maxStackSize, maxCasts);
+public class StackWithIcon(BossModule module, uint icon, uint aid, float radius, double activationDelay, int minStackSize = 2, int maxStackSize = int.MaxValue, int maxCasts = 1, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = true) :
+IconStackSpread(module, icon, default, aid, default, radius, default, activationDelay, minStackSize, maxStackSize, maxCasts, arenaProjectionLayer: arenaProjectionLayer, restrictToArenaProjectionLayer: restrictToArenaProjectionLayer);
 
 // generic 'donut stack' mechanic
-[SkipLocalsInit]
-public class DonutStack(BossModule module, uint aid, uint icon, float innerRadius, float outerRadius, double activationDelay, int minStackSize = 2, int maxStackSize = int.MaxValue) :
+public class DonutStack(BossModule module, uint aid, uint icon, float innerRadius, float outerRadius, double activationDelay, int minStackSize = 2, int maxStackSize = int.MaxValue, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = true) :
 UniformStackSpread(module, innerRadius / 3f, default, minStackSize, maxStackSize)
 {
+    public int? ArenaProjectionLayer = arenaProjectionLayer;
+    public bool? RestrictToArenaProjectionLayer = restrictToArenaProjectionLayer;
     // this is a donut targeted on each player, it is best solved by stacking
     // regular stack component won't work because this is self targeted
     public readonly AOEShapeDonut Donut = new(innerRadius, outerRadius);
@@ -761,7 +883,7 @@ UniformStackSpread(module, innerRadius / 3f, default, minStackSize, maxStackSize
     {
         if (iconID == Icon)
         {
-            AddStack(actor, WorldState.FutureTime(ActivationDelay));
+            AddStack(actor, WorldState.FutureTime(ActivationDelay), arenaProjectionLayer: ArenaProjectionLayer, restrictToArenaProjectionLayer: RestrictToArenaProjectionLayer);
         }
     }
 
@@ -804,36 +926,49 @@ UniformStackSpread(module, innerRadius / 3f, default, minStackSize, maxStackSize
             return;
         }
         var forbidden = new List<ShapeDistance>(count);
+        var forbiddenLayer = -2; // -2 = empty, -1 = unlayered/mixed
         var radius = Donut.InnerRadius * 0.25f;
         var stacks = CollectionsMarshal.AsSpan(Stacks);
+        var activation = DateTime.MaxValue;
         for (var i = 0; i < count; ++i)
         {
-            var s = stacks[i];
+            ref var s = ref stacks[i];
+            if (!ArenaProjectionLayerParticipantApplies(actor, s.ResolveArenaProjectionLayer(Module), s.RestrictToArenaProjectionLayer))
+            {
+                continue;
+            }
+            activation = activation < s.Activation ? activation : s.Activation;
             if (s.Target == actor)
             {
                 continue;
             }
             forbidden.Add(new SDInvertedCircle(s.Target.Position, radius));
+            var layer = ArenaProjectionLayerForAI(s.ResolveArenaProjectionLayer(Module), s.RestrictToArenaProjectionLayer) ?? -1;
+            forbiddenLayer = forbiddenLayer == -2 || forbiddenLayer == layer ? layer : -1;
         }
         if (forbidden.Count != 0)
         {
-            hints.AddForbiddenZone(new SDIntersection([.. forbidden]), Stacks.Ref(0).Activation);
+            hints.AddForbiddenZone(new SDIntersection([.. forbidden]), activation, arenaProjectionLayer: forbiddenLayer >= 0 ? forbiddenLayer : null);
         }
     }
 
     public override void DrawArenaBackground(int pcSlot, Actor pc)
     {
         var count = Stacks.Count;
+        var stacks = CollectionsMarshal.AsSpan(Stacks);
         for (var i = 0; i < count; ++i)
         {
-            Donut.Draw(Arena, Stacks[i].Target.Position);
+            ref var stack = ref stacks[i];
+            using (Arena.WorldProjectionLayer(stack.ResolveArenaProjectionLayer(Module), stack.RestrictToArenaProjectionLayer))
+            {
+                Donut.Draw(Arena, stack.Target.Position);
+            }
         }
     }
 
     public override void DrawArenaForeground(int pcSlot, Actor pc) { }
 }
 
-[SkipLocalsInit]
 public abstract class GenericBaitStack(BossModule module, uint aid = default, bool onlyShowOutlines = false) : GenericBaitAway(module, aid)
 {
     // TODO: add logic for min and max stack size
@@ -852,17 +987,26 @@ public abstract class GenericBaitStack(BossModule module, uint aid = default, bo
         var isBaitTarget = false; // determine if target of any stack
         for (var i = 0; i < len; ++i)
         {
-            if (baits[i].Target == actor)
+            ref var bait = ref baits[i];
+            if (bait.Target == actor && BaitAppliesToArenaProjectionLayer(actor, bait)
+                && BaitParticipantAppliesToArenaProjectionLayer(actor, bait))
             {
                 isBaitTarget = true;
                 break;
             }
         }
         var forbiddenInverted = new List<ShapeDistance>();
+        var forbiddenInvertedLayer = -2; // -2 = empty, -1 = unlayered/mixed
+        var forbiddenActivation = DateTime.MaxValue;
 
         for (var i = 0; i < len; ++i)
         {
             ref var b = ref baits[i];
+            if (!BaitParticipantAppliesToArenaProjectionLayer(actor, b))
+            {
+                continue;
+            }
+            forbiddenActivation = forbiddenActivation < b.Activation ? forbiddenActivation : b.Activation;
             var origin = BaitOrigin(ref b);
             var angle = Angle.FromDirection(b.Target.Position - origin);
             var t = b.Target;
@@ -871,25 +1015,31 @@ public abstract class GenericBaitStack(BossModule module, uint aid = default, bo
                 if (!b.Forbidden[slot])
                 {
                     forbiddenInverted.Add(b.Shape.InvertedDistance(origin, angle));
+                    var layer = ArenaProjectionLayerForAI(b.ResolveArenaProjectionLayer(Module), b.RestrictToArenaProjectionLayer) ?? -1;
+                    forbiddenInvertedLayer = forbiddenInvertedLayer == -2 || forbiddenInvertedLayer == layer ? layer : -1;
                 }
                 else
                 {
-                    hints.AddForbiddenZone(b.Shape.Distance(origin, angle), b.Activation);
+                    hints.AddForbiddenZone(b.Shape.Distance(origin, angle), b.Activation, arenaProjectionLayer: ArenaProjectionLayerForAI(b.ResolveArenaProjectionLayer(Module), b.RestrictToArenaProjectionLayer));
                 }
             }
             else if (t != actor && isBaitTarget)
             {   // prevent overlapping if there are multiple stacks
                 if (b.Shape is AOEShapeCone cone)
                 {
-                    hints.AddForbiddenZone(new SDCone(origin, cone.Radius, angle, cone.HalfAngle * 2f), b.Activation);
+                    hints.AddForbiddenZone(new SDCone(origin, cone.Radius, angle, cone.HalfAngle * 2f), b.Activation,
+                        arenaProjectionLayer: ArenaProjectionLayerForAI(b.ResolveArenaProjectionLayer(Module), b.RestrictToArenaProjectionLayer));
                 }
                 else if (b.Shape is AOEShapeRect rect)
                 {
-                    hints.AddForbiddenZone(new SDRect(origin, angle, rect.LengthFront, rect.LengthBack, rect.HalfWidth * 2f), b.Activation);
+                    hints.AddForbiddenZone(new SDRect(origin, angle, rect.LengthFront, rect.LengthBack, rect.HalfWidth * 2f), b.Activation,
+                        arenaProjectionLayer: ArenaProjectionLayerForAI(b.ResolveArenaProjectionLayer(Module), b.RestrictToArenaProjectionLayer));
                 }
                 else if (b.Shape is AOEShapeCircle circle)
                 {
                     forbiddenInverted.Add(new SDCircle(origin, circle.Radius * 2f));
+                    var layer = ArenaProjectionLayerForAI(b.ResolveArenaProjectionLayer(Module), b.RestrictToArenaProjectionLayer) ?? -1;
+                    forbiddenInvertedLayer = forbiddenInvertedLayer == -2 || forbiddenInvertedLayer == layer ? layer : -1;
                 }
             }
             else if (t == actor) // try to go to party members since they might not actively come to your stack
@@ -903,7 +1053,7 @@ public abstract class GenericBaitStack(BossModule module, uint aid = default, bo
                 {
                     ref var p = ref partyWOS[k];
                     var a = p.Item2;
-                    if (t != a)
+                    if (t != a && Module.ActorMatchesArenaProjectionLayer(a, b.ResolveArenaProjectionLayer(Module), b.RestrictToArenaProjectionLayer))
                     {
                         if (b.Forbidden[p.Item1]) // party member is forbidden from stacking
                         {
@@ -911,7 +1061,9 @@ public abstract class GenericBaitStack(BossModule module, uint aid = default, bo
                         }
                         for (var l = 0; l < lenStacks; ++l)
                         {
-                            if (stacks[l].Target == a)
+                            ref var stack = ref stacks[l];
+                            if (stack.Target == a && BaitAppliesToArenaProjectionLayer(actor, stack)
+                                && BaitParticipantAppliesToArenaProjectionLayer(a, stack))
                             {
                                 goto skip; // player got a stack marker and we don't want to stack stacks
                             }
@@ -924,32 +1076,45 @@ public abstract class GenericBaitStack(BossModule module, uint aid = default, bo
                 }
                 if (forbiddenB.Count != 0)
                 {
-                    hints.AddForbiddenZone(new SDIntersection([.. forbiddenB]), b.Activation);
+                    hints.AddForbiddenZone(new SDIntersection([.. forbiddenB]), b.Activation, arenaProjectionLayer: ArenaProjectionLayerForAI(b.ResolveArenaProjectionLayer(Module), b.RestrictToArenaProjectionLayer));
                 }
             }
         }
         var countI = forbiddenInverted.Count;
         if (countI != 0)
         {
-            var act = baits[0].Activation;
             if (countI > 1)
             {
-                hints.AddForbiddenZone(new SDOutsideOfUnion([.. forbiddenInverted]), act);
+                hints.AddForbiddenZone(new SDOutsideOfUnion([.. forbiddenInverted]), forbiddenActivation,
+                    arenaProjectionLayer: forbiddenInvertedLayer >= 0 ? forbiddenInvertedLayer : null);
             }
             else
             {
-                hints.AddForbiddenZone(forbiddenInverted[0], act);
+                hints.AddForbiddenZone(forbiddenInverted[0], forbiddenActivation,
+                    arenaProjectionLayer: forbiddenInvertedLayer >= 0 ? forbiddenInvertedLayer : null);
             }
         }
 
         var firstActivation = DateTime.MaxValue;
         BitMask baitMask = default;
-        BitMask mask = default;
-        mask.Raw = 0xFFFFFFFFFFFFFFFF;
+        var participants = Raid.WithSlot(includeDead: AllowDeadTargets);
         for (var i = 0; i < len; ++i)
         {
             ref var b = ref baits[i];
-            baitMask |= mask & ~b.Forbidden; // assume everyone will take damage except forbidden players (so-so assumption really...)
+            if (!BaitAppliesToArenaProjectionLayer(actor, b))
+            {
+                continue;
+            }
+            var lenP = participants.Length;
+            for (var j = 0; j < lenP; ++j)
+            {
+                ref var participant = ref participants[j];
+                if (!b.Forbidden[participant.Item1]
+                    && Module.ActorMatchesArenaProjectionLayer(participant.Item2, b.ResolveArenaProjectionLayer(Module), b.RestrictToArenaProjectionLayer))
+                {
+                    baitMask.Set(participant.Item1);
+                }
+            }
             firstActivation = firstActivation < b.Activation ? firstActivation : b.Activation;
         }
         if (baitMask != default)
@@ -970,10 +1135,16 @@ public abstract class GenericBaitStack(BossModule module, uint aid = default, bo
         var isInBaitShape = false; // determine if inside of any stack
         var isInWrongBait = false; // determine if inside of any forbidden stack
         var allForbidden = true; // determine if all stacks are forbidden
+        var hasApplicableBait = false;
         var id = actor.InstanceID;
         for (var i = 0; i < len; ++i)
         {
             ref var b = ref baits[i];
+            if (!BaitParticipantAppliesToArenaProjectionLayer(actor, b))
+            {
+                continue;
+            }
+            hasApplicableBait = true;
             if (!b.Forbidden[slot])
             {
                 allForbidden = false;
@@ -992,13 +1163,17 @@ public abstract class GenericBaitStack(BossModule module, uint aid = default, bo
                 }
             }
         }
+        if (!hasApplicableBait)
+        {
+            return;
+        }
         var isBaitTargetAndInExtraStack = false;
         if (isBaitTarget)
         {
             for (var i = 0; i < len; ++i)
             {
                 ref var b = ref baits[i];
-                if (b.Target.InstanceID == id)
+                if (!BaitParticipantAppliesToArenaProjectionLayer(actor, b) || b.Target.InstanceID == id)
                 {
                     continue;
                 }
@@ -1041,10 +1216,12 @@ public abstract class GenericBaitStack(BossModule module, uint aid = default, bo
             return;
         }
         var isBaitTarget = false; // determine if target of any stack
-        var id = pc.InstanceID;
+
         for (var i = 0; i < len; ++i)
         {
-            if (baits[i].Target.InstanceID == id)
+            ref var bait = ref baits[i];
+            if (bait.Target == pc && BaitAppliesToArenaProjectionLayer(pc, bait)
+                && BaitParticipantAppliesToArenaProjectionLayer(pc, bait))
             {
                 isBaitTarget = true;
                 break;
@@ -1053,8 +1230,12 @@ public abstract class GenericBaitStack(BossModule module, uint aid = default, bo
         for (var i = 0; i < len; ++i)
         {
             ref var b = ref baits[i];
-            var color = !b.Forbidden[pcSlot] && (isBaitTarget && b.Target.InstanceID == id || !isBaitTarget && b.Target.InstanceID != id) ? Colors.SafeFromAOE : default;
-            b.Shape.Draw(Arena, BaitOrigin(ref b), b.Rotation, color);
+            var color = !b.Forbidden[pcSlot] && BaitParticipantAppliesToArenaProjectionLayer(pc, b)
+                && (isBaitTarget && b.Target == pc || !isBaitTarget && b.Target != pc) ? Colors.SafeFromAOE : default;
+            using (Arena.WorldProjectionLayer(b.ResolveArenaProjectionLayer(Module), b.RestrictToArenaProjectionLayer))
+            {
+                b.Shape.Draw(Arena, BaitOrigin(ref b), b.Rotation, color);
+            }
         }
     }
 
@@ -1071,10 +1252,12 @@ public abstract class GenericBaitStack(BossModule module, uint aid = default, bo
             return;
         }
         var isBaitTarget = false; // determine if target of any stack
-        var id = pc.InstanceID;
+
         for (var i = 0; i < len; ++i)
         {
-            if (baits[i].Target.InstanceID == id)
+            ref var bait = ref baits[i];
+            if (bait.Target == pc && BaitAppliesToArenaProjectionLayer(pc, bait)
+                && BaitParticipantAppliesToArenaProjectionLayer(pc, bait))
             {
                 isBaitTarget = true;
                 break;
@@ -1083,18 +1266,23 @@ public abstract class GenericBaitStack(BossModule module, uint aid = default, bo
         for (var i = 0; i < len; ++i)
         {
             ref var b = ref baits[i];
-            var color = !b.Forbidden[pcSlot] && (isBaitTarget && b.Target.InstanceID == id || !isBaitTarget && b.Target.InstanceID != id) ? Colors.Safe : default;
-            b.Shape.Outline(Arena, BaitOrigin(ref b), b.Rotation, color);
+            var color = !b.Forbidden[pcSlot] && BaitParticipantAppliesToArenaProjectionLayer(pc, b)
+                && (isBaitTarget && b.Target == pc || !isBaitTarget && b.Target != pc) ? Colors.Safe : default;
+            using (Arena.WorldProjectionLayer(b.ResolveArenaProjectionLayer(Module), b.RestrictToArenaProjectionLayer))
+            {
+                b.Shape.Outline(Arena, BaitOrigin(ref b), b.Rotation, color);
+            }
         }
     }
 }
 
 // generic single hit "line stack" component, usually do not have an iconID, instead players get marked by cast event
 // usually these have 50 range and 4 halfWidth, but it can be modified
-[SkipLocalsInit]
-public class LineStack(BossModule module, uint aidMarker, uint aidResolve, double activationDelay = 5.1d, float range = 50f, float halfWidth = 4f, int minStackSize = 4, int maxStackSize = int.MaxValue, int maxCasts = 1, bool markerIsFinalTarget = true, uint iconID = default) : GenericBaitStack(module)
+public class LineStack(BossModule module, uint aidMarker, uint aidResolve, double activationDelay = 5.1d, float range = 50f, float halfWidth = 4f, int minStackSize = 4, int maxStackSize = int.MaxValue, int maxCasts = 1, bool markerIsFinalTarget = true, uint iconID = default, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = true) : GenericBaitStack(module)
 {
-    public LineStack(BossModule module, uint iconID, uint aidResolve, double activationDelay = 5.1d, float range = 50f, float halfWidth = 4f, int minStackSize = 4, int maxStackSize = int.MaxValue, int maxCasts = 1, bool markerIsFinalTarget = true) : this(module, default, aidResolve, activationDelay, range, halfWidth, minStackSize, maxStackSize, maxCasts, markerIsFinalTarget, iconID) { }
+    public int? ArenaProjectionLayer = arenaProjectionLayer;
+    public bool? RestrictToArenaProjectionLayer = restrictToArenaProjectionLayer;
+    public LineStack(BossModule module, uint iconID, uint aidResolve, double activationDelay = 5.1d, float range = 50f, float halfWidth = 4f, int minStackSize = 4, int maxStackSize = int.MaxValue, int maxCasts = 1, bool markerIsFinalTarget = true, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = true) : this(module, default, aidResolve, activationDelay, range, halfWidth, minStackSize, maxStackSize, maxCasts, markerIsFinalTarget, iconID, arenaProjectionLayer, restrictToArenaProjectionLayer) { }
 
     // TODO: add logic for min and max stack size
     public readonly uint AidMarker = aidMarker;
@@ -1119,7 +1307,7 @@ public class LineStack(BossModule module, uint aidMarker, uint aidResolve, doubl
         var id = spell.Action.ID;
         if (id == AidMarker && WorldState.Actors.Find(spell.MainTargetID) is Actor target)
         {
-            CurrentBaits.Add(new(caster, target, rect, WorldState.FutureTime(ActionDelay), maxCasts: MaxCasts));
+            CurrentBaits.Add(new(caster, target, rect, WorldState.FutureTime(ActionDelay), maxCasts: MaxCasts, arenaProjectionLayer: ArenaProjectionLayer, restrictToArenaProjectionLayer: RestrictToArenaProjectionLayer));
         }
         else if (id == AidResolve)
         {
@@ -1160,7 +1348,7 @@ public class LineStack(BossModule module, uint aidMarker, uint aidResolve, doubl
     {
         if (IconId != default && iconID == IconId && WorldState.Actors.Find(targetID) is Actor target)
         {
-            CurrentBaits.Add(new(actor, target, rect, WorldState.FutureTime(ActionDelay)));
+            CurrentBaits.Add(new(actor, target, rect, WorldState.FutureTime(ActionDelay), arenaProjectionLayer: ArenaProjectionLayer, restrictToArenaProjectionLayer: RestrictToArenaProjectionLayer));
         }
     }
 
@@ -1172,7 +1360,7 @@ public class LineStack(BossModule module, uint aidMarker, uint aidResolve, doubl
         }
         if (spell.Action.ID == AidResolve && WorldState.Actors.Find(spell.TargetID) is Actor target)
         {
-            CurrentBaits.Add(new(caster, target, rect, Module.CastFinishAt(spell)));
+            CurrentBaits.Add(new(caster, target, rect, Module.CastFinishAt(spell), arenaProjectionLayer: ArenaProjectionLayer, restrictToArenaProjectionLayer: RestrictToArenaProjectionLayer));
         }
     }
 
@@ -1220,18 +1408,20 @@ public class LineStack(BossModule module, uint aidMarker, uint aidResolve, doubl
     }
 }
 
-//Generic StackSpread implementation for Status-driven ones that fire on status expiry
-public class StatusStackSpread(BossModule module, uint stackSid, uint spreadSid, float stackRadius, float spreadRadius, int minStackSize = 2, int maxStackSize = 2147483647, bool raidwideOnResolve = true, bool includeDeadTargets = false) : UniformStackSpread(module, stackRadius, spreadRadius, minStackSize, maxStackSize, raidwideOnResolve, includeDeadTargets)
+// Generic StackSpread implementation for Status-driven ones that fire on status expiry
+public class StatusStackSpread(BossModule module, uint stackSid, uint spreadSid, float stackRadius, float spreadRadius, int minStackSize = 2, int maxStackSize = 2147483647, bool raidwideOnResolve = true, bool includeDeadTargets = false, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = true) : UniformStackSpread(module, stackRadius, spreadRadius, minStackSize, maxStackSize, raidwideOnResolve, includeDeadTargets)
 {
+    public int? ArenaProjectionLayer = arenaProjectionLayer;
+    public bool? RestrictToArenaProjectionLayer = restrictToArenaProjectionLayer;
     public override void OnStatusGain(Actor actor, ref ActorStatus status)
     {
         if (status.ID == stackSid)
         {
-            AddStack(actor, status.ExpireAt);
+            AddStack(actor, status.ExpireAt, arenaProjectionLayer: ArenaProjectionLayer, restrictToArenaProjectionLayer: RestrictToArenaProjectionLayer);
         }
         if (status.ID == spreadSid)
         {
-            AddSpread(actor, status.ExpireAt);
+            AddSpread(actor, status.ExpireAt, arenaProjectionLayer: ArenaProjectionLayer, restrictToArenaProjectionLayer: RestrictToArenaProjectionLayer);
         }
     }
     public override void OnStatusLose(Actor actor, ref ActorStatus status)

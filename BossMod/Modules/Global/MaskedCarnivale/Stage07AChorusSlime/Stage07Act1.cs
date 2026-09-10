@@ -36,7 +36,7 @@ sealed class SlimeExplosion(BossModule module) : Components.GenericStackSpread(m
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add("For this stage the spells Sticky Tongue and Snort are recommended.\nUse them to pull or push Slimes close to Ice Sprites.\nThen hit the slime from a distance with anything but fire spells to set of an explosion.");
     }
@@ -44,7 +44,7 @@ sealed class Hints(BossModule module) : BossComponent(module)
 
 sealed class Hints2(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add($"Hit the {Module.PrimaryActor.Name} from a safe distance to win this act.");
     }

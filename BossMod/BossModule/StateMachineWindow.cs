@@ -1,7 +1,7 @@
 ﻿using Dalamud.Bindings.ImGui;
+
 namespace BossMod;
 
-[SkipLocalsInit]
 public sealed class StateMachineWindow : UIWindow
 {
     private readonly Timeline _timeline = new();

@@ -1,7 +1,6 @@
 ﻿namespace BossMod.Components;
 
 // generic 'concentric aoes' component - a sequence of aoes (typically cone then donuts) with same origin and increasing size
-[SkipLocalsInit]
 public class ConcentricAOEs(BossModule module, AOEShape[] shapes, bool showall = false, double riskyWithSecondsLeft = default) : GenericAOEs(module)
 {
     public struct Sequence
@@ -10,6 +9,10 @@ public class ConcentricAOEs(BossModule module, AOEShape[] shapes, bool showall =
         public Angle Rotation;
         public DateTime NextActivation;
         public int NumCastsDone;
+        public int? ArenaProjectionLayer;
+        public bool? RestrictToArenaProjectionLayer = false;
+
+        public Sequence() { }
     }
 
     public readonly double RiskyWithSecondsLeft = riskyWithSecondsLeft; // can be used to delay risky status of AOEs, so AI waits longer to dodge, if 0 it will just use the bool Risky
@@ -46,7 +49,8 @@ public class ConcentricAOEs(BossModule module, AOEShape[] shapes, bool showall =
                     var shape = Shapes[s.NumCastsDone];
                     var origin = s.Origin;
                     var rotation = s.Rotation;
-                    _aoes.Add(new(shape, origin, rotation, act, risky: risky, shapeDistance: shape.Distance(origin, rotation)));
+                    _aoes.Add(new(shape, origin, rotation, act, risky: risky, shapeDistance: shape.Distance(origin, rotation),
+                        arenaProjectionLayer: s.ArenaProjectionLayer, restrictToArenaProjectionLayer: s.RestrictToArenaProjectionLayer));
                 }
                 else
                 {
@@ -56,7 +60,8 @@ public class ConcentricAOEs(BossModule module, AOEShape[] shapes, bool showall =
                         var shape = Shapes[j];
                         var origin = s.Origin;
                         var rotation = s.Rotation;
-                        _aoes.Add(new(Shapes[j], s.Origin, s.Rotation, act, risky: risky, shapeDistance: shape.Distance(origin, rotation)));
+                        _aoes.Add(new(Shapes[j], s.Origin, s.Rotation, act, risky: risky, shapeDistance: shape.Distance(origin, rotation),
+                            arenaProjectionLayer: s.ArenaProjectionLayer, restrictToArenaProjectionLayer: s.RestrictToArenaProjectionLayer));
                     }
                 }
             }
@@ -73,7 +78,8 @@ public class ConcentricAOEs(BossModule module, AOEShape[] shapes, bool showall =
         }
     }
 
-    public void AddSequence(WPos origin, DateTime activation = default, Angle rotation = default) => Sequences.Add(new() { Origin = origin, Rotation = rotation, NextActivation = activation });
+    public void AddSequence(WPos origin, DateTime activation = default, Angle rotation = default, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = false)
+        => Sequences.Add(new() { Origin = origin, Rotation = rotation, NextActivation = activation, ArenaProjectionLayer = arenaProjectionLayer, RestrictToArenaProjectionLayer = restrictToArenaProjectionLayer });
 
     // return false if sequence was not found
     public bool AdvanceSequence(int order, WPos origin, DateTime activation = default, Angle rotation = default)

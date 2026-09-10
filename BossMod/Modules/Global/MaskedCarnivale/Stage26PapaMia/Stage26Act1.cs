@@ -28,7 +28,7 @@ sealed class CaberToss(BossModule module) : Components.CastInterruptHint(module,
 
 sealed class Hints(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         hints.Add($"{Module.PrimaryActor.Name} will cast Alternate Plumage, which makes him almost\nimmune to damage. Use Eerie Soundwave to dispel it. Caber Toss must be\ninterrupted or you will wipe.\nAdditionally Exuviation and earth spells are recommended for act 2.");
     }
@@ -36,7 +36,7 @@ sealed class Hints(BossModule module) : BossComponent(module)
 
 sealed class Hints2(BossModule module) : BossComponent(module)
 {
-    public override void AddGlobalHints(GlobalHints hints)
+    public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         if (Module.PrimaryActor.FindStatus((uint)SID.VulnerabilityDown) != null)
         {

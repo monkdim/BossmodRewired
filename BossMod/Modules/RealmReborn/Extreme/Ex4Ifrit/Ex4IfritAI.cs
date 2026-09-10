@@ -1,7 +1,7 @@
 ﻿namespace BossMod.RealmReborn.Extreme.Ex4Ifrit;
 
 // common ai features for whole fight
-class Ex4IfritAICommon(BossModule module) : BossComponent(module)
+abstract class Ex4IfritAICommon(BossModule module) : BossComponent(module)
 {
     private readonly Incinerate? _incinerate = module.FindComponent<Incinerate>();
     private readonly Eruption? _eruption = module.FindComponent<Eruption>();
@@ -183,7 +183,7 @@ class Ex4IfritAINormal(BossModule module) : Ex4IfritAICommon(module)
 // - searing wind target moves either CW from boss or CCW, depending on phase-specific remaining nail threshold
 // - healers without searing wind stay in center
 // - dd stay anywhere outside cleave range and center (so that not to bait eruptions on healers)
-class Ex4IfritAINails : Ex4IfritAINormal
+abstract class Ex4IfritAINails : Ex4IfritAINormal
 {
     private readonly List<Actor> NailKillOrder = [];
     private readonly int MinNailsForCWSearingWinds;
@@ -299,7 +299,7 @@ class Ex4IfritAINails : Ex4IfritAINormal
     }
 }
 
-class Ex4IfritAINails1(BossModule module) : Ex4IfritAINails(module, 1, 0x8)
+sealed class Ex4IfritAINails1(BossModule module) : Ex4IfritAINails(module, 1, 0x8ul)
 {
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
@@ -313,7 +313,7 @@ class Ex4IfritAINails1(BossModule module) : Ex4IfritAINails(module, 1, 0x8)
     }
 }
 
-class Ex4IfritAINails2(BossModule module) : Ex4IfritAINails(module, 4, 0x7)
+sealed class Ex4IfritAINails2(BossModule module) : Ex4IfritAINails(module, 4, 0x7ul)
 {
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
@@ -327,7 +327,7 @@ class Ex4IfritAINails2(BossModule module) : Ex4IfritAINails(module, 4, 0x7)
     }
 }
 
-class Ex4IfritAINails3(BossModule module) : Ex4IfritAINails(module, 7, 0x3C70)
+sealed class Ex4IfritAINails3(BossModule module) : Ex4IfritAINails(module, 7, 0x3C70ul)
 {
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
@@ -348,7 +348,7 @@ class Ex4IfritAINails3(BossModule module) : Ex4IfritAINails(module, 7, 0x3C70)
 
 // ai used during invincibility (hellfire) phase
 // extremely simple positioning - mt goes to next plume safespot, searing winds target goes opposite, everyone else stacks in center for easier healing
-class Ex4IfritAIHellfire : Ex4IfritAICommon
+abstract class Ex4IfritAIHellfire : Ex4IfritAICommon
 {
     private readonly WDir _safespotOffset;
 
@@ -389,6 +389,6 @@ class Ex4IfritAIHellfire : Ex4IfritAICommon
         Arena.ZoneCircleOutline(Arena.Center + _safespotOffset, 2, Colors.Safe);
     }
 }
-class Ex4IfritAIHellfire1(BossModule module) : Ex4IfritAIHellfire(module, 150f.Degrees(), PartyRolesConfig.Assignment.MT);
-class Ex4IfritAIHellfire2(BossModule module) : Ex4IfritAIHellfire(module, 110f.Degrees(), PartyRolesConfig.Assignment.OT);
-class Ex4IfritAIHellfire3(BossModule module) : Ex4IfritAIHellfire(module, 70f.Degrees(), PartyRolesConfig.Assignment.MT);
+sealed class Ex4IfritAIHellfire1(BossModule module) : Ex4IfritAIHellfire(module, 150f.Degrees(), PartyRolesConfig.Assignment.MT);
+sealed class Ex4IfritAIHellfire2(BossModule module) : Ex4IfritAIHellfire(module, 110f.Degrees(), PartyRolesConfig.Assignment.OT);
+sealed class Ex4IfritAIHellfire3(BossModule module) : Ex4IfritAIHellfire(module, 70f.Degrees(), PartyRolesConfig.Assignment.MT);

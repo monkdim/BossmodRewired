@@ -8,7 +8,7 @@ public sealed class BossModuleConfigWindow : UIWindow
     private readonly PartyRolesConfig _prc = Service.Config.Get<PartyRolesConfig>();
     private readonly WorldState _ws;
     private readonly UITree _tree = new();
-    private readonly UITabs _tabs = new();
+    private readonly UITabs _tabs = new("ConfigTabs");
 
     public BossModuleConfigWindow(BossModuleRegistry.Info info, WorldState ws) : base($"{info.ModuleType.Name} config", true, new(1200, 800))
     {

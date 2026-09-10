@@ -1,6 +1,5 @@
 Texture2D<float> ArenaSdf : register(t1);
 SamplerState ArenaSdfSampler : register(s1);
-static const float SdfMipGradScale = 0.70710678f; // 2^-0.5 => -0.5 LOD bias
 static const float OutlineCoverageScale = 1.5f;
 static const float ShadowCoverageScale = 1.75f;
 
@@ -8,32 +7,36 @@ cbuffer ArenaSdfConstants : register(b1)
 {
     float4 ArenaUvRow0;
     float4 ArenaUvRow1;
+    float4 ArenaOutsideScale;
+    float4 ArenaMipGrad;
 };
 
 struct PS_INPUT
 {
     float4 pos       : SV_POSITION;
     float2 localPx   : TEXCOORD0;
-    float2 direction : TEXCOORD1;
-    float4 params    : TEXCOORD2;
-    float2 widthsPx  : TEXCOORD3;
-    float2 extra     : TEXCOORD4;
-    float4 col       : COLOR0;
-    float4 shadowCol : COLOR1;
+    nointerpolation float2 direction : TEXCOORD1;
+    nointerpolation float4 params    : TEXCOORD2;
+    nointerpolation float2 widthsPx  : TEXCOORD3;
+    nointerpolation float2 extra     : TEXCOORD4;
+    nointerpolation float4 col       : COLOR0;
+    nointerpolation float4 shadowCol : COLOR1;
 };
 
-float arenaSdPx(float2 framebufferPx)
+float arenaSdUv(float2 uv)
 {
-    float3 hp = float3(framebufferPx, 1.0f);
-    float2 uv = float2(dot(hp, ArenaUvRow0.xyz), dot(hp, ArenaUvRow1.xyz));
     float2 clampedUv = saturate(uv);
-    float sampledPx = ArenaSdf.SampleGrad(ArenaSdfSampler, clampedUv, float2(ArenaUvRow0.x, ArenaUvRow1.x) * SdfMipGradScale, float2(ArenaUvRow0.y, ArenaUvRow1.y) * SdfMipGradScale).r * ArenaUvRow1.w;
+    float sampledPx = ArenaSdf.SampleGrad(ArenaSdfSampler, clampedUv, ArenaMipGrad.xy, ArenaMipGrad.zw).r * ArenaUvRow1.w;
+    float result = sampledPx;
 
-    float2 outsideUv = uv - clampedUv;
-    float gradU = max(length(ArenaUvRow0.xy), 1e-7f);
-    float gradV = max(length(ArenaUvRow1.xy), 1e-7f);
-    float2 outsidePxAxes = float2(outsideUv.x / gradU, outsideUv.y / gradV);
-    return sampledPx + length(outsidePxAxes);
+    [branch]
+    if (any(uv != clampedUv))
+    {
+        float2 outsideUv = uv - clampedUv;
+        float2 outsidePxAxes = outsideUv * ArenaOutsideScale.xy;
+        result += length(outsidePxAxes);
+    }
+    return result;
 }
 
 float positiveSquare(float x)
@@ -42,18 +45,11 @@ float positiveSquare(float x)
     return x * x;
 }
 
-float halfPlaneCoverage(float edgeDistance, float2 gradient, float coverageScale)
+float halfPlaneCoverage(float edgeDistance, float2 gradientAxes, float coverageScale)
 {
     // Exact box-filter coverage of a locally straight boundary over the unit pixel square.
-    // Keep only gradient direction: the distance fields are already expressed in framebuffer
-    // pixels, and ignoring derivative magnitude avoids the corner inflation of raw fwidth().
-    float gl = length(gradient);
-    if (gl <= 1e-5f)
-        return edgeDistance <= 0.0f ? 1.0f : 0.0f;
-
-    float2 n = abs(gradient / gl);
-    float a = max(n.x, n.y) * coverageScale;
-    float b = min(n.x, n.y) * coverageScale;
+    float a = gradientAxes.x * coverageScale;
+    float b = gradientAxes.y * coverageScale;
 
     // Axis-aligned limit of the convolution below.
     if (b <= 1e-4f)
@@ -70,12 +66,12 @@ float halfPlaneCoverage(float edgeDistance, float2 gradient, float coverageScale
     return saturate(area / (2.0f * a * b));
 }
 
-float bandCoverage(float signedDistance, float halfWidth, float2 gradient, float coverageScale)
+float bandCoverage(float signedDistance, float halfWidth, float2 gradientAxes, float coverageScale)
 {
     // Area between the two locally parallel boundaries d=-w and d=+w. Keeping the signed
     // distance avoids the abs() cusp at the centerline and is smoother under rotation.
-    return saturate(halfPlaneCoverage(signedDistance - halfWidth, gradient, coverageScale)
-                  - halfPlaneCoverage(signedDistance + halfWidth, gradient, coverageScale));
+    return saturate(halfPlaneCoverage(signedDistance - halfWidth, gradientAxes, coverageScale)
+                  - halfPlaneCoverage(signedDistance + halfWidth, gradientAxes, coverageScale));
 }
 
 float4 composeExclusiveHalo(float4 shadowCol, float shadowCoverage, float4 col, float colorCoverage)
@@ -96,17 +92,24 @@ float4 composeExclusiveHalo(float4 shadowCol, float shadowCoverage, float4 col, 
 float4 main(PS_INPUT i) : SV_Target
 {
     float2 p = i.pos.xy;
-    float d = arenaSdPx(p);
+    float3 hp = float3(p, 1.0f);
+    float2 uv = float2(dot(hp, ArenaUvRow0.xyz), dot(hp, ArenaUvRow1.xyz));
+    float d = arenaSdUv(uv);
     if (abs(d) > i.widthsPx.y + 1.25f)
         discard;
 
     // Symmetric half-pixel finite differences are continuous with motion/rotation and do
     // not inherit the 2x2-quad phase changes of ddx/ddy on the sampled distance field.
+    float2 uvDx = 0.5f * float2(ArenaUvRow0.x, ArenaUvRow1.x);
+    float2 uvDy = 0.5f * float2(ArenaUvRow0.y, ArenaUvRow1.y);
     float2 g = float2(
-        arenaSdPx(p + float2(0.5f, 0.0f)) - arenaSdPx(p - float2(0.5f, 0.0f)),
-        arenaSdPx(p + float2(0.0f, 0.5f)) - arenaSdPx(p - float2(0.0f, 0.5f)));
-    float c = bandCoverage(d, i.widthsPx.x, g, OutlineCoverageScale);
-    float s = bandCoverage(d, i.widthsPx.y, g, ShadowCoverageScale);
+        arenaSdUv(uv + uvDx) - arenaSdUv(uv - uvDx),
+        arenaSdUv(uv + uvDy) - arenaSdUv(uv - uvDy));
+    // The same normalized gradient is used by both sides of both color bands; compute it once.
+    float2 n = abs(g) * rsqrt(max(dot(g, g), 1e-10f));
+    float2 gradientAxes = float2(max(n.x, n.y), min(n.x, n.y));
+    float c = bandCoverage(d, i.widthsPx.x, gradientAxes, OutlineCoverageScale);
+    float s = bandCoverage(d, i.widthsPx.y, gradientAxes, ShadowCoverageScale);
     float4 o = composeExclusiveHalo(i.shadowCol, s, i.col, c);
     clip(o.a - 0.001f);
     return o;
