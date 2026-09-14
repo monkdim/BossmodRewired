@@ -45,7 +45,7 @@ public struct NavigationDecision
         {
             RasterizeForbiddenZones(ctx.Map, [.. hints.ForbiddenZones], currentTime);
         }
-        if (player.CastInfo == null) // don't rasterize goal zones if casting or if inside a very dangerous pixel
+        if (hints.GoalZonesEnabled && player.CastInfo == null) // don't rasterize goal zones if casting or if inside a very dangerous pixel
         {
             var gridPos = ctx.Map.WorldToGrid(pos);
             var inBounds = ctx.Map.InBounds(gridPos.x, gridPos.y);

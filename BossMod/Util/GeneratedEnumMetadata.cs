@@ -31,6 +31,12 @@ internal static partial class GeneratedEnumMetadata
 {
     private static readonly Dictionary<Type, Lazy<EnumMetadata>> _byType = Build();
 
+    private static class Cache<T> where T : struct, Enum
+    {
+        // don't follow the compiler suggestion, Get<T>() will cause a circular initialization
+        public static readonly EnumMetadata Metadata = Get(typeof(T));
+    }
+
     private static Dictionary<Type, Lazy<EnumMetadata>> Build()
     {
         Dictionary<Type, Lazy<EnumMetadata>> result = [];
@@ -45,13 +51,16 @@ internal static partial class GeneratedEnumMetadata
     public static EnumMetadata Get(Type enumType)
         => _byType.GetValueOrDefault(enumType)?.Value ?? throw new ArgumentException($"No generated enum metadata for {enumType.FullName}");
 
-    public static T[] Values<T>() where T : Enum
-        => Get(typeof(T)).Values as T[] ?? throw new ArgumentException($"Enum {typeof(T).FullName} has name-only generated metadata");
+    private static EnumMetadata Get<T>() where T : struct, Enum
+        => Cache<T>.Metadata;
+
+    public static T[] Values<T>() where T : struct, Enum
+        => Get<T>().Values as T[] ?? throw new ArgumentException($"Enum {typeof(T).FullName} has name-only generated metadata");
 
     public static Array Values(Type enumType)
         => Get(enumType).Values ?? throw new ArgumentException($"Enum {enumType.FullName} has name-only generated metadata");
 
-    public static string[] Names<T>() where T : Enum => Get(typeof(T)).Names;
+    public static string[] Names<T>() where T : struct, Enum => Get<T>().Names;
     public static string[] Names(Type enumType) => Get(enumType).Names;
     public static int Count(Type enumType) => Get(enumType).RawValues.Length;
 
@@ -64,23 +73,70 @@ internal static partial class GeneratedEnumMetadata
 
     public static Enum ValueByRaw(Type enumType, ulong raw) => Get(enumType).ValueFactory(raw);
 
-    public static int IndexOf(Enum value)
+    public static int IndexOf<T>(T value) where T : struct, Enum
     {
-        var metadata = Get(value.GetType());
-        return metadata.IndexOf(metadata.RawValue(value));
+        var metadata = Get<T>();
+        return IndexOf(metadata, value);
     }
 
-    public static string DisplayName(Enum value)
+    public static string DisplayName<T>(T value) where T : struct, Enum
     {
-        var metadata = Get(value.GetType());
-        var index = metadata.IndexOf(metadata.RawValue(value));
+        var metadata = Get<T>();
+        var index = IndexOf(metadata, value);
         return index >= 0 ? metadata.DisplayNames[index] : value.ToString();
     }
 
-    public static TAttribute? Attribute<TAttribute>(Enum value) where TAttribute : Attribute
+    public static EnumValue<T> For<T>(T value) where T : struct, Enum => new(value);
+
+    public readonly struct EnumValue<T>(T value) where T : struct, Enum
     {
-        var metadata = Get(value.GetType());
-        var index = metadata.IndexOf(metadata.RawValue(value));
+        public TAttribute? Attribute<TAttribute>() where TAttribute : Attribute
+        {
+            var metadata = Get<T>();
+            return GeneratedEnumMetadata.Attribute<TAttribute>(metadata, IndexOf(metadata, value));
+        }
+    }
+
+    public static int IndexOf(Type enumType, Enum value)
+    {
+        var metadata = Get(enumType);
+        return IndexOf(metadata, metadata.RawValue(value));
+    }
+
+    public static string DisplayName(Type enumType, Enum value)
+    {
+        var metadata = Get(enumType);
+        return DisplayName(metadata, metadata.RawValue(value), value);
+    }
+
+    public static TAttribute? Attribute<TAttribute>(Type enumType, Enum value) where TAttribute : Attribute
+    {
+        var metadata = Get(enumType);
+        return Attribute<TAttribute>(metadata, metadata.RawValue(value));
+    }
+
+    private static int IndexOf(EnumMetadata metadata, ulong raw) => metadata.IndexOf(raw);
+
+    private static int IndexOf<T>(EnumMetadata metadata, T value) where T : struct, Enum
+    {
+        if (metadata.Values is not T[] values)
+        {
+            throw new ArgumentException($"Enum {typeof(T).FullName} has name-only generated metadata");
+        }
+        return Array.IndexOf(values, value);
+    }
+
+    private static string DisplayName<T>(EnumMetadata metadata, ulong raw, T value) where T : Enum
+    {
+        var index = metadata.IndexOf(raw);
+        return index >= 0 ? metadata.DisplayNames[index] : value.ToString();
+    }
+
+    private static TAttribute? Attribute<TAttribute>(EnumMetadata metadata, ulong raw) where TAttribute : Attribute
+        => Attribute<TAttribute>(metadata, metadata.IndexOf(raw));
+
+    private static TAttribute? Attribute<TAttribute>(EnumMetadata metadata, int index) where TAttribute : Attribute
+    {
         if (index < 0 || metadata.Attributes == null)
         {
             return null;

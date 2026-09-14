@@ -13,6 +13,7 @@ public sealed class ConfigGenerator : IIncrementalGenerator
     private const int ChunkSize = 64;
     private const string ConfigNodeMetadataName = "BossMod.ConfigNode";
     private const string ConfigDisplayMetadataName = "BossMod.ConfigDisplayAttribute";
+    private const string SectionStartMetadataName = "BossMod.SectionStartAttribute";
     private const string PropertyDisplayMetadataName = "BossMod.PropertyDisplayAttribute";
     private const string PropertyComboMetadataName = "BossMod.PropertyComboAttribute";
     private const string PropertySliderMetadataName = "BossMod.PropertySliderAttribute";
@@ -154,6 +155,10 @@ public sealed class ConfigGenerator : IIncrementalGenerator
         {
             result |= 1 << 8;
         }
+        if (compilation.GetTypeByMetadataName(SectionStartMetadataName) == null)
+        {
+            result |= 1 << 9;
+        }
         return result;
     }
 
@@ -194,6 +199,10 @@ public sealed class ConfigGenerator : IIncrementalGenerator
         if ((missing & (1 << 8)) != 0)
         {
             context.ReportDiagnostic(Diagnostic.Create(MissingSymbol, Location.None, JsonIgnoreMetadataName));
+        }
+        if ((missing & (1 << 9)) != 0)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(MissingSymbol, Location.None, SectionStartMetadataName));
         }
     }
 
@@ -251,6 +260,7 @@ public sealed class ConfigGenerator : IIncrementalGenerator
             sb.Append("            new ConfigFieldMetadata(").Append(SourceGenUtilities.PrimitiveLiteral(field.Name)).Append(", typeof(").Append(field.TypeName).Append("), ").Append(field.Serializable ? "true" : "false").Append(", ")
                 .Append("static node => ((").Append(typeName).Append(")node).").Append(field.EscapedName).Append(", ")
                 .Append("static (node, value) => ((").Append(typeName).Append(")node).").Append(field.EscapedName).Append(" = (").Append(field.TypeName).Append(")value!, ")
+                .Append(field.SectionStartExpression).Append(", ")
                 .Append(field.PropertyDisplayExpression).Append(", ")
                 .Append(field.PropertyComboExpression).Append(", ")
                 .Append(field.PropertySliderExpression).Append(", ")
@@ -450,7 +460,7 @@ public sealed class ConfigGenerator : IIncrementalGenerator
 
     private sealed class ConfigFieldSnapshot : IEquatable<ConfigFieldSnapshot>
     {
-        private ConfigFieldSnapshot(string name, string escapedName, string typeName, bool serializable, string propertyDisplayExpression,
+        private ConfigFieldSnapshot(string name, string escapedName, string typeName, bool serializable, string sectionStartExpression, string propertyDisplayExpression,
             string propertyComboExpression, string propertySliderExpression, string propertyStringOrderExpression, string groupDetailsExpression,
             string presetArrayExpression, string sourceTreeKey, int sourceSpanStart, ConfigError? error)
         {
@@ -458,6 +468,7 @@ public sealed class ConfigGenerator : IIncrementalGenerator
             EscapedName = escapedName;
             TypeName = typeName;
             Serializable = serializable;
+            SectionStartExpression = sectionStartExpression;
             PropertyDisplayExpression = propertyDisplayExpression;
             PropertyComboExpression = propertyComboExpression;
             PropertySliderExpression = propertySliderExpression;
@@ -473,6 +484,7 @@ public sealed class ConfigGenerator : IIncrementalGenerator
         public readonly string EscapedName;
         public readonly string TypeName;
         public readonly bool Serializable;
+        public readonly string SectionStartExpression;
         public readonly string PropertyDisplayExpression;
         public readonly string PropertyComboExpression;
         public readonly string PropertySliderExpression;
@@ -502,6 +514,7 @@ public sealed class ConfigGenerator : IIncrementalGenerator
                 SourceGenUtilities.EscapeIdentifier(field.Name),
                 SourceGenUtilities.TypeName(field.Type),
                 SourceGenUtilities.Attribute(attributes, JsonIgnoreMetadataName) == null,
+                AttributeExpression(SourceGenUtilities.Attribute(attributes, SectionStartMetadataName)),
                 AttributeExpression(SourceGenUtilities.Attribute(attributes, PropertyDisplayMetadataName)),
                 AttributeExpression(SourceGenUtilities.Attribute(attributes, PropertyComboMetadataName)),
                 AttributeExpression(SourceGenUtilities.Attribute(attributes, PropertySliderMetadataName)),
@@ -515,7 +528,7 @@ public sealed class ConfigGenerator : IIncrementalGenerator
 
         public bool Equals(ConfigFieldSnapshot? other)
             => other is not null && Name == other.Name && EscapedName == other.EscapedName && TypeName == other.TypeName && Serializable == other.Serializable
-                && PropertyDisplayExpression == other.PropertyDisplayExpression && PropertyComboExpression == other.PropertyComboExpression
+                && SectionStartExpression == other.SectionStartExpression && PropertyDisplayExpression == other.PropertyDisplayExpression && PropertyComboExpression == other.PropertyComboExpression
                 && PropertySliderExpression == other.PropertySliderExpression && PropertyStringOrderExpression == other.PropertyStringOrderExpression
                 && GroupDetailsExpression == other.GroupDetailsExpression && PresetArrayExpression == other.PresetArrayExpression
                 && SourceTreeKey == other.SourceTreeKey && SourceSpanStart == other.SourceSpanStart && Equals(Error, other.Error);
@@ -526,6 +539,7 @@ public sealed class ConfigGenerator : IIncrementalGenerator
             var hash = StringComparer.Ordinal.GetHashCode(Name);
             hash = hash * 31 + StringComparer.Ordinal.GetHashCode(TypeName);
             hash = hash * 31 + Serializable.GetHashCode();
+            hash = hash * 31 + StringComparer.Ordinal.GetHashCode(SectionStartExpression);
             hash = hash * 31 + StringComparer.Ordinal.GetHashCode(PropertyDisplayExpression);
             hash = hash * 31 + StringComparer.Ordinal.GetHashCode(PropertyComboExpression);
             hash = hash * 31 + StringComparer.Ordinal.GetHashCode(PropertySliderExpression);

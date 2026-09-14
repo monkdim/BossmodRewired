@@ -7,14 +7,16 @@ namespace BossMod;
 
 public sealed class ConfigUI : IDisposable
 {
-    private class UINode(ConfigNode node)
+    private class UINode(ConfigNode? node)
     {
-        public ConfigNode Node = node;
+        public ConfigNode? Node = node;
         public string Name = "";
         public int Order;
+        public ModuleViewer.SupportedFightSortKey? SupportedFightOrder;
         public UINode? Parent;
         public List<UINode> Children = [];
         public string[] Tags = [];
+        public List<BossModuleRegistry.Info> PrePullHintModules = [];
 
         public List<string> Path = [];
     }
@@ -30,6 +32,7 @@ public sealed class ConfigUI : IDisposable
     private readonly UIPresetDatabaseEditor? _presets;
 
     private readonly List<List<string>> _filterNodes = [];
+    private static readonly Dictionary<Type, PropertyRenderer> _propertyRenderers = [];
 
     public ConfigUI(ConfigRoot config, WorldState ws, DirectoryInfo? replayDir, RotationDatabase? rotationDB, BossModuleManager bossmod)
     {
@@ -66,6 +69,30 @@ public sealed class ConfigUI : IDisposable
             parentNodes.Add(n);
         }
 
+        foreach (var info in BossModuleRegistry.RegisteredModules.Values)
+        {
+            if (!info.HasPrePullHints)
+            {
+                continue;
+            }
+
+            if (info.ConfigType != null && nodes.TryGetValue(info.ConfigType, out var configNode))
+            {
+                configNode.PrePullHintModules.Add(info);
+                continue;
+            }
+
+            var hintNode = new UINode(null)
+            {
+                Name = GenerateNodeName(info.ModuleType),
+                Order = 0x100000,
+                SupportedFightOrder = ModuleViewer.GetSupportedFightSortKey(info),
+                Parent = nodes.GetValueOrDefault(ExpansionConfigType(info.Expansion)) ?? nodes.GetValueOrDefault(typeof(ModuleConfig))
+            };
+            hintNode.PrePullHintModules.Add(info);
+            (hintNode.Parent?.Children ?? _roots).Add(hintNode);
+        }
+
         SortByOrder(_roots);
         ResolvePaths(_roots, []);
     }
@@ -92,7 +119,7 @@ public sealed class ConfigUI : IDisposable
     private void DrawSettings()
     {
         ImGui.SetNextItemWidth(300f);
-        if (ImGui.InputTextEx("", "Search for a setting...", ref _searchText))
+        if (ImGui.InputTextEx("##ConfigSearch", "Search for a setting...", ref _searchText))
         {
             FilterNodes();
         }
@@ -175,7 +202,7 @@ public sealed class ConfigUI : IDisposable
         ImGui.Separator();
         for (var i = 0; i < 30; ++i)
         {
-            ref readonly var text = ref _availableAICommands[i];
+            ref var text = ref _availableAICommands[i];
             ImGui.Text($"/bmrai {text.Item1}: {text.Item2}");
         }
         ImGui.Separator();
@@ -183,7 +210,7 @@ public sealed class ConfigUI : IDisposable
         ImGui.Separator();
         for (var i = 0; i < 6; ++i)
         {
-            ref readonly var text = ref _autorotationCommands[i];
+            ref var text = ref _autorotationCommands[i];
             ImGui.Text($"/bmr {text.Item1}: {text.Item2}");
         }
         ImGui.Separator();
@@ -191,7 +218,7 @@ public sealed class ConfigUI : IDisposable
         ImGui.Separator();
         for (var i = 0; i < 9; ++i)
         {
-            ref readonly var text = ref _availableOtherCommands[i];
+            ref var text = ref _availableOtherCommands[i];
             ImGui.Text($"/bmr {text.Item1}: {text.Item2}");
         }
     }
@@ -205,11 +232,14 @@ public sealed class ConfigUI : IDisposable
             return;
         }
 
-        foreach (var r in _roots)
+        var count = _roots.Count;
+        for (var i = 0; i < count; ++i)
         {
-            foreach (var path in WalkNodes(r))
+            var paths = WalkNodes(_roots[i]);
+            var countP = paths.Count;
+            for (var j = 0; j < countP; ++j)
             {
-                _filterNodes.Add(path);
+                _filterNodes.Add(paths[j]);
             }
         }
     }
@@ -230,29 +260,48 @@ public sealed class ConfigUI : IDisposable
             return;
         }
 
-        foreach (var field in GeneratedConfigMetadata.Get(node.Node).DisplayFields)
+        if (node.Node != null)
         {
-            var props = field.Display!;
-            if (Utils.TextMatch(props.Label, _searchText) || TagsMatch(props.Tags))
+            var fields = GeneratedConfigMetadata.Get(node.Node).DisplayFields;
+            var len = fields.Length;
+            for (var i = 0; i < len; ++i)
             {
-                var matchPath = new List<string>(path) { node.Name, props.Label };
-                results.Add(matchPath);
+                var field = fields[i];
+                var props = field.Display!;
+                if (Utils.TextMatch(props.Label, _searchText) || TagsMatch(props.Tags) || field.SectionStart is { Label.Length: > 0 } section && Utils.TextMatch(section.Label, _searchText))
+                {
+                    var matchPath = new List<string>(path) { node.Name, props.Label };
+                    results.Add(matchPath);
+                }
+            }
+        }
+
+        var hintCount = node.PrePullHintModules.Count;
+        for (var i = 0; i < hintCount; ++i)
+        {
+            var label = PrePullHintSettingLabel(node.PrePullHintModules[i], hintCount > 1);
+            if (Utils.TextMatch(label, _searchText))
+            {
+                results.Add([with(path), node.Name, label]);
             }
         }
 
         path.Add(node.Name);
-        foreach (var child in node.Children)
+        var children = node.Children;
+        var count = children.Count;
+        for (var i = 0; i < count; ++i)
         {
-            WalkNodesInternal(child, path, results);
+            WalkNodesInternal(children[i], path, results);
         }
         path.RemoveAt(path.Count - 1);
     }
 
     private bool TagsMatch(string[] tags)
     {
-        foreach (var tag in tags)
+        var len = tags.Length;
+        for (var i = 0; i < len; ++i)
         {
-            if (Utils.TextMatch(tag, _searchText))
+            if (Utils.TextMatch(tags[i], _searchText))
             {
                 return true;
             }
@@ -263,8 +312,12 @@ public sealed class ConfigUI : IDisposable
     public static void DrawNode(ConfigNode node, ConfigRoot root, UITree tree, WorldState ws, Func<PropertyDisplayAttribute, bool>? filter = null)
     {
         // draw standard properties
-        foreach (var field in GeneratedConfigMetadata.Get(node).DisplayFields)
+        var metadata = GeneratedConfigMetadata.Get(node);
+        var fields = metadata.DisplayFields;
+        var len = fields.Length;
+        for (var i = 0; i < len; ++i)
         {
+            var field = fields[i];
             var props = field.Display!;
 
             if (filter?.Invoke(props) == false)
@@ -272,8 +325,28 @@ public sealed class ConfigUI : IDisposable
                 continue;
             }
 
+            if (field.SectionStart is { } section)
+            {
+                if (section.Separator)
+                {
+                    ImGui.Separator();
+                }
+                if (section.Label.Length > 0)
+                {
+                    ImGui.TextUnformatted(section.Label);
+                }
+            }
+
             var value = field.Getter(node);
-            if (DrawProperty(props.Label, props.Tooltip, node, field, value, root, tree, ws))
+            var enabled = IsPropertyEnabled(node, metadata, field);
+            bool modified;
+            using (ImRaii.Disabled(!enabled))
+            {
+                modified = props.Renderer is { } rendererType
+                    ? GetPropertyRenderer(rendererType).Draw(props, false, node, value!, root, tree, ws)
+                    : DrawProperty(props.Label, props.Tooltip, node, field, value, root, tree, ws);
+            }
+            if (modified)
             {
                 node.Modified.Fire();
             }
@@ -288,22 +361,114 @@ public sealed class ConfigUI : IDisposable
         node.DrawCustom(tree, ws);
     }
 
+    private static bool IsPropertyEnabled(ConfigNode node, ConfigTypeMetadata metadata, ConfigFieldMetadata field)
+    {
+        var depends = field.Display?.Depends;
+        if (string.IsNullOrEmpty(depends))
+        {
+            return true;
+        }
+
+        return IsDependencyEnabled(node, metadata, depends, metadata.Fields.Length) ?? true;
+    }
+
+    private static bool? IsDependencyEnabled(ConfigNode node, ConfigTypeMetadata metadata, string fieldName, int remainingDepth)
+    {
+        // Invalid and circular dependencies fail open. Silently locking the setting would make an
+        // authoring mistake unnecessarily difficult to recover from.
+        if (remainingDepth <= 0 || !metadata.FieldsByName.TryGetValue(fieldName, out var dependency))
+        {
+            return null;
+        }
+
+        if (dependency.Display?.Depends is { Length: > 0 } parentDependency)
+        {
+            var parentEnabled = IsDependencyEnabled(node, metadata, parentDependency, remainingDepth - 1);
+            if (parentEnabled != true)
+            {
+                return parentEnabled;
+            }
+        }
+
+        // Dependencies are deliberately boolean for now. Nullable bool boxes as bool when it has a
+        // value; null is treated as disabled. Other field types are considered an invalid dependency.
+        return dependency.Getter(node) switch
+        {
+            bool value => value,
+            null when dependency.FieldType == typeof(bool?) => false,
+            _ => null
+        };
+    }
+
+    private static PropertyRenderer GetPropertyRenderer(Type type)
+        => _propertyRenderers.TryGetValue(type, out var renderer) ? renderer : (_propertyRenderers[type] = GeneratedFactories.CreatePropertyRenderer(type));
+
+    internal static void DrawPrePullHintSetting(BossModuleRegistry.Info info, string label = "Show pre-fight hint popup for this encounter")
+    {
+        var show = BossModuleManager.Config.ShowPrePullHintsFor(info.PrimaryActorOID);
+        if (ImGui.Checkbox($"{label}##PrePullHints{info.PrimaryActorOID:X8}", ref show))
+        {
+            BossModuleManager.Config.SetShowPrePullHintsFor(info.PrimaryActorOID, show);
+        }
+
+        if (!BossModuleManager.Config.ShowPrePullHints)
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled("(globally disabled)");
+        }
+    }
+
+    private static string PrePullHintSettingLabel(BossModuleRegistry.Info info, bool disambiguate)
+        => disambiguate ? $"Show pre-fight hint popup for {GenerateNodeName(info.ModuleType)}" : "Show pre-fight hint popup for this encounter";
+
+    private static Type ExpansionConfigType(BossModuleInfo.Expansion expansion) => expansion switch
+    {
+        BossModuleInfo.Expansion.RealmReborn => typeof(RealmReborn.RealmRebornConfig),
+        BossModuleInfo.Expansion.Heavensward => typeof(Heavensward.HeavenswardConfig),
+        BossModuleInfo.Expansion.Stormblood => typeof(Stormblood.StormbloodConfig),
+        BossModuleInfo.Expansion.Shadowbringers => typeof(Shadowbringers.ShadowbringersConfig),
+        BossModuleInfo.Expansion.Endwalker => typeof(Endwalker.EndwalkerConfig),
+        BossModuleInfo.Expansion.Dawntrail => typeof(Dawntrail.DawntrailConfig),
+        BossModuleInfo.Expansion.Global => typeof(Global.GlobalConfig),
+        _ => typeof(ModuleConfig)
+    };
+
     private static string GenerateNodeName(Type t) => t.Name.EndsWith("Config", StringComparison.Ordinal) ? t.Name[..^"Config".Length] : t.Name;
 
     private static void SortByOrder(List<UINode> nodes)
     {
-        nodes.Sort(static (a, b) => a.Order.CompareTo(b.Order));
-        foreach (var n in nodes)
+        nodes.Sort(static (a, b) =>
         {
-            SortByOrder(n.Children);
+            var order = a.Order.CompareTo(b.Order);
+            if (order != 0)
+                return order;
+
+            if (a.SupportedFightOrder.HasValue != b.SupportedFightOrder.HasValue)
+                return a.SupportedFightOrder.HasValue ? 1 : -1;
+
+            if (a.SupportedFightOrder is { } aSupported && b.SupportedFightOrder is { } bSupported)
+            {
+                var supportedOrder = aSupported.CompareTo(bSupported);
+                if (supportedOrder != 0)
+                    return supportedOrder;
+            }
+
+            return string.Compare(a.Name, b.Name, StringComparison.Ordinal);
+        });
+        var count = nodes.Count;
+        for (var i = 0; i < count; ++i)
+        {
+            SortByOrder(nodes[i].Children);
         }
     }
 
     private void DrawNodes(List<UINode> nodes)
     {
-        var filteredNodes = new List<UINode>();
-        foreach (var n in nodes)
+        var count = nodes.Count;
+        var filteredNodes = new List<UINode>(count);
+        for (var i = 0; i < count; ++i)
         {
+            var n = nodes[i];
             if (MatchesFilter(n.Path))
             {
                 filteredNodes.Add(n);
@@ -312,7 +477,21 @@ public sealed class ConfigUI : IDisposable
 
         foreach (var n in _tree.Nodes(filteredNodes, n => new(n.Name)))
         {
-            DrawNode(n.Node, _root, _tree, _ws, props => MatchesFilter([.. n.Path, props.Label]));
+            var hintCount = n.PrePullHintModules.Count;
+            for (var i = 0; i < hintCount; ++i)
+            {
+                var info = n.PrePullHintModules[i];
+                var label = PrePullHintSettingLabel(info, hintCount > 1);
+                if (MatchesFilter([.. n.Path, label]))
+                {
+                    DrawPrePullHintSetting(info, label);
+                }
+            }
+
+            if (n.Node != null)
+            {
+                DrawNode(n.Node, _root, _tree, _ws, props => MatchesFilter([.. n.Path, props.Label]));
+            }
             DrawNodes(n.Children);
         }
     }
@@ -327,8 +506,10 @@ public sealed class ConfigUI : IDisposable
         bool matchesOneFilter(List<string> filter)
         {
             var i = 0;
-            foreach (var f in filter)
+            var count = filter.Count;
+            for (var j = 0; j < count; ++j)
             {
+                var f = filter[j];
                 if (f == "*" || i >= path.Count)
                 {
                     return true;
@@ -345,9 +526,10 @@ public sealed class ConfigUI : IDisposable
             return true;
         }
 
-        foreach (var filter in _filterNodes)
+        var count = _filterNodes.Count;
+        for (var i = 0; i < count; ++i)
         {
-            if (matchesOneFilter(filter))
+            if (matchesOneFilter(_filterNodes[i]))
             {
                 return true;
             }
@@ -356,7 +538,7 @@ public sealed class ConfigUI : IDisposable
         return false;
     }
 
-    private static void DrawHelp(string tooltip)
+    public static void DrawHelp(string tooltip, bool nested = false)
     {
         // draw tooltip marker with proper alignment
         ImGui.AlignTextToFramePadding();
@@ -370,6 +552,22 @@ public sealed class ConfigUI : IDisposable
             UIMisc.IconText(Dalamud.Interface.FontAwesomeIcon.InfoCircle);
         }
         ImGui.SameLine();
+        if (nested)
+            DrawNesting();
+    }
+
+    private static void DrawNesting()
+    {
+        var sHeight = ImGui.GetFrameHeight();
+        var sBox = new Vector2(sHeight, sHeight);
+
+        var bar = "└";
+        var pos = ImGui.GetCursorScreenPos();
+        var size = ImGui.CalcTextSize(bar);
+
+        ImGui.Dummy(new(sHeight - ImGui.GetStyle().ItemInnerSpacing.X, 0));
+        ImGui.SameLine();
+        ImGui.GetWindowDrawList().AddText(pos + (sBox - size) * 0.5f, ImGui.GetColorU32(ImGuiCol.Text), bar);
     }
 
     private static bool DrawProperty(string label, string tooltip, ConfigNode node, ConfigFieldMetadata member, object? value, ConfigRoot root, UITree tree, WorldState ws) => value switch
@@ -411,7 +609,7 @@ public sealed class ConfigUI : IDisposable
     private static bool DrawProperty(string label, string tooltip, ConfigNode node, ConfigFieldMetadata member, Enum v)
     {
         DrawHelp(tooltip);
-        if (UICombo.Enum(label, ref v))
+        if (UICombo.Enum(label, member.FieldType, ref v))
         {
             member.Setter(node, v);
             return true;
@@ -505,7 +703,8 @@ public sealed class ConfigUI : IDisposable
     private static bool DrawProperty(string label, string tooltip, ConfigNode node, ConfigFieldMetadata member, Color[] v)
     {
         var modified = false;
-        for (var i = 0; i < v.Length; ++i)
+        var len = v.Length;
+        for (var i = 0; i < len; ++i)
         {
             DrawHelp(tooltip);
             var col = v[i].ToFloat4();
@@ -523,7 +722,9 @@ public sealed class ConfigUI : IDisposable
     {
         ImGui.AlignTextToFramePadding();
         if (UIMisc.IconButton(Dalamud.Interface.FontAwesomeIcon.ListUl, $"###{text}open"))
+        {
             ImGui.OpenPopup($"{text}popup");
+        }
 
         if (ImGui.BeginPopup($"{text}popup"))
         {
@@ -575,15 +776,17 @@ public sealed class ConfigUI : IDisposable
         foreach (var tn in tree.Node(label, false, v.Validate() ? Colors.TextColor1 : Colors.TextColor2))
         {
             using var indent = ImRaii.PushIndent();
-            using var table = ImRaii.Table("table", group.Names.Length + 2, ImGuiTableFlags.SizingFixedFit);
+            var names = group.Names;
+            var len = names.Length;
+            using var table = ImRaii.Table("table", len + 2, ImGuiTableFlags.SizingFixedFit);
             if (!table)
             {
                 continue;
             }
 
-            foreach (var n in group.Names)
+            for (var i = 0; i < len; ++i)
             {
-                ImGui.TableSetupColumn(n);
+                ImGui.TableSetupColumn(names[i]);
             }
 
             ImGui.TableSetupColumn("----");
@@ -626,13 +829,17 @@ public sealed class ConfigUI : IDisposable
 
     private static void DrawPropertyContextMenu(ConfigNode node, ConfigFieldMetadata member, GroupAssignment v)
     {
-        foreach (var preset in member.GroupPresets)
+        var presets = member.GroupPresets;
+        var len = presets.Length;
+        for (var i = 0; i < len; ++i)
         {
+            var preset = presets[i];
             if (ImGui.MenuItem(preset.Name))
             {
-                for (var i = 0; i < preset.Preset.Length; ++i)
+                var lenPP = preset.Preset.Length;
+                for (var j = 0; j < lenPP; ++j)
                 {
-                    v.Assignments[i] = preset.Preset[i];
+                    v.Assignments[j] = preset.Preset[j];
                 }
 
                 node.Modified.Fire();

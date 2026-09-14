@@ -12,7 +12,7 @@ public sealed class ReplayManagementConfig : ConfigNode
     [PropertyDisplay("Auto record replays on duty start/end or outdoor module start/end")]
     public bool AutoRecord = true;
 
-    [PropertyDisplay("Auto record in Duty Recorder replays")]
+    [PropertyDisplay("Auto record in Duty Recorder replays", depends: nameof(AutoRecord))]
     public bool AutoARR = false;
 
     [PropertyDisplay("Anonymize replays", tooltip: "If this option is disabled, replays will contain personally identifying information for your character and any other player you see during the recording - specifically, names and content IDs.")]

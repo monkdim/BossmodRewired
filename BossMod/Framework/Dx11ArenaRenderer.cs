@@ -1905,7 +1905,7 @@ public static unsafe partial class Dx11ArenaRenderer
 
             var miter = sum * (1f / MathF.Sqrt(sumLenSq));
             var denom = Vector2.Dot(miter, nextNormal);
-            if (MathF.Abs(denom) < 0.2f)
+            if (Math.Abs(denom) < 0.2f)
             {
                 denom = MathF.CopySign(0.2f, denom == 0f ? 1f : denom);
             }
@@ -2344,7 +2344,7 @@ public static unsafe partial class Dx11ArenaRenderer
         }
 
         EnsureBuildRunStarted();
-        var pixelScale = MathF.Max(_buildPixelScale, 1e-5f);
+        var pixelScale = Math.Max(_buildPixelScale, 1e-5f);
         var radius = (halfWidth * halfWidth + halfHeight * halfHeight) / (2f * halfHeight);
         var offset = radius - halfHeight;
         var aaPadScreen = 1.5f / pixelScale;
@@ -2751,7 +2751,7 @@ public static unsafe partial class Dx11ArenaRenderer
         var orbitcenterX = toOrbitCenter.X;
         var orbitcenterZ = toOrbitCenter.Z;
         var orbitRadiusSq = orbitcenterX * orbitcenterX + orbitcenterZ * orbitcenterZ;
-        if (!(orbitRadiusSq > 1e-12f) || MathF.Abs(angularLengthRadians) < 1e-6f)
+        if (!(orbitRadiusSq > 1e-12f) || Math.Abs(angularLengthRadians) < 1e-6f)
         {
             AppendCircleOutline(startOffset, radius, color, lineThickness, shadowColor, shadowThickness);
             return;
@@ -4843,7 +4843,7 @@ public static unsafe partial class Dx11ArenaRenderer
         var viewportPosY = _buildViewportPos.Y;
         _buildNdcOffset = new(-1f - viewportPosX * _buildNdcScale.X, 1f - viewportPosY * _buildNdcScale.Y);
         _buildCenterNdc = new(_buildCenterX * _buildNdcScale.X + _buildNdcOffset.X, _buildCenterY * _buildNdcScale.Y + _buildNdcOffset.Y);
-        _buildExtentNdcScale = new(MathF.Abs(_buildNdcScale.X), MathF.Abs(_buildNdcScale.Y));
+        _buildExtentNdcScale = new(Math.Abs(_buildNdcScale.X), Math.Abs(_buildNdcScale.Y));
         _buildLocalToNdc = new(_buildScaledCos * _buildNdcScale.X, -_buildScaledSin * _buildNdcScale.X, _buildScaledSin * _buildNdcScale.Y, _buildScaledCos * _buildNdcScale.Y);
 
         _buildClipOffset = _buildViewportPos;

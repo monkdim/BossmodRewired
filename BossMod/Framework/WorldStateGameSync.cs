@@ -531,7 +531,7 @@ sealed class WorldStateGameSync : IDisposable
                 ref var s = ref sm->Status[i];
                 if (s.StatusId != default)
                 {
-                    var dur = Math.Min(MathF.Abs(s.RemainingTime), 100000f);
+                    var dur = Math.Min(Math.Abs(s.RemainingTime), 100000f);
                     ActorStatus curStatus = new(s.StatusId, s.Param, _ws.CurrentTime.AddSeconds(dur), SanitizedObjectID(s.SourceObject));
                     UpdateActorStatus(act, i, ref curStatus);
                 }
@@ -962,6 +962,9 @@ sealed class WorldStateGameSync : IDisposable
         {
             _ws.Execute(new ClientState.OpBlueMageSpellsChange([.. actionManager->BlueMageActions]));
         }
+        if (!MemoryExtensions.SequenceEqual(_ws.Client.BeastmasterBeasts.AsSpan(), actionManager->BeastmasterPets))
+            _ws.Execute(new ClientState.OpBeastmasterBeastsChanged(actionManager->BeastmasterPets.ToArray()));
+
         var levels = uiState->PlayerState.ClassJobLevels;
         if (!MemoryExtensions.SequenceEqual(_ws.Client.ClassJobLevels.AsSpan(), levels))
         {

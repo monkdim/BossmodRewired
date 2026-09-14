@@ -37,9 +37,12 @@ public static class UIMisc
         }
         return res;
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool Button(string label, bool disabled, string reason, float width = default) => Button(label, width, (disabled, reason));
 
     // button that is disabled unless shift is held, useful for 'dangerous' operations like deletion
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool DangerousButton(string label, float width = default) => Button(label, !ImGui.IsKeyDown(ImGuiKey.ModShift), "Hold shift", width);
 
     public static void TextUnderlined(Vector4 colour, string text)
@@ -83,13 +86,16 @@ public static class UIMisc
         }
         else
         {
-            return ImGui.Button("", size);
+            return ImGui.Button($"##ImageToggle_{text}", size);
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool IconButton(FontAwesomeIcon icon, string id) => IconButtonRaw($"{icon.ToIconString()}##{id}");
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool IconButton(FontAwesomeIcon icon) => IconButtonRaw(icon.ToIconString());
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     static bool IconButtonRaw(string text)
     {
         using (ImRaii.PushFont(Service.IconFont))
@@ -135,6 +141,7 @@ public static class UIMisc
         return button;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void IconText(FontAwesomeIcon icon)
     {
         using var scope = ImRaii.PushFont(Service.IconFont);
@@ -151,6 +158,7 @@ public static class UIMisc
             ImGui.TextUnformatted(helpText());
         }
     }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void HelpMarker(string helpText, FontAwesomeIcon icon = FontAwesomeIcon.InfoCircle) => HelpMarker(() => helpText, icon);
 
     /// <summary>
@@ -175,6 +183,7 @@ public static class UIMisc
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     static Vector2 Rotate(Vector2 vec, float rad)
     {
         return new WDir(vec).Rotate(new Angle(rad)).ToVec2();

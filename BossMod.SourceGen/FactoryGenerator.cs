@@ -11,6 +11,7 @@ public sealed class FactoryGenerator : IIncrementalGenerator
     private const string Category = "BossMod.SourceGen";
     private const int ChunkSize = 128;
     private const string RendererMetadataName = "BossMod.Autorotation.IStrategyRenderer";
+    private const string PropertyRendererMetadataName = "BossMod.PropertyRenderer";
     private const string UnmanagedRotationMetadataName = "BossMod.QuestBattle.UnmanagedRotation";
     private const string RotationWrapperMetadataName = "BossMod.QuestBattle.RotationModule`1";
     private const string BossModuleMetadataName = "BossMod.BossModule";
@@ -51,21 +52,25 @@ public sealed class FactoryGenerator : IIncrementalGenerator
         {
             result |= 1 << 0;
         }
-        if (compilation.GetTypeByMetadataName(UnmanagedRotationMetadataName) == null)
+        if (compilation.GetTypeByMetadataName(PropertyRendererMetadataName) == null)
         {
             result |= 1 << 1;
         }
-        if (compilation.GetTypeByMetadataName(RotationWrapperMetadataName) == null)
+        if (compilation.GetTypeByMetadataName(UnmanagedRotationMetadataName) == null)
         {
             result |= 1 << 2;
         }
-        if (compilation.GetTypeByMetadataName(BossModuleMetadataName) == null)
+        if (compilation.GetTypeByMetadataName(RotationWrapperMetadataName) == null)
         {
             result |= 1 << 3;
         }
-        if (compilation.GetTypeByMetadataName(WorldStateMetadataName) == null)
+        if (compilation.GetTypeByMetadataName(BossModuleMetadataName) == null)
         {
             result |= 1 << 4;
+        }
+        if (compilation.GetTypeByMetadataName(WorldStateMetadataName) == null)
+        {
+            result |= 1 << 5;
         }
         return result;
     }
@@ -78,17 +83,21 @@ public sealed class FactoryGenerator : IIncrementalGenerator
         }
         if ((missing & (1 << 1)) != 0)
         {
-            context.ReportDiagnostic(Diagnostic.Create(MissingSymbol, Location.None, UnmanagedRotationMetadataName));
+            context.ReportDiagnostic(Diagnostic.Create(MissingSymbol, Location.None, PropertyRendererMetadataName));
         }
         if ((missing & (1 << 2)) != 0)
         {
-            context.ReportDiagnostic(Diagnostic.Create(MissingSymbol, Location.None, RotationWrapperMetadataName));
+            context.ReportDiagnostic(Diagnostic.Create(MissingSymbol, Location.None, UnmanagedRotationMetadataName));
         }
         if ((missing & (1 << 3)) != 0)
         {
-            context.ReportDiagnostic(Diagnostic.Create(MissingSymbol, Location.None, BossModuleMetadataName));
+            context.ReportDiagnostic(Diagnostic.Create(MissingSymbol, Location.None, RotationWrapperMetadataName));
         }
         if ((missing & (1 << 4)) != 0)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(MissingSymbol, Location.None, BossModuleMetadataName));
+        }
+        if ((missing & (1 << 5)) != 0)
         {
             context.ReportDiagnostic(Diagnostic.Create(MissingSymbol, Location.None, WorldStateMetadataName));
         }
@@ -126,6 +135,23 @@ public sealed class FactoryGenerator : IIncrementalGenerator
         }
         SourceGenUtilities.SortTypesByName(renderers);
 
+        var propertyRenderers = new List<INamedTypeSymbol>(Math.Min(count, 16));
+        for (var i = 0; i < count; ++i)
+        {
+            var type = allTypes[i];
+            if (type.TypeKind != TypeKind.Class || type.IsAbstract || !SourceGenUtilities.InheritsFrom(type, PropertyRendererMetadataName))
+            {
+                continue;
+            }
+            if (!SourceGenUtilities.CanEmitClosedType(type) || !SourceGenUtilities.HasConstructor(type))
+            {
+                Report(context, type, "property renderer", "the type or its parameterless constructor is not accessible");
+                continue;
+            }
+            propertyRenderers.Add(type);
+        }
+        SourceGenUtilities.SortTypesByName(propertyRenderers);
+
         var rotations = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
         for (var i = 0; i < count; ++i)
         {
@@ -160,13 +186,13 @@ public sealed class FactoryGenerator : IIncrementalGenerator
         }
         rotationModels.Sort(static (left, right) => StringComparer.Ordinal.Compare(left.TypeName, right.TypeName));
 
-        context.AddSource("GeneratedFactories.g.cs", SourceText.From(Render(knownTypes, renderers, rotationModels), Encoding.UTF8));
+        context.AddSource("GeneratedFactories.g.cs", SourceText.From(Render(knownTypes, renderers, propertyRenderers, rotationModels), Encoding.UTF8));
     }
 
     // Extension declarations are named-type symbols, but cannot legally appear in a typeof expression (for example extension(Clockspot)).
     private static bool CanEmitTypeOf(INamedTypeSymbol type) => !type.IsImplicitlyDeclared && !type.IsExtension && SourceGenUtilities.CanEmitClosedType(type);
 
-    private static string Render(IReadOnlyList<INamedTypeSymbol> knownTypes, IReadOnlyList<INamedTypeSymbol> renderers, IReadOnlyList<RotationModel> rotations)
+    private static string Render(IReadOnlyList<INamedTypeSymbol> knownTypes, IReadOnlyList<INamedTypeSymbol> renderers, IReadOnlyList<INamedTypeSymbol> propertyRenderers, IReadOnlyList<RotationModel> rotations)
     {
         var countK = knownTypes.Count;
         var sb = new StringBuilder(Math.Max(1024, countK * 112));
@@ -182,6 +208,22 @@ public sealed class FactoryGenerator : IIncrementalGenerator
         for (var i = 0; i < countR; ++i)
         {
             var typeName = SourceGenUtilities.TypeName(renderers[i]);
+            sb.Append("        if (type == typeof(").Append(typeName).AppendLine("))");
+            sb.AppendLine("        {");
+            sb.Append("            renderer = new ").Append(typeName).AppendLine("();");
+            sb.AppendLine("            return true;");
+            sb.AppendLine("        }");
+        }
+        sb.AppendLine("        renderer = null!;");
+        sb.AppendLine("        return false;");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        sb.AppendLine("    internal static partial bool TryCreatePropertyRenderer(global::System.Type type, out global::BossMod.PropertyRenderer renderer)");
+        sb.AppendLine("    {");
+        var countPR = propertyRenderers.Count;
+        for (var i = 0; i < countPR; ++i)
+        {
+            var typeName = SourceGenUtilities.TypeName(propertyRenderers[i]);
             sb.Append("        if (type == typeof(").Append(typeName).AppendLine("))");
             sb.AppendLine("        {");
             sb.Append("            renderer = new ").Append(typeName).AppendLine("();");

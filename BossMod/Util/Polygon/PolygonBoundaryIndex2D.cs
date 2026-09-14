@@ -1961,7 +1961,7 @@ internal sealed unsafe class PolygonBoundaryIndex2D : IDisposable
         {
             var px = minX + (x + 0.5f) * stepX;
             var distanceSq = DistanceSqToBoundaryAtKnownRow(px, pz, indexRow);
-            var distance = MathF.Sqrt(MathF.Max(0f, distanceSq));
+            var distance = MathF.Sqrt(Math.Max(0f, distanceSq));
             destination[dstRow + x] = ContainsAtKnownRow(px, pz, indexRow) ? -distance : distance;
         }
     }
@@ -3563,7 +3563,7 @@ internal sealed unsafe class PolygonBoundaryIndex2D : IDisposable
     public PolygonShapeRelation ClassifyDonutSector(in WDir center, float innerRadius, float outerRadius, Angle angleStart, Angle angleEnd)
     {
         var angularLength = angleEnd - angleStart;
-        var halfAngle = 0.5f * MathF.Abs(angularLength.Rad);
+        var halfAngle = 0.5f * Math.Abs(angularLength.Rad);
         var forward = (angleStart + angularLength * 0.5f).ToDirection();
         return ClassifyDonutSector(center, forward, innerRadius, outerRadius, new(halfAngle));
     }

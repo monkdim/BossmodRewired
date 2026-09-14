@@ -26,9 +26,15 @@ public abstract class GenericGaze(BossModule module, uint aid = default) : CastC
     }
 
     public abstract ReadOnlySpan<Eye> ActiveEyes(int slot, Actor actor);
+    public bool EnableHints = true;
+    public bool DrawEyeRange = true;
 
     public override void AddHints(int slot, Actor actor, TextHints hints)
     {
+        if (!EnableHints)
+        {
+            return;
+        }
         var eyes = ActiveEyes(slot, actor);
         var len = eyes.Length;
         for (var i = 0; i < len; ++i)
@@ -45,6 +51,10 @@ public abstract class GenericGaze(BossModule module, uint aid = default) : CastC
 
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
+        if (!EnableHints)
+        {
+            return;
+        }
         var eyes = ActiveEyes(slot, actor);
         var len = eyes.Length;
         if (len == 0)
@@ -57,8 +67,7 @@ public abstract class GenericGaze(BossModule module, uint aid = default) : CastC
         {
             ref readonly var eye = ref eyes[i];
             var eyepos = eye.Position;
-            if (pos.InCircle(eyepos, eye.Range)
-                && ArenaProjectionLayerApplies(actor, eye.ArenaProjectionLayer, eye.RestrictToArenaProjectionLayer))
+            if (pos.InCircle(eyepos, eye.Range) && ArenaProjectionLayerApplies(actor, eye.ArenaProjectionLayer, eye.RestrictToArenaProjectionLayer))
             {
                 var inv = eye.Inverted;
                 var direction = inv ? Angle.FromDirection(pos - eyepos) - eye.Forward : Angle.FromDirection(eyepos - pos) - eye.Forward;
@@ -83,15 +92,21 @@ public abstract class GenericGaze(BossModule module, uint aid = default) : CastC
         for (var i = 0; i < len; ++i)
         {
             ref readonly var eye = ref eyes[i];
+            var range = eye.Range;
+            var eyePos = eye.Position;
+            if (DrawEyeRange && range < 100f && pcpos.InCircle(eyePos, range * 1.2f)) // draw eye with 20% extra distance for safety
+            {
+                continue;
+            }
             var participantApplies = ArenaProjectionLayerParticipantApplies(pc, eye.ArenaProjectionLayer, eye.RestrictToArenaProjectionLayer);
             var inverted = eye.Inverted;
             var danger = participantApplies && HitByEye(pc, eye) != inverted;
             using (Arena.WorldProjectionLayer(eye.ArenaProjectionLayer, eye.RestrictToArenaProjectionLayer))
             {
-                Arena.DrawEye(eye.EyeCenter ?? IndicatorWorldPos(eye.Position), danger, inverted);
+                Arena.DrawEye(eye.EyeCenter ?? IndicatorWorldPos(eyePos), danger, inverted);
             }
 
-            if (participantApplies && pc.Position.InCircle(eye.Position, eye.Range))
+            if (participantApplies)
             {
                 // The eye belongs to its authored mechanic layer, but this facing indicator belongs
                 // to the participant. For unrestricted gazes those can be different physical floors.

@@ -187,6 +187,14 @@ public sealed class RotationModuleManager : IDisposable
         _ => null
     };
 
+    public IEnumerable<Actor> ResolvePartyMembers(StrategyTarget strategy, int param) => strategy switch
+    {
+        StrategyTarget.Self or StrategyTarget.PartyByAssignment or StrategyTarget.PartyWithLowestHP => ResolveTargetOverride(strategy, param) is { } tar ? [tar] : [],
+        StrategyTarget.PartyByFilter => FilteredPartyMembers((StrategyPartyFiltering)param),
+        StrategyTarget.Automatic => WorldState.Party.WithoutSlot(),
+        _ => []
+    };
+
     public WPos ResolveTargetLocation(StrategyTarget strategy, int param, float off1, float off2) => strategy switch
     {
         StrategyTarget.PointAbsolute => new(off1, off2),
@@ -306,6 +314,35 @@ public sealed class RotationModuleManager : IDisposable
             }
         }
         return best;
+    }
+
+    private IEnumerable<Actor> FilteredPartyMembers(StrategyPartyFiltering filter)
+    {
+        var fullMask = new BitMask(~0ul);
+        var allowedMask = fullMask;
+        if ((filter & StrategyPartyFiltering.IncludeSelf) == 0)
+            allowedMask.Clear(PlayerSlot);
+        if ((filter & StrategyPartyFiltering.ExcludeNoPredictedDamage) != 0)
+        {
+            var predictedDamage = Hints.PredictedDamage.Aggregate(default(BitMask), (s, p) => s | p.Players);
+            allowedMask &= predictedDamage;
+        }
+
+        if (allowedMask.None())
+            return [];
+        var players = allowedMask != fullMask ? WorldState.Party.WithSlot().IncludedInMask(allowedMask).Actors() : WorldState.Party.WithoutSlot();
+        if ((filter & (StrategyPartyFiltering.ExcludeTanks | StrategyPartyFiltering.ExcludeHealers | StrategyPartyFiltering.ExcludeMelee | StrategyPartyFiltering.ExcludeRanged)) != StrategyPartyFiltering.None)
+        {
+            players = players.Where(p => p.Role switch
+            {
+                Role.Tank => !filter.HasFlag(StrategyPartyFiltering.ExcludeTanks),
+                Role.Healer => !filter.HasFlag(StrategyPartyFiltering.ExcludeHealers),
+                Role.Melee => !filter.HasFlag(StrategyPartyFiltering.ExcludeMelee),
+                Role.Ranged => !filter.HasFlag(StrategyPartyFiltering.ExcludeRanged),
+                _ => true,
+            });
+        }
+        return players;
     }
 
     private Plan? CalculateExpectedPlan()

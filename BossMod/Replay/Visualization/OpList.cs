@@ -258,6 +258,7 @@ sealed class OpList(Replay replay, Replay.Encounter? enc, BossModuleRegistry.Inf
         ClientState.OpBozjaHolsterChange op => $"Player bozja holster change: {GetOpBozjaHolsterChangeString(op.Contents)}",
         ClientState.OpPlayerStatsChange op => $"Player stats: sks={op.Value.SkillSpeed}, sps={op.Value.SpellSpeed}, haste={op.Value.Haste}",
         ClientState.OpBlueMageSpellsChange op => $"Player BLU spellbook: {GetOpBlueMageSpellsChangeString(op.Values)}",
+        ClientState.OpBeastmasterBeastsChanged op => $"Player BST horns: {GetOpBeastmasterBeastsChangedString(op.Values)}",
         ClientState.OpClassJobLevelsChange op => $"Player levels: {string.Join(", ", op.Values)}",
         ClientState.OpActiveFateChange op => $"FATE: {op.Value.ID} '{Service.LuminaRow<Lumina.Excel.Sheets.Fate>(op.Value.ID)?.Name}' {op.Value.Progress}%",
         ClientState.OpActivePetChange op => $"Player pet: {ActorString(op.Value.InstanceID, op.Timestamp)}",
@@ -271,6 +272,21 @@ sealed class OpList(Replay replay, Replay.Encounter? enc, BossModuleRegistry.Inf
         WaymarkState.OpSignChange op => op.Target == 0 ? $"Sign: {op.ID} cleared" : $"Sign: {op.ID} on {ActorString(op.Target, op.Timestamp)}",
         _ => DumpOp(o)
     };
+
+    private static string GetOpBeastmasterBeastsChangedString(byte[] values)
+    {
+        var count = values.Length;
+        var str = new string[count];
+
+        for (var i = 0; i < count; ++i)
+        {
+            var xbmPet = Service.LuminaRow<Lumina.Excel.Sheets.XBMPet>(values[i]);
+            var petID = (uint)(xbmPet?.Unknown4 ?? 0);
+            str[i] = Service.LuminaRow<Lumina.Excel.Sheets.Pet>(petID)?.Name.ToString() ?? "<unknown>";
+        }
+
+        return string.Join(", ", str);
+    }
 
     private static string GetOpBlueMageSpellsChangeString(uint[] contents)
     {
