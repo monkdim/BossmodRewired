@@ -192,19 +192,13 @@ sealed class ArcaneRevelation(BossModule module) : Components.GenericAOEs(module
     }
 }
 
-[ModuleInfo(BossModuleInfo.Maturity.WIP, PrimaryActorOID = (uint)OID.TwoHeadedAevis, Contributors = "gynorhino", Category = BossModuleInfo.Category.Foray,
-    GroupType = BossModuleInfo.GroupType.TheForkedTowerMagicExtreme, GroupID = 1114u, NameID = 14490u, SortOrder = 1, PlanLevel = 100)]
+[ModuleInfo(BossModuleInfo.Maturity.WIP, PrimaryActorOID = (uint)OID.GreenHead, Contributors = "gynorhino", GroupType = BossModuleInfo.GroupType.TheForkedTowerMagicExtreme, GroupID = 1114u, NameID = 14490u, SortOrder = 1, PlanLevel = 100)]
 public sealed class FTME1TwoHeadedAevis(WorldState ws, Actor primary) : BossModule(ws, primary, new(-900f, 700f), new ArenaBoundsSquare(20f))
 {
-    private Actor? _greenHead;
     private Actor? _blueHead;
     private Actor? _green1;
     private Actor? _blue1;
 
-    public Actor? GreenHead()
-    {
-        return _greenHead;
-    }
     public Actor? BlueHead()
     {
         return _blueHead;
@@ -218,9 +212,8 @@ public sealed class FTME1TwoHeadedAevis(WorldState ws, Actor primary) : BossModu
         return _blue1;
     }
 
-    protected override void UpdateModule()
+    protected override void UpdatePreModuleActivation()
     {
-        _greenHead ??= GetActor((uint)OID.GreenHead);
         _blueHead ??= GetActor((uint)OID.BlueHead);
         _green1 ??= GetActor((uint)OID.GreenHead1);
         _blue1 ??= GetActor((uint)OID.BlueHead1);
@@ -228,7 +221,7 @@ public sealed class FTME1TwoHeadedAevis(WorldState ws, Actor primary) : BossModu
 
     protected override void DrawEnemies(int pcSlot, Actor pc)
     {
-        Arena.Actor(_greenHead);
+        Arena.Actor(PrimaryActor);
         Arena.Actor(_blueHead);
     }
 

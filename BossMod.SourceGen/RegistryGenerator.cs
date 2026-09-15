@@ -308,6 +308,23 @@ public sealed partial class RegistryGenerator : IIncrementalGenerator
     private static bool InheritsFrom(INamedTypeSymbol type, string expectedBaseMetadataName)
         => SourceGenUtilities.InheritsFrom(type, expectedBaseMetadataName);
 
+    private static bool HasPrePullHints(INamedTypeSymbol type)
+    {
+        for (var current = type; current is not null && !SourceGenUtilities.HasMetadataName(current, BossModuleMetadataName); current = current.BaseType)
+        {
+            var members = current.GetMembers("PrePullHints");
+            var len = members.Length;
+            for (var i = 0; i < len; ++i)
+            {
+                if (members[i] is IPropertySymbol { IsOverride: true })
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private static bool IsAssignableTo(INamedTypeSymbol source, string destinationMetadataName)
     {
         if (SourceGenUtilities.HasMetadataName(source, destinationMetadataName))

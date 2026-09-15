@@ -1681,7 +1681,7 @@ public static class Clipper
 
     private static void RDP(ReadOnlySpan<PointD> path, int begin, int end, double epsSqrd, Span<bool> flags)
     {
-        var stackLength = checked(path.Length * 2);
+        var stackLength = path.Length * 2;
         if (path.Length <= ArrayPoolThreshold)
         {
             Span<int> stack = stackalloc int[stackLength];
@@ -2012,7 +2012,7 @@ public static class Clipper
         }
 
         var epsSqr = Sqr(epsilon);
-        var linkCount = checked(len * 2);
+        var linkCount = len * 2;
         if (len <= ArrayPoolThreshold)
         {
             Span<double> dsq = stackalloc double[len];

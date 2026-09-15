@@ -57,7 +57,6 @@ public static class BossModuleInfo
         GoldSaucer,
         HallOfTheNovice,
         Quantum,
-        Advanced,
         CrucibleOfTheUnbroken,
         Count
     }

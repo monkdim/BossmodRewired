@@ -47,7 +47,7 @@ sealed class UnbowedSpirit(BossModule module) : Components.GenericAOEs(module)
             if (puddles.Count == 0)
             {
                 var offset = actor.Position - Arena.Center;
-                circular = MathF.Abs(offset.X % 10f) > 1f || MathF.Abs(offset.Z % 10f) > 1f;
+                circular = Math.Abs(offset.X % 10f) > 1f || Math.Abs(offset.Z % 10f) > 1f;
             }
 
             puddles.Add(actor);

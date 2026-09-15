@@ -18,6 +18,11 @@ internal static partial class GeneratedFactories
     internal static Autorotation.IStrategyRenderer CreateStrategyRenderer(Type type)
         => TryCreateStrategyRenderer(type, out var renderer) ? renderer : throw new ArgumentException($"No generated strategy renderer factory for {type.FullName}");
 
+    internal static partial bool TryCreatePropertyRenderer(Type type, out PropertyRenderer renderer);
+
+    internal static PropertyRenderer CreatePropertyRenderer(Type type)
+        => TryCreatePropertyRenderer(type, out var renderer) ? renderer : throw new ArgumentException($"No generated property renderer factory for {type.FullName}");
+
     internal static partial R CreateUnmanagedRotation<R>(BossModule module) where R : QuestBattle.UnmanagedRotation;
 
     public static Type? FindType(string name)

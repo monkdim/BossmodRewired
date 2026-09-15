@@ -37,7 +37,7 @@ public static class UIStrategyValue
         var targetDetails = value.Target switch
         {
             StrategyTarget.PartyByAssignment => ((PartyRolesConfig.Assignment)value.TargetParam).ToString(),
-            StrategyTarget.PartyWithLowestHP => PreviewParam((StrategyPartyFiltering)value.TargetParam),
+            StrategyTarget.PartyWithLowestHP or StrategyTarget.PartyByFilter => PreviewParam((StrategyPartyFiltering)value.TargetParam),
             StrategyTarget.EnemyWithHighestPriority => $"{(StrategyEnemySelection)value.TargetParam}",
             StrategyTarget.EnemyByOID => $"{(moduleInfo?.ObjectIDType != null ? GeneratedEnumMetadata.ValueByRaw(moduleInfo.ObjectIDType, (uint)value.TargetParam).ToString() : "???")} (0x{value.TargetParam:X})",
             StrategyTarget.PointWaymark => $"{(Waymark)value.TargetParam}",
@@ -172,6 +172,7 @@ public static class UIStrategyValue
                 modified |= DrawEditorTargetParamCombo<PartyRolesConfig.Assignment>(ref value.TargetParam, "Assignment");
                 break;
             case StrategyTarget.PartyWithLowestHP:
+            case StrategyTarget.PartyByFilter:
                 if ((supportedTargets & ActionTargets.Self) != 0)
                 {
                     modified |= DrawEditorTargetParamFlags(ref value.TargetParam, StrategyPartyFiltering.IncludeSelf, "Allow self", false);
@@ -189,7 +190,7 @@ public static class UIStrategyValue
                 if (moduleInfo?.ObjectIDType != null)
                 {
                     var v = GeneratedEnumMetadata.ValueByRaw(moduleInfo.ObjectIDType, (uint)value.TargetParam);
-                    if (UICombo.Enum("OID", ref v))
+                    if (UICombo.Enum("OID", moduleInfo.ObjectIDType, ref v))
                     {
                         value.TargetParam = (int)(uint)(object)v;
                         modified = true;
@@ -247,7 +248,7 @@ public static class UIStrategyValue
             + excludeIfSet(StrategyPartyFiltering.ExcludeNoPredictedDamage, "players not expecting damage");
     }
 
-    private static bool DrawEditorTargetParamCombo<E>(ref int current, string text) where E : Enum
+    private static bool DrawEditorTargetParamCombo<E>(ref int current, string text) where E : struct, Enum
     {
         var value = (E)(object)current;
         if (!UICombo.Enum(text, ref value))
@@ -317,7 +318,7 @@ public class TrackRenderer : IStrategyRenderer
     {
         string print(int ix) => config.Options[ix].DisplayName.Length > 0
             ? config.Options[ix].DisplayName
-            : UICombo.EnumString((Enum)GeneratedEnumMetadata.Values(config.OptionEnum).GetValue(ix)!);
+            : UICombo.EnumString(config.OptionEnum, (Enum)GeneratedEnumMetadata.Values(config.OptionEnum).GetValue(ix)!);
         bool filter(int ix) => (config.Options[ix].Context & context) != StrategyContext.None;
 
         return UICombo.EnumIndex(

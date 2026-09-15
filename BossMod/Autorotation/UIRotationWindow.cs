@@ -85,7 +85,7 @@ public sealed class UIRotationWindow : UIWindow
                 {
                     ImGui.SameLine();
                     using var style = ImRaii.PushColor(ImGuiCol.Text, Colors.TextColor2);
-                    UIMisc.HelpMarker(() => "You have a preset activated, which fully overrides the CD plan!", FontAwesomeIcon.ExclamationTriangle);
+                    UIMisc.HelpMarker(static () => "You have a preset activated, which fully overrides the CD plan!", FontAwesomeIcon.ExclamationTriangle);
                 }
             }
         }

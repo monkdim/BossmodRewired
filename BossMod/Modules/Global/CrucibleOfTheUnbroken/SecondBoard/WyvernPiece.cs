@@ -3,11 +3,11 @@
 public enum OID : uint
 {
     WyvernPiece = 0x4C58,
-    Helper = 0x233C,
     WindSprite = 0x4C5B, // R1.600, x0 (spawn during fight)
     WhirlwindSmall = 0x4C59, // R2.000, x0 (spawn during fight), mixed types
     WhirlwindBig = 0x4C5A, // R3.000, x0 (spawn during fight)
     LiquidHellPuddle = 0x1EA66D, // R0.500, x0 (spawn during fight), EventObj type
+    Helper = 0x233C
 }
 
 public enum AID : uint
@@ -24,6 +24,12 @@ public enum AID : uint
     StormTrailBoss = 48176, // WyvernPiece->self, 5.0+1.0s cast, single-target
     StormTrailBoss1 = 48177, // WyvernPiece->self, 5.0+1.0s cast, single-target
     StormTrail = 48178, // Helper->self, 6.0s cast, range 25 60.000-degree cone
+}
+
+public enum SID : uint
+{
+    Burns = 3065, // none->player, extra=0x0
+    Burns1 = 3066, // none->player, extra=0x0
 }
 
 //sealed class TheStormsGrip(BossModule module) : Components.RaidwideCast(module, (uint)AID.TheStormsGrip); // TODO confirm this is not a raidwide
@@ -90,11 +96,5 @@ sealed class WyvernPieceStates : StateMachineBuilder
     }
 }
 
-[ModuleInfo(BossModuleInfo.Maturity.WIP,
-    PrimaryActorOID = (uint)OID.WyvernPiece,
-    Contributors = "Equilius",
-    GroupType = BossModuleInfo.GroupType.CrucibleOfTheUnbroken,
-    GroupID = 1089u,
-    NameID = 14549u,
-    SortOrder = 2)]
+[ModuleInfo(BossModuleInfo.Maturity.WIP, PrimaryActorOID = (uint)OID.WyvernPiece, Contributors = "Equilius", GroupType = BossModuleInfo.GroupType.CrucibleOfTheUnbroken, GroupID = 1089u, NameID = 14549u, SortOrder = 2)]
 public sealed class WyvernPiece(WorldState ws, Actor primary) : BossModule(ws, primary, new(520f, 0f), new ArenaBoundsRect(20f, 14.8f));

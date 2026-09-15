@@ -155,10 +155,5 @@ sealed class DarkCurrent(BossModule module) : Components.GenericAOEs(module)
     }
 }
 
-[ModuleInfo(BossModuleInfo.Maturity.WIP, PrimaryActorOID = (uint)OID.Necrophobia, Contributors = "gynorhino",
-    Category = BossModuleInfo.Category.Foray, GroupType = BossModuleInfo.GroupType.TheForkedTowerMagicExtreme,
-    GroupID = 1114u, NameID = 14503u, SortOrder = 3, PlanLevel = 100)]
-public sealed class FTME3Necrophobia(WorldState ws, Actor primary) : BossModule(ws, primary, new(100f, 800f), new ArenaBoundsCircle(24f))
-{
-    protected override bool CheckPull() => base.CheckPull() && Raid.Player()!.Position.InCircle(Arena.Center, 24f);
-}
+[ModuleInfo(BossModuleInfo.Maturity.WIP, PrimaryActorOID = (uint)OID.Necrophobia, Contributors = "gynorhino", GroupType = BossModuleInfo.GroupType.TheForkedTowerMagicExtreme, GroupID = 1114u, NameID = 14503u, SortOrder = 3, PlanLevel = 100)]
+public sealed class FTME3Necrophobia(WorldState ws, Actor primary) : BossModule(ws, primary, new(100f, 800f), new ArenaBoundsCircle(24f));

@@ -3,6 +3,7 @@ using Dalamud.Interface;
 using Dalamud.Interface.Colors;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
+using System.Text.Json.Serialization;
 
 namespace BossMod;
 
@@ -407,17 +408,23 @@ public class PartyRolesConfig : ConfigNode
         {
             if (table)
             {
-                var assignments = (Assignment[])typeof(Assignment).GeneratedEnumValues();
+                var type = typeof(Assignment);
+                var assignments = (Assignment[])type.GeneratedEnumValues();
                 var len = assignments.Length;
+                var style = ImGui.GetStyle();
+                var stylepadding = style.CellPadding.X * 2f + style.FramePadding.X * 2f;
+                var names = type.GeneratedEnumNames();
                 for (var i = 0; i < len; ++i)
                 {
-                    ImGui.TableSetupColumn(assignments[i].ToString(), ImGuiTableColumnFlags.WidthFixed, 25f);
+                    var name = names[i];
+                    var size = ImGui.CalcTextSize(name).X + stylepadding;
+                    ImGui.TableSetupColumn(name, ImGuiTableColumnFlags.WidthFixed, size);
                 }
 
                 ImGui.TableSetupColumn("Name");
                 ImGui.TableHeadersRow();
 
-                List<(ulong cid, string name, char role, Assignment assignment)> party = [];
+                List<(ulong cid, string name, char role, Assignment assignment)> party = [with(PartyState.MaxPartySize)];
                 for (var i = 0; i < PartyState.MaxPartySize; ++i)
                 {
                     ref var m = ref ws.Party.Members[i];
@@ -468,5 +475,13 @@ public class PartyRolesConfig : ConfigNode
             using var color = ImRaii.PushColor(ImGuiCol.Text, Colors.TextColor4);
             ImGui.TextUnformatted("All good!");
         }
+
+        if (ImGui.Button("Clear all assignments"))
+        {
+            Assignments.Clear();
+            Modified.Fire();
+        }
+        ImGui.SameLine();
+        ImGui.TextUnformatted("Clears all assignments, for example to debloat config file size.");
     }
 }

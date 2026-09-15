@@ -196,7 +196,7 @@ public sealed class FTMN1TwoHeadedAevis(WorldState ws, Actor primary) : BossModu
         return _blueHead;
     }
 
-    protected override void UpdateModule()
+    protected override void UpdatePreModuleActivation()
     {
         _blueHead ??= GetActor((uint)OID.BlueHead);
     }

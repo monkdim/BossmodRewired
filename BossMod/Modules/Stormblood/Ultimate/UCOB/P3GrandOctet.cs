@@ -21,28 +21,34 @@ sealed class P3GrandOctet(BossModule module) : Components.GenericAOEs(module)
     public override void AddHints(int slot, Actor actor, TextHints hints)
     {
         if (_baitOrder[slot] >= NextBaitOrder)
+        {
             hints.Add($"Bait {_baitOrder[slot]}", false);
+        }
         base.AddHints(slot, actor, hints);
     }
 
     public override void AddGlobalHints(Actor actor, GlobalHints hints)
     {
         if (_diveOrder != 0)
+        {
             hints.Add($"Move {(_diveOrder < 0 ? "CW" : "CCW")}");
+        }
     }
 
     public override void DrawArenaForeground(int pcSlot, Actor pc)
     {
         // draw safespot
         if (NumCasts == 0 && AOEs.Count <= 1 && _initialSafespot != default)
+        {
             Arena.ZoneCircleOutline(_initialSafespot, 1f, Colors.Safe);
+        }
 
         // draw bait
         var order = _baitOrder[pcSlot];
         if (order >= NextBaitOrder && order <= Casters.Count)
         {
             var source = Casters[order - 1];
-            Arena.Actor(source, Colors.Object, true);
+            Arena.Actor(source, Colors.Object, true, true);
             BaitShape(order).Outline(Arena, source.Position, Angle.FromDirection(pc.Position - source.Position));
         }
     }
@@ -89,7 +95,9 @@ sealed class P3GrandOctet(BossModule module) : Components.GenericAOEs(module)
     {
         var slot = Raid.FindSlot(actor.InstanceID);
         if (slot < 0)
+        {
             return;
+        }
 
         switch (iconID)
         {
@@ -167,7 +175,9 @@ sealed class P3GrandOctet(BossModule module) : Components.GenericAOEs(module)
         // safespot is opposite of bahamut; if nael is there - adjusted 45 degrees
         var dirToSafespot = dirToBaha + 180f.Degrees();
         if (dirToSafespot.AlmostEqual(dirToNael, 0.1f))
+        {
             dirToSafespot += _diveOrder * 45f.Degrees();
+        }
         _initialSafespot = center + 20f * dirToSafespot.ToDirection();
     }
 
@@ -175,7 +185,9 @@ sealed class P3GrandOctet(BossModule module) : Components.GenericAOEs(module)
     {
         var ccwDist = (direction - reference).Normalized().Deg;
         if (ccwDist < -5f)
+        {
             ccwDist += 360f;
+        }
         return ccwDist;
     }
 

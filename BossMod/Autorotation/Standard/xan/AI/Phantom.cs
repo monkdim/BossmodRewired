@@ -3,7 +3,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Gauge;
 
 namespace BossMod.Autorotation.xan;
 
-public sealed class PhantomAI(RotationModuleManager manager, Actor player) : AIBase<PhantomAI.Strategy>(manager, player)
+public class PhantomAI(RotationModuleManager manager, Actor player) : AIBase<PhantomAI.Strategy>(manager, player)
 {
     public struct Strategy
     {
@@ -21,6 +21,9 @@ public sealed class PhantomAI(RotationModuleManager manager, Actor player) : AIB
 
         [Track("Samurai: Use Iainuki on best AOE target", Action = PhantomID.Iainuki)]
         public Track<EnabledByDefault> Samurai;
+
+        [Track("Samurai: Use Zeninage during buffs", Action = PhantomID.Zeninage)]
+        public Track<DisabledByDefault> Zeninage;
 
         [Track("Bard: Use Aria/Rime in combat", Actions = [PhantomID.OffensiveAria, PhantomID.HerosRime])]
         public Track<EnabledByDefault> Bard;
@@ -137,13 +140,13 @@ public sealed class PhantomAI(RotationModuleManager manager, Actor player) : AIB
     }
 
     public static readonly uint[] UndeadMobs = [
-        13921u, // caoineag
-        13922u, // crescent ghost
-        13923u, // crescent geshunpest
-        13924u, // crescent armor
-        13925u, // crescent troubadour
-        13926u, // crescent gourmand
-        13927u, // crescent dullahan
+        13921, // caoineag
+        13922, // crescent ghost
+        13923, // crescent geshunpest
+        13924, // crescent armor
+        13925, // crescent troubadour
+        13926, // crescent gourmand
+        13927, // crescent dullahan
     ];
 
     public static readonly uint[] UndesirableStatus = [
@@ -209,7 +212,7 @@ public sealed class PhantomAI(RotationModuleManager manager, Actor player) : AIB
         PRdm(strategy, primaryTarget);
 
         if (DesiredRange < float.MaxValue && primaryTarget != null)
-            Hints.GoalZones.Add(AIHints.GoalSingleTarget(primaryTarget, DesiredRange, 1f));
+            Hints.GoalZones.Add(Hints.GoalSingleTarget(primaryTarget, Player, World.Actors, DesiredRange, 1));
     }
 
     private void PRdm(Strategy strategy, Actor? primaryTarget)
@@ -321,7 +324,8 @@ public sealed class PhantomAI(RotationModuleManager manager, Actor player) : AIB
     {
         if (strategy.Dragoon.IsEnabled() && primaryTarget?.IsAlly == false)
         {
-            UseAction(PhantomID.OccultJump, primaryTarget, PGCDPriority);
+            if (!MidCombo)
+                UseAction(PhantomID.OccultJump, primaryTarget, PGCDPriority);
             UseAction(PhantomID.Lance, primaryTarget, ActionQueue.Priority.High);
         }
     }
@@ -442,8 +446,7 @@ public sealed class PhantomAI(RotationModuleManager manager, Actor player) : AIB
             {
                 continue;
             }
-
-            var cnt = Hints.NumPriorityTargetsInAOECircle(tar.Actor.Position, 5);
+            var cnt = Hints.NumPriorityTargetsInAOECircle(tar.Actor.Position, 5f);
             if (cnt > bestCount)
             {
                 bestTarget = tar.Actor;
@@ -508,6 +511,9 @@ public sealed class PhantomAI(RotationModuleManager manager, Actor player) : AIB
 
     void PSam(in Strategy strategy, Actor? primaryTarget)
     {
+        if (strategy.Zeninage.IsEnabled() && primaryTarget?.IsAlly == false && !MidCombo && (Bossmods.RaidCooldowns.DamageBuffLeft(Player, primaryTarget) > GCD || Bossmods.RaidCooldowns.NextDamageBuffIn2() == null))
+            UseAction(PhantomID.Zeninage, primaryTarget, strategy.Zeninage.Priority(PGCDPriority));
+
         if (strategy.Samurai.IsEnabled() && primaryTarget?.IsAlly == false && !MidCombo)
         {
             var prio = strategy.Samurai.Priority(PGCDPriority);
@@ -583,7 +589,7 @@ public sealed class PhantomAI(RotationModuleManager manager, Actor player) : AIB
     {
         var deadline = World.Client.AnimationLock;
 
-        foreach (ref var sid in Player.Statuses.AsSpan())
+        foreach (var sid in Player.Statuses)
         {
             if (sid.ExpireAt < World.FutureTime(deadline))
                 continue;
@@ -635,7 +641,7 @@ public sealed class PhantomAI(RotationModuleManager manager, Actor player) : AIB
         if (cd < GCD + 0.05f)
         {
             if (ActionDefinitions.Instance[action] is { } def && def.Range > 0)
-                DesiredRange = MathF.Min(DesiredRange, def.Range);
+                DesiredRange = Math.Min(DesiredRange, def.Range);
 
             Hints.ActionsToExecute.Push(action, target, prio, castTime: castTime);
             return true;
@@ -646,6 +652,7 @@ public sealed class PhantomAI(RotationModuleManager manager, Actor player) : AIB
     public static readonly uint[] BreakableComboStatus = [
         (uint)BossMod.NIN.SID.Mudra,
         (uint)BossMod.NIN.SID.TenChiJin,
+        (uint)BossMod.NIN.SID.RaijuReady,
         //(uint)BossMod.RDM.SID.Dualcast,
         (uint)BossMod.DRG.SID.DraconianFire,
         (uint)BossMod.RPR.SID.SoulReaver,

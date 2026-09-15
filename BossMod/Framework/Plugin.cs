@@ -51,6 +51,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
     private ConfigUI _configUI = null!; // TODO: should be a proper window!
     private BossModuleMainWindow _wndBossmod = null!;
     private BossModuleHintsWindow _wndBossmodHints = null!;
+    private BossModulePrePullHintsWindow _wndBossmodPrePullHints = null!;
     private ZoneModuleWindow _wndZone = null!;
     private Timelines.TimelineTracker _timelines = null!;
     private SetupWizard _wndSetup = null!;
@@ -169,6 +170,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
         _wndBossmod = new(_bossmod, _zonemod);
         Service.BossModWindow = _wndBossmod;
         _wndBossmodHints = new(_bossmod, _zonemod);
+        _wndBossmodPrePullHints = new(_bossmod);
         _wndZone = new(_zonemod);
         _wndTimers = new(_ws, _bossmod, _timelines);
         _divergence = new(_ws, _bossmod);
@@ -222,6 +224,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
         _wndTimers.Dispose();
         _timelines.Dispose();
         _wndZone.Dispose();
+        _wndBossmodPrePullHints.Dispose();
         _wndBossmodHints.Dispose();
         _wndBossmod.Dispose();
         _configUI.Dispose();

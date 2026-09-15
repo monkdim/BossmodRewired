@@ -8,6 +8,8 @@ sealed class P5AhkMorn(BossModule module) : Components.CastSharedTankbuster(modu
     public override void OnEventCast(Actor caster, ActorCastEvent spell)
     {
         if (spell.Action.ID is (uint)AID.AkhMorn or (uint)AID.AkhMornAOE)
+        {
             ++NumCasts;
+        }
     }
 }

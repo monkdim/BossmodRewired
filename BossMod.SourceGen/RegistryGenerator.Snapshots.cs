@@ -173,6 +173,7 @@ public sealed partial class RegistryGenerator
                 source.Append("            ").Append(TypeOfSnapshot(module.TetherIdTypeName)).AppendLine(",");
                 source.Append("            ").Append(TypeOfSnapshot(module.IconIdTypeName)).AppendLine(",");
                 source.Append("            ").Append(UIntLiteral(module.PrimaryActorOid)).AppendLine(",");
+                source.Append("            ").Append(module.HasPrePullHints ? "true" : "false").AppendLine(",");
                 source.Append("            static (worldState, primaryActor) => new ").Append(module.ModuleTypeName).AppendLine("(worldState, primaryActor),");
                 source.Append("            static module => new ").Append(module.StatesTypeName).Append("((").Append(module.ModuleTypeName).AppendLine(")module).Build(),");
                 source.Append("            (global::BossMod.BossModuleInfo.Maturity)").Append(module.Maturity.ToString(CultureInfo.InvariantCulture)).AppendLine(",");
@@ -735,7 +736,7 @@ public sealed partial class RegistryGenerator
                         primary = EnumUInt32Value(oid, "Boss") ?? 0u;
                     }
                     long? maturity = attribute is not null && attribute.ConstructorArguments.Length > 0 ? Int64Value(attribute.ConstructorArguments[0], 0L) : null;
-                    boss = new BossCandidateSnapshot(typeName, TypeName(states), NameOrNull(cfg), NameOrNull(oid), NameOrNull(aid), NameOrNull(sid), NameOrNull(tid), NameOrNull(iid), primary, maturity,
+                    boss = new BossCandidateSnapshot(typeName, TypeName(states), NameOrNull(cfg), NameOrNull(oid), NameOrNull(aid), NameOrNull(sid), NameOrNull(tid), NameOrNull(iid), primary, HasPrePullHints(type), maturity,
                         NamedString(attribute, "Contributors", string.Empty), TryNamedInt64(attribute, "Expansion"), TryNamedInt64(attribute, "Category"), TryNamedInt64(attribute, "GroupType"),
                         NamedUInt32(attribute, "GroupID", 0u), NamedUInt32(attribute, "NameID", 0u), NamedInt32(attribute, "SortOrder", 0), NamedInt32(attribute, "PlanLevel", 0), type.Name, type.ContainingNamespace.ToDisplayString(), rloc);
                 }
@@ -903,7 +904,7 @@ public sealed partial class RegistryGenerator
         public override int GetHashCode() => StringComparer.Ordinal.GetHashCode(Fingerprint);
     }
 
-    private sealed class BossCandidateSnapshot(string module, string states, string? config, string? oid, string? aid, string? sid, string? tid, string? iid, uint primary, long? maturity, string contributors, long? expansion, long? category, long? groupType, uint groupId, uint nameId, int sortOrder, int planLevel, string simpleName, string ns, in RegistryLocation loc)
+    private sealed class BossCandidateSnapshot(string module, string states, string? config, string? oid, string? aid, string? sid, string? tid, string? iid, uint primary, bool hasPrePullHints, long? maturity, string contributors, long? expansion, long? category, long? groupType, uint groupId, uint nameId, int sortOrder, int planLevel, string simpleName, string ns, in RegistryLocation loc)
     {
         public readonly string ModuleTypeName = module;
         public readonly string StatesTypeName = states;
@@ -914,6 +915,7 @@ public sealed partial class RegistryGenerator
         public readonly string? TetherIdTypeName = tid;
         public readonly string? IconIdTypeName = iid;
         public readonly uint PrimaryActorOid = primary;
+        public readonly bool HasPrePullHints = hasPrePullHints;
         public readonly long? Maturity = maturity;
         public readonly string Contributors = contributors;
         public readonly long? Expansion = expansion;
@@ -926,7 +928,7 @@ public sealed partial class RegistryGenerator
         private readonly string SimpleName = simpleName;
         private readonly string NamespaceName = ns;
         private readonly RegistryLocation Location = loc;
-        public string Fingerprint => $"{ModuleTypeName}|{StatesTypeName}|{ConfigTypeName}|{ObjectIdTypeName}|{ActionIdTypeName}|{StatusIdTypeName}|{TetherIdTypeName}|{IconIdTypeName}|{PrimaryActorOid}|{Maturity}|{Contributors}|{Expansion}|{Category}|{GroupType}|{GroupId}|{NameId}|{SortOrder}|{PlanLevel}";
+        public string Fingerprint => $"{ModuleTypeName}|{StatesTypeName}|{ConfigTypeName}|{ObjectIdTypeName}|{ActionIdTypeName}|{StatusIdTypeName}|{TetherIdTypeName}|{IconIdTypeName}|{PrimaryActorOid}|{HasPrePullHints}|{Maturity}|{Contributors}|{Expansion}|{Category}|{GroupType}|{GroupId}|{NameId}|{SortOrder}|{PlanLevel}";
         public BossSnapshot Resolve(RegistryFrameworkState fw)
         {
             var maturity = Maturity ?? fw.MaturityWip;
@@ -957,11 +959,11 @@ public sealed partial class RegistryGenerator
             {
                 sort = (int)PrimaryActorOid;
             }
-            return new BossSnapshot(ModuleTypeName, StatesTypeName, ConfigTypeName, ObjectIdTypeName, ActionIdTypeName, StatusIdTypeName, TetherIdTypeName, IconIdTypeName, PrimaryActorOid, maturity, Contributors, expansion, category, GroupType ?? fw.GroupNone, GroupId, NameId, sort, PlanLevel, NamespaceName, Location, ef, cf);
+            return new BossSnapshot(ModuleTypeName, StatesTypeName, ConfigTypeName, ObjectIdTypeName, ActionIdTypeName, StatusIdTypeName, TetherIdTypeName, IconIdTypeName, PrimaryActorOid, HasPrePullHints, maturity, Contributors, expansion, category, GroupType ?? fw.GroupNone, GroupId, NameId, sort, PlanLevel, NamespaceName, Location, ef, cf);
         }
     }
 
-    private sealed class BossSnapshot(string module, string states, string? config, string? oid, string? aid, string? sid, string? tid, string? iid, uint primary, long maturity, string contributors, long expansion, long category, long groupType, uint groupId, uint nameId, int sortOrder, int planLevel, string ns, in RegistryLocation loc, bool ef, bool cf)
+    private sealed class BossSnapshot(string module, string states, string? config, string? oid, string? aid, string? sid, string? tid, string? iid, uint primary, bool hasPrePullHints, long maturity, string contributors, long expansion, long category, long groupType, uint groupId, uint nameId, int sortOrder, int planLevel, string ns, in RegistryLocation loc, bool ef, bool cf)
     {
         public readonly string ModuleTypeName = module;
         public readonly string StatesTypeName = states;
@@ -972,6 +974,7 @@ public sealed partial class RegistryGenerator
         public readonly string? TetherIdTypeName = tid;
         public readonly string? IconIdTypeName = iid;
         public readonly uint PrimaryActorOid = primary;
+        public readonly bool HasPrePullHints = hasPrePullHints;
         public readonly long Maturity = maturity;
         public readonly string Contributors = contributors;
         public readonly long Expansion = expansion;

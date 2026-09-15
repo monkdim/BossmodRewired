@@ -1,7 +1,7 @@
 namespace BossMod;
 
 internal sealed class ConfigFieldMetadata(string name, Type fieldType, bool serializable, Func<ConfigNode, object?> getter,
-    Action<ConfigNode, object?> setter, PropertyDisplayAttribute? display, PropertyComboAttribute? combo,
+    Action<ConfigNode, object?> setter, SectionStartAttribute? sectionStart, PropertyDisplayAttribute? display, PropertyComboAttribute? combo,
     PropertySliderAttribute? slider, PropertyStringOrderAttribute? stringOrder, GroupDetailsAttribute? group, GroupPresetAttribute[] groupPresets)
 {
     public readonly string Name = name;
@@ -9,6 +9,7 @@ internal sealed class ConfigFieldMetadata(string name, Type fieldType, bool seri
     public readonly bool Serializable = serializable;
     public readonly Func<ConfigNode, object?> Getter = getter;
     public readonly Action<ConfigNode, object?> Setter = setter;
+    public readonly SectionStartAttribute? SectionStart = sectionStart;
     public readonly PropertyDisplayAttribute? Display = display;
     public readonly PropertyComboAttribute? Combo = combo;
     public readonly PropertySliderAttribute? Slider = slider;

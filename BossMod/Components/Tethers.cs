@@ -8,7 +8,7 @@ public class TankbusterTether(BossModule module, uint aid, uint tetherID, AOESha
     public TankbusterTether(BossModule module, uint aid, uint tetherID, float radius, double activationDelay = default, int? arenaProjectionLayer = null, bool? restrictToArenaProjectionLayer = false) : this(module, aid, tetherID, new AOEShapeCircle(radius), activationDelay, true, arenaProjectionLayer, restrictToArenaProjectionLayer) { }
     public readonly uint TID = tetherID;
     public readonly AOEShape Shape = shape;
-    private readonly List<(Actor Player, Actor Enemy)> _tethers = [];
+    protected readonly List<(Actor Player, Actor Enemy)> _tethers = [];
     protected BitMask _tetheredPlayers;
     private BitMask _inAnyAOE; // players hit by aoe, excluding selves
     protected DateTime activation;

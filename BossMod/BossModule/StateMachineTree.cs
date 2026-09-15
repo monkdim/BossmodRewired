@@ -69,25 +69,28 @@ public sealed class StateMachineTree
 
             List<Node> nodes = [with(64), StartingNode];
             var n = StartingNode;
+            var branchid = StartingNode.BranchID + branchOffset;
             while (n.Successors.Count > 0)
             {
                 var successors = n.Successors;
                 var count = successors.Count;
                 var nextIndex = -1;
+
                 for (var i = 0; i < count; ++i)
                 {
-                    if (n.BranchID > StartingNode.BranchID + branchOffset)
+                    if (successors[i].BranchID > branchid)
                     {
                         nextIndex = i;
                         break;
                     }
                 }
+
                 if (nextIndex == -1)
                 {
-                    nextIndex = n.Successors.Count;
+                    nextIndex = count;
                 }
 
-                n = n.Successors[nextIndex - 1];
+                n = successors[nextIndex - 1];
                 nodes.Add(n);
             }
             return nodes;
