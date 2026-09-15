@@ -170,7 +170,7 @@ sealed class MaelstromBaitSafeSpots(BossModule module) : BossComponent(module)
             WPos spot = default;
 
             // WEST
-            if (MathF.Abs(dx) > MathF.Abs(dy) && dx < 0f)
+            if (Math.Abs(dx) > Math.Abs(dy) && dx < 0f)
             {
                 if (role == PartyRolesConfig.Assignment.H1)
                     spot = Offset(pos, (-135f).Degrees());
@@ -178,7 +178,7 @@ sealed class MaelstromBaitSafeSpots(BossModule module) : BossComponent(module)
                     spot = Offset(pos, (-45f).Degrees());
             }
             // EAST
-            else if (MathF.Abs(dx) > MathF.Abs(dy) && dx > 0f)
+            else if (Math.Abs(dx) > Math.Abs(dy) && dx > 0f)
             {
                 if (role == PartyRolesConfig.Assignment.R2)
                     spot = Offset(pos, 135f.Degrees());

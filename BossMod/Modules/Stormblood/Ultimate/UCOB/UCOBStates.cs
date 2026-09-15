@@ -12,15 +12,20 @@ sealed class UCOBStates : StateMachineBuilder
         SimplePhase(0u, Phase1Twintania1, "P1: Twintania pre neurolink 1 (100%-74%)")
             .ActivateOnEnter<Hatch>()
             .ActivateOnEnter<P1Twister>()
-            .Raw.Update = () => Module.PrimaryActor.IsDestroyed || Module.FindComponent<Hatch>()?.NumNeurolinkSpawns > 0;
+            .Raw.Update = () => Module.FindComponent<Hatch>()?.NumNeurolinkSpawns > 0;
         SimplePhase(1u, Phase1Twintania2, "P1: Twintania pre neurolink 2 (74%-44%)")
             .ActivateOnEnter<P1LiquidHell>()
-            .Raw.Update = () => Module.PrimaryActor.IsDestroyed || Module.FindComponent<Hatch>()?.NumNeurolinkSpawns > 1;
+            .Raw.Update = () => Module.FindComponent<Hatch>()?.NumNeurolinkSpawns > 1;
         SimplePhase(2u, Phase1Twintania3, "P1: Twintania pre neurolink 3 (44%-0%)")
-            .Raw.Update = () => Module.PrimaryActor.IsDestroyed || !Module.PrimaryActor.IsTargetable;
+            .OnEnter(() => module.FindComponent<Hatch>()?.Twister = false)
+            .Raw.Update = () => !Module.PrimaryActor.IsTargetable;
         SimplePhase(3u, Phase2, "P2: Nael")
-            .Raw.Update = () => Module.PrimaryActor.IsDestroyed || _module.Nael() is var nael && nael != null && !nael.IsTargetable && nael.HPMP.CurHP <= 1 && Module.FindComponent<P2BlockTransition>() == null;
+            .ActivateOnEnter<P2HugNael>()
+            .SetHint(StateMachine.PhaseHint.StartWithDowntime)
+            .Raw.Update = () => Module.PrimaryActor.IsDestroyed || _module.Nael() is var nael && nael != null && !nael.IsTargetable && nael.HPMP.CurHP <= 1u && Module.FindComponent<P2BlockTransition>() == null;
         SimplePhase(4u, Phase34, "P3-4: Bahamut + Adds")
+            .SetHint(StateMachine.PhaseHint.StartWithDowntime)
+            .ActivateOnEnter<P3BahamutPositioning>()
             .DeactivateOnExit<Hatch>()
             .Raw.Update = () => Module.PrimaryActor.IsDestroyed || Module.PrimaryActor.IsDead && _module.Nael() is var nael && nael != null && nael.IsDead;
         SimplePhase(5u, Phase5, "P5: Golden Bahamut")
@@ -66,7 +71,7 @@ sealed class UCOBStates : StateMachineBuilder
         P1Generate(id + 0x10000u, 1.2f);
         P1LiquidHellFireball(id + 0x20000u, 3.3f);
         P1DeathSentence(id + 0x30000u, 5.1f);
-        P1Plummet(id + 0x40000u, 3.2f);
+        P1Plummet(id + 0x40000u, 3.2f, true);
         P1GenerateTwister(id + 0x50000u, 4.1f);
         P1Plummet(id + 0x60000u, 4.9f);
         // repeat
@@ -142,10 +147,15 @@ sealed class UCOBStates : StateMachineBuilder
         P5Enrage(id + 0xE0000u, 2.1f);
     }
 
-    private void P1Plummet(uint id, float delay)
+    private void P1Plummet(uint id, float delay, bool soak = false)
     {
         ComponentCondition<P1Plummet>(id, delay, static comp => comp.NumCasts > 0, "Cleave")
             .ActivateOnEnter<P1Plummet>()
+            .ExecOnEnter<P1Plummet>(comp =>
+            {
+                comp.NextExpected = Module.WorldState.FutureTime(delay);
+                comp.Soak = soak;
+            })
             .DeactivateOnExit<P1Plummet>();
     }
 
@@ -166,9 +176,12 @@ sealed class UCOBStates : StateMachineBuilder
     private void P1Twister(uint id, float delay, bool withFireball = false)
     {
         ActorCastStart(id, _module.Twintania, AID.Twister, delay, true)
-            .ActivateOnEnter<P1Fireball>(withFireball); // icon appears ~0.1s before cast start
+            .ActivateOnEnter<P1Fireball>(withFireball) // icon appears ~0.1s before cast start
+            .ExecOnEnter<P1Fireball>(static comp => comp.EnableHints = false, withFireball);
         ActorCastEnd(id + 1u, _module.Twintania, 2f, true);
-        ComponentCondition<P1Twister>(id + 2u, 0.3f, static comp => comp.Active, "Twisters");
+        ComponentCondition<P1Twister>(id + 2u, 0.3f, static comp => comp.Active, "Twisters")
+            .ExecOnExit<P1Fireball>(static comp => comp.EnableHints = true, withFireball)
+            .ExecOnEnter<Hatch>(static comp => comp.Twister = false);
     }
 
     private void P1TwisterFireball(uint id, float delay)
@@ -181,11 +194,13 @@ sealed class UCOBStates : StateMachineBuilder
     {
         ComponentCondition<P1LiquidHell>(id, delay, static comp => comp.NumCasts >= 1, "Puddle 1")
             .ActivateOnEnter<P1Fireball>(withFireball)
-            .ExecOnEnter<P1LiquidHell>(static comp => comp.Reset());
+            .ExecOnEnter<P1Fireball>(static comp => comp.EnableHints = false, withFireball)
+            .ExecOnEnter<P1LiquidHell>(comp => comp.Reset(delay, withFireball ? Ultimate.UCOB.P1LiquidHell.BaitMode.Random : Ultimate.UCOB.P1LiquidHell.BaitMode.Proximity));
         ComponentCondition<P1LiquidHell>(id + 1u, 1.2f, static comp => comp.NumCasts >= 2);
         ComponentCondition<P1LiquidHell>(id + 2u, 1.2f, static comp => comp.NumCasts >= 3);
         ComponentCondition<P1LiquidHell>(id + 3u, 1.2f, static comp => comp.NumCasts >= 4);
-        ComponentCondition<P1LiquidHell>(id + 4u, 1.2f, static comp => comp.NumCasts >= 5, "Puddle 5");
+        ComponentCondition<P1LiquidHell>(id + 4u, 1.2f, static comp => comp.NumCasts >= 5, "Puddle 5")
+            .ExecOnExit<P1Fireball>(static comp => comp.EnableHints = true, withFireball);
     }
 
     private void P1LiquidHellFireball(uint id, float delay)
@@ -194,14 +209,15 @@ sealed class UCOBStates : StateMachineBuilder
         P1FireballResolve(id + 0x10u, 2.2f);
     }
 
-    private void P1Generate(uint id, float delay)
+    private State P1Generate(uint id, float delay)
     {
-        ActorCast(id, _module.Twintania, AID.Generate, delay, 3f, true, "Hatch"); // icon appears ~0.1s before cast start
+        return ActorCast(id, _module.Twintania, AID.Generate, delay, 3f, true, "Hatch"); // icon appears ~0.1s before cast start
     }
 
     private void P1GenerateTwister(uint id, float delay)
     {
-        P1Generate(id, delay);
+        P1Generate(id, delay)
+            .ExecOnEnter<Hatch>(static comp => comp.Twister = true);
         P1Twister(id + 0x10u, 1.1f);
     }
 
@@ -226,8 +242,10 @@ sealed class UCOBStates : StateMachineBuilder
         ComponentCondition<P2Heavensfall>(id, delay, static comp => comp.NumCasts > 0, "Knockback")
             .ExecOnEnter<Hatch>(static comp => comp.Active = false)
             .ExecOnEnter<Hatch>(static comp => comp.Reset())
+            .ExecOnEnter<P1LiquidHell>(static comp => comp.Reset(0d, Ultimate.UCOB.P1LiquidHell.BaitMode.None))
             .ActivateOnEnter<P2HeavensfallDalamudDive>() // activate asap until twintania untargets current tank
             .ActivateOnEnter<P2Heavensfall>()
+            .ExecOnEnter<P2Heavensfall>(comp => comp.Activation = Module.WorldState.FutureTime(delay))
             .ActivateOnEnter<P2HeavensfallPillar>()
             .DeactivateOnExit<P2Heavensfall>()
             .DeactivateOnExit<P1Twister>()
@@ -263,7 +281,8 @@ sealed class UCOBStates : StateMachineBuilder
         ActorCast(id, _module.Nael, AID.BahamutsFavor, delay, 3f, true);
         ComponentCondition<P2BahamutsFavorChainLightning>(id + 0x10u, 8f, static comp => comp.ActiveOrSkipped())
             .ActivateOnEnter<Quote>()
-            .ActivateOnEnter<P2BahamutsFavorChainLightning>();
+            .ActivateOnEnter<P2BahamutsFavorChainLightning>()
+            .ExecOnEnter<P2BahamutsFavorChainLightning>(static comp => comp.FirstSet = true);
         ComponentCondition<Quote>(id + 0x11u, 0.1f, static comp => comp.PendingMechanics.Count > 0); // first quote
         // +1.9s: iceball 1
         // +3.9s: iceball 2
@@ -297,6 +316,7 @@ sealed class UCOBStates : StateMachineBuilder
         // +0.8s: bahamut's claw 2
         ComponentCondition<P2BahamutsFavorFireball>(id + 0x132u, 1.6f, static comp => comp.Target != null)
             .ActivateOnEnter<P2BahamutsFavorFireball>()
+            .ExecOnEnter<P2BahamutsFavorFireball>(static comp => comp.FireOut = true)
             .ExecOnExit<P2BahamutsFavorFireball>(static comp => comp.Show()); // show hint immediately
         // +0.2s: bahamut's claw 3
         // +0.4s: iceball 7
@@ -306,9 +326,11 @@ sealed class UCOBStates : StateMachineBuilder
         // +0.6s: iceball 8
 
         ComponentCondition<P2BahamutsFavorChainLightning>(id + 0x200u, 2.5f, static comp => comp.ActiveOrSkipped())
-            .ActivateOnEnter<P2BahamutsFavorChainLightning>();
+            .ActivateOnEnter<P2BahamutsFavorChainLightning>()
+            .ExecOnEnter<P2BahamutsFavorChainLightning>(static comp => comp.EnableHints = false);
         ComponentCondition<P2BahamutsFavorFireball>(id + 0x210u, 1.0f, static comp => !comp.Active, "Fireball 2")
-            .DeactivateOnExit<P2BahamutsFavorFireball>();
+            .DeactivateOnExit<P2BahamutsFavorFireball>()
+            .ExecOnExit<P2BahamutsFavorChainLightning>(static comp => comp.EnableHints = true);
         ComponentCondition<Quote>(id + 0x220u, 2.3f, static comp => comp.PendingMechanics.Count > 0) // second quote
             .ActivateOnEnter<Quote>();
         ComponentCondition<P2BahamutsFavorChainLightning>(id + 0x230u, 1.8f, static comp => !comp.Active, "Lightning spread", checkDelay: 1.7f) // lighting target can die early, which would trigger premature transition
@@ -362,9 +384,11 @@ sealed class UCOBStates : StateMachineBuilder
             .DeactivateOnExit<Quote>();
         // +0.9s: iceball 16
         ComponentCondition<P2BahamutsFavorChainLightning>(id + 0x530u, 1.4f, static comp => comp.ActiveOrSkipped())
-            .ActivateOnEnter<P2BahamutsFavorChainLightning>();
+            .ActivateOnEnter<P2BahamutsFavorChainLightning>()
+            .ExecOnEnter<P2BahamutsFavorChainLightning>(static comp => comp.EnableHints = false);
         ComponentCondition<P2BahamutsFavorFireball>(id + 0x540u, 2.1f, static comp => !comp.Active, "Fireball 4")
-            .DeactivateOnExit<P2BahamutsFavorFireball>();
+            .DeactivateOnExit<P2BahamutsFavorFireball>()
+            .ExecOnExit<P2BahamutsFavorChainLightning>(static comp => comp.EnableHints = true);
 
         ComponentCondition<P2BahamutsFavorWingsOfSalvation>(id + 0x600u, 0.2f, static comp => comp.Casters.Count > 0) // wings of salvation 1 bait
             .ActivateOnEnter<P2BahamutsFavorWingsOfSalvation>();
@@ -394,11 +418,14 @@ sealed class UCOBStates : StateMachineBuilder
     {
         ComponentCondition<Quote>(id, delay, static comp => comp.PendingMechanics.Count > 0) // fourth quote
             .ActivateOnEnter<Quote>()
-            .ActivateOnEnter<P2Cauterize>(); // first icon appears together with quote
+            .ActivateOnEnter<P2Cauterize>() // first icon appears together with quote
+            .ExecOnExit<Quote>(comp => comp.NextActivation = Module.WorldState.FutureTime(14.3d));
         ComponentCondition<P2Cauterize>(id + 1u, 4f, static comp => comp.NumBaitsAssigned >= 2)
             .ActivateOnEnter<P2Hypernova>()
             .ActivateOnEnter<QuoteDalamudDive>()
-            .ActivateOnEnter<QuoteMeteorStream>();
+            .ActivateOnEnter<QuoteMeteorStream>()
+            .ExecOnEnter<QuoteDalamudDive>(static comp => comp.EnableHints = false)
+            .ExecOnEnter<QuoteMeteorStream>(static comp => comp.EnableHints = false);
         ComponentCondition<P2Hypernova>(id + 2u, 1.2f, static comp => comp.NumCasts >= 1);
         ComponentCondition<P2Hypernova>(id + 3u, 1.6f, static comp => comp.NumCasts >= 2);
         ComponentCondition<P2Cauterize>(id + 0x10u, 0.6f, static comp => comp.Casters.Count + comp.NumCasts >= 2, "Divebomb bait 1")
@@ -406,9 +433,12 @@ sealed class UCOBStates : StateMachineBuilder
         ComponentCondition<P2Cauterize>(id + 0x11u, 0.6f, static comp => comp.NumBaitsAssigned >= 3);
         ComponentCondition<P2Hypernova>(id + 0x12u, 0.4f, static comp => comp.NumCasts >= 3);
         ComponentCondition<P2Hypernova>(id + 0x13u, 1.6f, static comp => comp.NumCasts >= 4);
-        ComponentCondition<P2Cauterize>(id + 0x20u, 1.4f, static comp => comp.Casters.Count + comp.NumCasts >= 3, "Divebomb bait 2");
+        ComponentCondition<P2Cauterize>(id + 0x20u, 1.4f, static comp => comp.Casters.Count + comp.NumCasts >= 3, "Divebomb bait 2")
+            .ExecOnExit<QuoteDalamudDive>(static comp => comp.EnableHints = true)
+            .ExecOnExit<QuoteMeteorStream>(static comp => comp.EnableHints = true);
         ComponentCondition<Quote>(id + 0x30u, 3.3f, static comp => comp.PendingMechanics.Count == 1, "Spread/tankbuster")
-            .DeactivateOnExit<QuoteMeteorStream>();
+            .DeactivateOnExit<QuoteMeteorStream>()
+            .ExecOnExit<Quote>(comp => comp.NextActivation = Module.WorldState.FutureTime(2.3d));
         ComponentCondition<P2Cauterize>(id + 0x40u, 0.7f, static comp => comp.Casters.Count + comp.NumCasts >= 5, "Divebomb bait 3")
             .ActivateOnEnter<QuoteThermionicBeam>();
         ComponentCondition<Quote>(id + 0x50u, 1.6f, static comp => comp.PendingMechanics.Count == 0, "Tankbuster/stack", 2)
@@ -442,7 +472,13 @@ sealed class UCOBStates : StateMachineBuilder
     {
         ComponentCondition<P3SeventhUmbralEra>(id, delay, static comp => comp.NumCasts > 0, "Knockback")
             .ExecOnEnter<Hatch>(static comp => comp.Active = false)
+            .ExecOnEnter<P3BahamutPositioning>(comp =>
+            {
+                comp.DesiredPosition = Module.Arena.Center;
+                comp.DesiredRotation = 180f.Degrees();
+            })
             .ActivateOnEnter<P3SeventhUmbralEra>()
+            .ActivateOnEnter<P3BahamutMoon>()
             .DeactivateOnExit<P3SeventhUmbralEra>();
         ComponentCondition<P3CalamitousFlame>(id + 0x10u, 3f, static comp => comp.NumCasts > 0)
             .ActivateOnEnter<P3CalamitousFlame>()
@@ -458,13 +494,15 @@ sealed class UCOBStates : StateMachineBuilder
             .SetHint(StateMachine.StateHint.Raidwide);
         ActorTargetable(id + 0x100u, _module.BahamutPrime, true, 3.0f, "Boss appears")
             .ExecOnEnter<Hatch>(static comp => comp.Active = true)
-            .SetHint(StateMachine.StateHint.DowntimeEnd);
+            .SetHint(StateMachine.StateHint.DowntimeEnd)
+            .DeactivateOnExit<P3BahamutMoon>();
     }
 
     private State P3FlareBreath(uint id, float delay)
     {
         return ComponentCondition<P3FlareBreath>(id, delay, static comp => comp.NumCasts > 0, "Cleave")
             .ActivateOnEnter<P3FlareBreath>()
+            .ExecOnEnter<P3FlareBreath>(comp => comp.NextExpected = Module.WorldState.FutureTime(delay))
             .DeactivateOnExit<P3FlareBreath>()
             .SetHint(StateMachine.StateHint.Tankbuster);
     }
@@ -492,27 +530,32 @@ sealed class UCOBStates : StateMachineBuilder
 
         ComponentCondition<P3MegaflareDive>(id + 0x30u, 1.1f, static comp => comp.Casters.Count > 0)
             .ActivateOnEnter<P3MegaflareDive>();
-        ComponentCondition<P3MegaflareDive>(id + 0x31u, 4f, static comp => comp.NumCasts > 0, "Dives")
+        ComponentCondition<P3MegaflareDive>(id + 0x31u, 4, static comp => comp.NumCasts > 0, "Dives")
+            .ActivateOnEnter<P3Twister>()
             .ActivateOnEnter<P3TwistingDive>()
             .ActivateOnEnter<P3LunarDive>()
             .DeactivateOnExit<P3TwistingDive>()
             .DeactivateOnExit<P3LunarDive>()
-            .DeactivateOnExit<P3MegaflareDive>()
-            .DeactivateOnExit<P3QuickmarchTrio>();
-        ComponentCondition<P3Twister>(id + 0x40u, 1.3f, static comp => comp.Active, "Twisters")
-            .ActivateOnEnter<P3Twister>();
+            .DeactivateOnExit<P3MegaflareDive>();
+        ComponentCondition<P3Twister>(id + 0x40u, 1.3f, static comp => comp.Active, "Twisters");
 
         ComponentCondition<P3MegaflarePuddle>(id + 0x50u, 1.8f, static comp => comp.Casters.Count > 0)
             .ActivateOnEnter<P3MegaflareSpreadStack>() // stack icons appear ~0.1s before puddles start
-            .ActivateOnEnter<P3MegaflarePuddle>();
-        ComponentCondition<P3MegaflareSpreadStack>(id + 0x51u, 1f, static comp => comp.Spreads.Count == 0, "Spread");
+            .ActivateOnEnter<P3MegaflarePuddle>()
+            .ExecOnEnter<P3MegaflarePuddle>(static comp => comp.Risky = false);
+        ComponentCondition<P3MegaflareSpreadStack>(id + 0x51u, 1, static comp => comp.Spreads.Count == 0, "Spread")
+            .ExecOnExit<P3MegaflarePuddle>(static comp => comp.Risky = true);
         ActorTargetable(id + 0x52u, _module.BahamutPrime, true, 1.2f, "Boss reappears")
+            .ExecOnEnter<P3MegaflarePuddle>(static comp => comp.Risky = true)
+            .ExecOnEnter<P3QuickmarchTrio>(static comp => comp.PuddleDodgeHint = true)
             .ExecOnEnter<Hatch>(static comp => comp.Active = true)
             .ActivateOnEnter<P3EarthShaker>() // icons appear together with boss reappearing
+            .ExecOnEnter<P3EarthShaker>(s => s.EnableHints = false) // standard strats have tanks get hit by earthshakers, so hints window will get spammy
             .ActivateOnEnter<P3EarthShakerVoidzone>()
             .SetHint(StateMachine.StateHint.DowntimeEnd);
         ComponentCondition<P3MegaflarePuddle>(id + 0x53u, 0.8f, static comp => comp.NumCasts > 0)
-            .DeactivateOnExit<P3MegaflarePuddle>();
+            .DeactivateOnExit<P3MegaflarePuddle>()
+            .ExecOnExit<P3QuickmarchTrio>(static comp => comp.PuddleDodgeHint = false);
         ComponentCondition<P3TempestWing>(id + 0x54u, 0.3f, static comp => comp.Active)
             .ActivateOnEnter<P3TempestWing>();
         ComponentCondition<P3Twister>(id + 0x55u, 0.7f, static comp => !comp.Active)
@@ -521,43 +564,46 @@ sealed class UCOBStates : StateMachineBuilder
             .DeactivateOnExit<P3MegaflareSpreadStack>();
 
         ComponentCondition<P3EarthShaker>(id + 0x60u, 2.3f, static comp => comp.NumCasts > 0, "Baited cones")
-            .DeactivateOnExit<P3EarthShaker>();
-        ComponentCondition<P3TempestWing>(id + 0x70u, 2.0f, static comp => comp.NumCasts > 0, "Tethers")
+            .DeactivateOnExit<P3EarthShaker>()
+            .ExecOnExit<P3TempestWing>(static comp => comp.EnableRaidHints = true);
+        ComponentCondition<P3TempestWing>(id + 0x70u, 3.3f, static comp => comp.NumCasts > 0, "Tethers")
             .DeactivateOnExit<P3TempestWing>();
 
-        P3FlareBreath(id + 0x1000u, 4.1f);
+        P3FlareBreath(id + 0x1000u, 2.8f);
         P3Flatten(id + 0x2000u, 4.1f)
-            .DeactivateOnExit<P3EarthShakerVoidzone>();
+            .DeactivateOnExit<P3EarthShakerVoidzone>()
+            .DeactivateOnExit<P3QuickmarchTrio>();
     }
 
     private void P3BlackfireTrio(uint id, float delay)
     {
-        ActorCast(id, _module.BahamutPrime, AID.BlackfireTrio, delay, 4f, true);
+        ActorCast(id, _module.BahamutPrime, AID.BlackfireTrio, delay, 4f, true)
+            .ActivateOnEnter<P3BlackfireTrio>();
         ActorTargetable(id + 0x10u, _module.BahamutPrime, false, 2.1f, "Boss disappears (blackfire trio)")
             .SetHint(StateMachine.StateHint.DowntimeStart);
         ComponentCondition<P3BlackfireTrio>(id + 0x20u, 1.2f, static comp => comp.Active)
             .ExecOnEnter<Hatch>(static comp => comp.Active = false)
-            .ActivateOnEnter<P3BlackfireTrio>()
             .ActivateOnEnter<P3ThermionicBeam>();
         ComponentCondition<P3MegaflareDive>(id + 0x30u, 1.2f, static comp => comp.Casters.Count > 0, "Dive bait")
             .ActivateOnEnter<P3MegaflareDive>()
-            .ActivateOnEnter<P1LiquidHell>(); // first puddle appears ~0.1s before dive bait
+            .ActivateOnEnter<P3BlackfireLiquidHell>(); // first puddle appears ~0.1s before dive bait
         ComponentCondition<P3ThermionicBeam>(id + 0x40u, 2.9f, static comp => !comp.Active, "Stack")
             .DeactivateOnExit<P3ThermionicBeam>();
         // +0.5s: 4th liquid hell
         ComponentCondition<P3MegaflareDive>(id + 0x50u, 1.0f, static comp => comp.NumCasts > 0, "Dive")
-            .DeactivateOnExit<P3MegaflareDive>()
-            .DeactivateOnExit<P3BlackfireTrio>();
+            .DeactivateOnExit<P3MegaflareDive>();
         // +0.7s: 5th liquid hell
 
         ComponentCondition<P3MegaflareTower>(id + 0x100u, 2.0f, static comp => comp.Towers.Count > 0)
-            .ActivateOnEnter<P3MegaflareTower>();
+            .ActivateOnEnter<P3MegaflareTower>()
+            .ActivateOnEnter<P2Hypernova>()
+            .ExecOnEnter<P3MegaflareTower>(static comp => comp.EnableHints = false);
         ComponentCondition<P3MegaflareStack>(id + 0x101u, 0.9f, static comp => comp.Active)
-            .ActivateOnEnter<P3MegaflareStack>();
+            .ActivateOnEnter<P3MegaflareStack>()
+            .ExecOnExit<P3MegaflareTower>(static comp => comp.EnableHints = true);
         // +3.2s: hypernova 1
         // +4.8s: hypernova 2
         ComponentCondition<P3MegaflareStack>(id + 0x110u, 5.1f, static comp => !comp.Active, "Enumeration")
-            .ActivateOnEnter<P2Hypernova>()
             .DeactivateOnExit<P3MegaflareStack>();
         // +1.4s: hypernova 3
         ComponentCondition<P3MegaflareTower>(id + 0x120u, 1.9f, static comp => comp.NumCasts > 0, "Towers")
@@ -568,7 +614,8 @@ sealed class UCOBStates : StateMachineBuilder
             .SetHint(StateMachine.StateHint.DowntimeEnd);
         // +0.8s: hypernova 4
         P3Gigaflare(id + 0x210u, 0.1f)
-            .DeactivateOnExit<P1LiquidHell>(); // last voidzone disappears ~2.6s before cast end
+            .DeactivateOnExit<P3BlackfireLiquidHell>() // last voidzone disappears ~2.6s before cast end
+            .DeactivateOnExit<P3BlackfireTrio>();
 
         P3FlareBreath(id + 0x1000u, 9.2f)
             .DeactivateOnExit<P2Hypernova>(); // last voidzone disappears ~1.3ds
@@ -585,7 +632,8 @@ sealed class UCOBStates : StateMachineBuilder
         ComponentCondition<Quote>(id + 0x20u, 2.3f, static comp => comp.PendingMechanics.Count > 0)
             .ExecOnEnter<Hatch>(static comp => comp.Active = false)
             .ActivateOnEnter<Quote>()
-            .ActivateOnEnter<P3AethericProfusion>();
+            .ActivateOnEnter<P3AethericProfusion>()
+            .ActivateOnEnter<P3DynamoTetherHelper>();
         ComponentCondition<Quote>(id + 0x30u, 5.1f, static comp => comp.PendingMechanics.Count == 2, "In/spread")
             .ActivateOnEnter<QuoteIronChariotLunarDynamo>()
             .ActivateOnEnter<QuoteRavenDive>();
@@ -593,15 +641,17 @@ sealed class UCOBStates : StateMachineBuilder
             .ActivateOnEnter<P3TempestWing>()
             .DeactivateOnExit<QuoteIronChariotLunarDynamo>()
             .DeactivateOnExit<QuoteRavenDive>();
-        ComponentCondition<P3TempestWing>(id + 0x50u, 2.9f, static comp => comp.NumCasts > 0, "Tethers")
+        ComponentCondition<P3AethericProfusion>(id + 0x50u, 3.5f, static comp => comp.NumCasts > 0, "Neurolinks")
             .ExecOnEnter<P3AethericProfusion>(static comp => comp.Active = true)
-            .DeactivateOnExit<P3TempestWing>();
-        ComponentCondition<P3AethericProfusion>(id + 0x60u, 0.9f, static comp => comp.NumCasts > 0, "Neurolinks")
             .DeactivateOnExit<P3AethericProfusion>();
+        ComponentCondition<P3TempestWing>(id + 0x60u, 0.4f, static comp => comp.NumCasts > 0, "Tethers")
+            .DeactivateOnExit<P3TempestWing>()
+            .DeactivateOnExit<P3DynamoTetherHelper>();
 
         ActorTargetable(id + 0x100u, _module.BahamutPrime, true, 2.2f, "Boss reappears")
             .ExecOnEnter<Hatch>(static comp => comp.Active = true)
             .ActivateOnEnter<QuoteMeteorStream>()
+            .ExecOnEnter<QuoteMeteorStream>(static comp => comp.Fixed = true)
             .SetHint(StateMachine.StateHint.DowntimeEnd);
         ActorCastStart(id + 0x101u, _module.BahamutPrime, AID.Gigaflare, 0.1f, true);
         ComponentCondition<Quote>(id + 0x102u, 1.2f, static comp => comp.PendingMechanics.Count == 0, "Spread")
@@ -617,7 +667,8 @@ sealed class UCOBStates : StateMachineBuilder
 
     private void P3HeavensfallTrio(uint id, float delay)
     {
-        ActorCast(id, _module.BahamutPrime, AID.HeavensfallTrio, delay, 4, true);
+        ActorCast(id, _module.BahamutPrime, AID.HeavensfallTrio, delay, 4f, true)
+            .ActivateOnEnter<P3HeavensfallPreposition>();
         ActorTargetable(id + 0x10u, _module.BahamutPrime, false, 2.1f, "Boss disappears (heavensfall trio)")
             .SetHint(StateMachine.StateHint.DowntimeStart);
         ComponentCondition<P3HeavensfallTrio>(id + 0x20u, 1.2f, static comp => comp.Active)
@@ -625,26 +676,35 @@ sealed class UCOBStates : StateMachineBuilder
             .ActivateOnEnter<P3HeavensfallTrio>();
 
         ComponentCondition<P3MegaflareDive>(id + 0x30u, 1.2f, static comp => comp.Casters.Count > 0)
-            .ActivateOnEnter<P3MegaflareDive>();
+            .ActivateOnEnter<P3MegaflareDive>()
+            .ActivateOnEnter<P3Twister>()
+            .DeactivateOnExit<P3HeavensfallPreposition>();
         ComponentCondition<P3MegaflareDive>(id + 0x40u, 4f, static comp => comp.NumCasts > 0, "Dives")
             .ActivateOnEnter<P3TwistingDive>()
             .DeactivateOnExit<P3TwistingDive>()
             .DeactivateOnExit<P3MegaflareDive>()
             .DeactivateOnExit<P3HeavensfallTrio>();
-        ComponentCondition<P3Twister>(id + 0x50u, 1.3f, static comp => comp.Active, "Twisters")
-            .ActivateOnEnter<P3Twister>();
+        ComponentCondition<P3Twister>(id + 0x50u, 1.3f, static comp => comp.Active, "Twisters");
 
         ComponentCondition<P3HeavensfallTowers>(id + 0x60u, 0.7f, static comp => comp.Towers.Count > 0)
-            .ActivateOnEnter<P3HeavensfallTowers>();
+            .ActivateOnEnter<P3HeavensfallTowers>()
+            .ExecOnEnter<P3HeavensfallTowers>(static comp => comp.EnableHints = false);
         ComponentCondition<P3MegaflarePuddle>(id + 0x61u, 1.0f, static comp => comp.Casters.Count > 0)
             .ActivateOnEnter<P3MegaflarePuddle>()
-            .ActivateOnEnter<P2Heavensfall>();
+            .ActivateOnEnter<P3Heavensfall>()
+            .ExecOnEnter<P3Heavensfall>(comp =>
+            {
+                comp.Activation = Module.WorldState.FutureTime(4.6d);
+                comp.EnableHints = false;
+            })
+            .ExecOnExit<P3Heavensfall>(static comp => comp.EnableHints = true)
+            .ExecOnExit<P3HeavensfallTowers>(static comp => comp.EnableHints = true);
         ComponentCondition<P3MegaflarePuddle>(id + 0x62u, 3f, static comp => comp.NumCasts > 0)
             .DeactivateOnExit<P3MegaflarePuddle>();
-        ComponentCondition<P2Heavensfall>(id + 0x63u, 1.6f, static comp => comp.NumCasts > 0, "Knockback")
+        ComponentCondition<P3Heavensfall>(id + 0x63u, 1.6f, static comp => comp.NumCasts > 0, "Knockback")
             .ActivateOnEnter<P2HeavensfallPillar>()
             .DeactivateOnExit<P3Twister>() // twisters disappear ~0.5s before knockback
-            .DeactivateOnExit<P2Heavensfall>();
+            .DeactivateOnExit<P3Heavensfall>();
         ComponentCondition<P3HeavensfallTowers>(id + 0x64u, 2.4f, static comp => comp.NumCasts > 0, "Towers")
             .DeactivateOnExit<P3HeavensfallTowers>();
 
@@ -687,9 +747,9 @@ sealed class UCOBStates : StateMachineBuilder
         ComponentCondition<Hatch>(id + 0x20u, 2.2f, static comp => comp.NumTargetsAssigned > 0)
             .ExecOnEnter<Hatch>(static comp => comp.Reset())
             .ActivateOnEnter<P2MeteorStream>();
-        ActorCast(id + 0x30u, _module.Twintania, AID.Generate, 0.1f, 3, true, "Hatch 1");
+        ActorCast(id + 0x30u, _module.Twintania, AID.Generate, 0.1f, 3f, true, "Hatch 1");
         ComponentCondition<P2MeteorStream>(id + 0x40u, 0.9f, static comp => comp.NumCasts > 0);
-        ComponentCondition<Hatch>(id + 0x41, 0.1f, static comp => comp.NumTargetsAssigned > 3);
+        ComponentCondition<Hatch>(id + 0x41u, 0.1f, static comp => comp.NumTargetsAssigned > 3);
         ActorCastStart(id + 0x50u, _module.Twintania, AID.Generate, 0.1f, true);
         ComponentCondition<P2MeteorStream>(id + 0x51u, 0.8f, static comp => comp.NumCasts > 1);
         ComponentCondition<P2MeteorStream>(id + 0x52u, 1.0f, static comp => comp.NumCasts > 2); // first set of hatches explode around this point

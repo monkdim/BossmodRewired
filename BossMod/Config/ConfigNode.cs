@@ -13,15 +13,25 @@ public sealed class ConfigDisplayAttribute : Attribute
     public string[]? Tags { get; set; }
 }
 
+[AttributeUsage(AttributeTargets.Field)]
+public sealed class SectionStartAttribute(string label = "", bool separator = true) : Attribute
+{
+    public string Label { get; } = label;
+    public bool Separator { get; } = separator;
+}
+
 // attribute that specifies how config node field or enumeration value is shown in the UI
 [AttributeUsage(AttributeTargets.Field)]
-public sealed class PropertyDisplayAttribute(string label, uint color = default, string tooltip = "", bool separator = false, string[]? tags = null) : Attribute
+public sealed class PropertyDisplayAttribute(string label, uint color = default, string tooltip = "", string? since = null, string? depends = null, string[]? tags = null, Type? renderer = null, bool separator = false) : Attribute
 {
     public string Label { get; } = label;
     public uint Color => color == default ? Colors.TextColor1 : color;
     public string Tooltip { get; } = tooltip;
-    public bool Separator { get; } = separator;
+    public string? Since { get; } = since;
+    public string? Depends { get; } = depends;
     public string[] Tags { get; } = tags ?? [];
+    public Type? Renderer { get; } = renderer;
+    public bool Separator { get; } = separator;
 }
 
 // attribute that specifies combobox should be used for displaying int/bool property
@@ -34,6 +44,9 @@ public sealed class PropertyComboAttribute(string[] values) : Attribute
     public PropertyComboAttribute(string falseText, string trueText) : this([falseText, trueText]) { }
 #pragma warning restore CA1019
 }
+
+[AttributeUsage(AttributeTargets.Field)]
+public sealed class PropertyRadioAttribute : Attribute;
 
 // attribute that specifies slider should be used for displaying float/int property
 [AttributeUsage(AttributeTargets.Field)]
@@ -119,4 +132,9 @@ public sealed class ConfigListener<T>(T data, Action<T> modified) : IDisposable 
     private readonly EventSubscription _listener = data.Modified.ExecuteAndSubscribe(() => modified(data));
 
     public void Dispose() => _listener.Dispose();
+}
+
+public abstract class PropertyRenderer
+{
+    public abstract bool Draw(PropertyDisplayAttribute attrs, bool nested, ConfigNode node, object value, ConfigRoot root, UITree tree, WorldState ws);
 }

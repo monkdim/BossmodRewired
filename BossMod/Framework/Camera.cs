@@ -335,11 +335,11 @@ sealed class Camera
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void DrawWorldLine(Vector3 start, Vector3 end, uint color, float thickness = 1f)
     {
-        AppendWorldLineUnchecked(start, end, color, thickness);
+        AppendWorldLine(start, end, color, thickness);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void AppendWorldLineUnchecked(Vector3 start, Vector3 end, uint color, float thickness)
+    private void AppendWorldLine(Vector3 start, Vector3 end, uint color, float thickness)
     {
         var index = _worldDrawLines.Count;
         _worldDrawLines.Add(new(start, end, color, thickness, 0u));
@@ -347,7 +347,7 @@ sealed class Camera
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void AppendWorldCurveUnchecked(in Dx11ArenaRenderer.WorldCurveInstance curve, int lineCount)
+    private void AppendWorldCurve(in Dx11ArenaRenderer.WorldCurveInstance curve, int lineCount)
     {
         var index = _worldDrawCurves.Count;
         _worldDrawCurves.Add(curve);
@@ -355,7 +355,7 @@ sealed class Camera
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void AppendWorldProjectedArrowUnchecked(in Dx11ArenaRenderer.WorldProjectedArrowInstance arrow)
+    private void AppendWorldProjectedArrow(in Dx11ArenaRenderer.WorldProjectedArrowInstance arrow)
     {
         var index = _worldProjectedArrows.Count;
         _worldProjectedArrows.Add(arrow);
@@ -363,7 +363,7 @@ sealed class Camera
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void AppendWorldProjectedShapeUnchecked(in Dx11ArenaRenderer.WorldProjectedShapeInstance shape,
+    private void AppendWorldProjectedShape(in Dx11ArenaRenderer.WorldProjectedShapeInstance shape,
         RelSimplifiedComplexPolygon? shapeSdf = null, WPos shapeSdfOrigin = default,
         RelSimplifiedComplexPolygon? arenaSdf = null, WPos arenaSdfOrigin = default, float holeFillRadius = 0f, bool applyProjectionLayers = true)
     {
@@ -388,7 +388,7 @@ sealed class Camera
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void AppendWorldBillboardTextUnchecked(in WorldBillboardTextCommand command)
+    private void AppendWorldBillboardText(in WorldBillboardTextCommand command)
     {
         var index = _worldBillboardTexts.Count;
         _worldBillboardTexts.Add(command);
@@ -509,7 +509,7 @@ sealed class Camera
         }
         var dir = direction.ToDirection();
         var dirXZ = dir.ToVec2();
-        AppendWorldProjectedArrowUnchecked(new(origin, length, dirXZ, shaftWidth, headLength, headWidth, projectionHeight, color));
+        AppendWorldProjectedArrow(new(origin, length, dirXZ, shaftWidth, headLength, headWidth, projectionHeight, color));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -521,31 +521,31 @@ sealed class Camera
         {
             return;
         }
-        AppendWorldProjectedArrowUnchecked(new(start, length, delta / length, shaftWidth, headLength, headWidth, projectionHeight, color));
+        AppendWorldProjectedArrow(new(start, length, delta / length, shaftWidth, headLength, headWidth, projectionHeight, color));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void DrawProjectedCircle(Vector3 center, float radius, uint color, float projectionHeight = 2.5f, float outlineWidth = 0f,
         RelSimplifiedComplexPolygon? arenaClip = null, WPos arenaOrigin = default, float innerRadius = 0f, float holeFillRadius = 0f)
-        => AppendWorldProjectedShapeUnchecked(Dx11ArenaRenderer.WorldProjectedShapeInstance.Circle(center, radius, color, projectionHeight, outlineWidth, innerRadius),
+        => AppendWorldProjectedShape(Dx11ArenaRenderer.WorldProjectedShapeInstance.Circle(center, radius, color, projectionHeight, outlineWidth, innerRadius),
             arenaSdf: arenaClip, arenaSdfOrigin: arenaOrigin, holeFillRadius: holeFillRadius);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void DrawProjectedRect(Vector3 origin, WDir direction, float lenFront, float lenBack, float halfWidth, uint color, float projectionHeight = 2.5f, float outlineWidth = 0f,
         RelSimplifiedComplexPolygon? arenaClip = null, WPos arenaOrigin = default, float holeFillRadius = 0f)
-        => AppendWorldProjectedShapeUnchecked(Dx11ArenaRenderer.WorldProjectedShapeInstance.Rect(origin, new Vector2(direction.X, direction.Z), lenFront, lenBack, halfWidth, color, projectionHeight, outlineWidth),
+        => AppendWorldProjectedShape(Dx11ArenaRenderer.WorldProjectedShapeInstance.Rect(origin, new Vector2(direction.X, direction.Z), lenFront, lenBack, halfWidth, color, projectionHeight, outlineWidth),
             arenaSdf: arenaClip, arenaSdfOrigin: arenaOrigin, holeFillRadius: holeFillRadius);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void DrawProjectedCone(Vector3 center, float innerRadius, float outerRadius, WDir direction, float halfAngle, uint color, float projectionHeight = 2.5f, float outlineWidth = 0f,
         RelSimplifiedComplexPolygon? arenaClip = null, WPos arenaOrigin = default, float holeFillRadius = 0f)
-        => AppendWorldProjectedShapeUnchecked(Dx11ArenaRenderer.WorldProjectedShapeInstance.Cone(center, innerRadius, outerRadius, new Vector2(direction.X, direction.Z), halfAngle, color, projectionHeight, outlineWidth),
+        => AppendWorldProjectedShape(Dx11ArenaRenderer.WorldProjectedShapeInstance.Cone(center, innerRadius, outerRadius, new Vector2(direction.X, direction.Z), halfAngle, color, projectionHeight, outlineWidth),
             arenaSdf: arenaClip, arenaSdfOrigin: arenaOrigin, holeFillRadius: holeFillRadius);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void DrawProjectedCapsule(Vector3 start, WDir direction, float radius, float length, uint color, float projectionHeight = 2.5f, float outlineWidth = 0f,
         RelSimplifiedComplexPolygon? arenaClip = null, WPos arenaOrigin = default, bool suppressZoneWave = false, float holeFillRadius = 0f)
-        => AppendWorldProjectedShapeUnchecked(Dx11ArenaRenderer.WorldProjectedShapeInstance.Capsule(start, new Vector2(direction.X, direction.Z), radius, length, color, projectionHeight, outlineWidth, suppressZoneWave),
+        => AppendWorldProjectedShape(Dx11ArenaRenderer.WorldProjectedShapeInstance.Capsule(start, new Vector2(direction.X, direction.Z), radius, length, color, projectionHeight, outlineWidth, suppressZoneWave),
             arenaSdf: arenaClip, arenaSdfOrigin: arenaOrigin, holeFillRadius: holeFillRadius);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -558,7 +558,7 @@ sealed class Camera
         {
             return;
         }
-        AppendWorldProjectedShapeUnchecked(Dx11ArenaRenderer.WorldProjectedShapeInstance.ArcCapsule(orbitCenter, delta / orbitRadius, orbitRadius, radius, angularLength, color, projectionHeight, outlineWidth, suppressZoneWave),
+        AppendWorldProjectedShape(Dx11ArenaRenderer.WorldProjectedShapeInstance.ArcCapsule(orbitCenter, delta / orbitRadius, orbitRadius, radius, angularLength, color, projectionHeight, outlineWidth, suppressZoneWave),
             arenaSdf: arenaClip, arenaSdfOrigin: arenaOrigin, holeFillRadius: holeFillRadius);
     }
 
@@ -567,7 +567,7 @@ sealed class Camera
     // camera-facing biconvex lens instead of projecting a 2D footprint onto terrain.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void DrawWorldEye(Vector3 center, float halfWidth, float halfHeight, float halfDepth, float mistRadius, uint color, uint borderColor, bool inverted = false)
-        => AppendWorldProjectedShapeUnchecked(Dx11ArenaRenderer.WorldProjectedShapeInstance.Eye3D(center, halfWidth, halfHeight, halfDepth, mistRadius, color, borderColor, inverted));
+        => AppendWorldProjectedShape(Dx11ArenaRenderer.WorldProjectedShapeInstance.Eye3D(center, halfWidth, halfHeight, halfDepth, mistRadius, color, borderColor, inverted));
 
     // Fixed-screen-size MSDF billboard anchored at a true world-space point. The GPU projects the
     // anchor at render time, keeps every glyph camera-facing, and applies scene-depth occlusion.
@@ -578,7 +578,7 @@ sealed class Camera
         {
             return;
         }
-        AppendWorldBillboardTextUnchecked(new(center, text, fontSize, color, outlineColor, Math.Max(0f, outlineWidth), false));
+        AppendWorldBillboardText(new(center, text, fontSize, color, outlineColor, Math.Max(0f, outlineWidth), false));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -588,19 +588,19 @@ sealed class Camera
         {
             return;
         }
-        AppendWorldBillboardTextUnchecked(new(center, iconText, fontSize, color, 0u, 0f, true));
+        AppendWorldBillboardText(new(center, iconText, fontSize, color, 0u, 0f, true));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void DrawProjectedCross(Vector3 center, WDir direction, float range, float halfWidth, uint color, float projectionHeight = 2.5f, float outlineWidth = 0f,
         RelSimplifiedComplexPolygon? arenaClip = null, WPos arenaOrigin = default, float holeFillRadius = 0f)
-        => AppendWorldProjectedShapeUnchecked(Dx11ArenaRenderer.WorldProjectedShapeInstance.Cross(center, new Vector2(direction.X, direction.Z), range, halfWidth, color, projectionHeight, outlineWidth),
+        => AppendWorldProjectedShape(Dx11ArenaRenderer.WorldProjectedShapeInstance.Cross(center, new Vector2(direction.X, direction.Z), range, halfWidth, color, projectionHeight, outlineWidth),
             arenaSdf: arenaClip, arenaSdfOrigin: arenaOrigin, holeFillRadius: holeFillRadius);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void DrawProjectedTriangle(Vector3 a, Vector3 b, Vector3 c, uint color, float projectionHeight = 2.5f, float outlineWidth = 0f,
         RelSimplifiedComplexPolygon? arenaClip = null, WPos arenaOrigin = default, float holeFillRadius = 0f)
-        => AppendWorldProjectedShapeUnchecked(Dx11ArenaRenderer.WorldProjectedShapeInstance.Triangle(a, b, c, color, projectionHeight, outlineWidth),
+        => AppendWorldProjectedShape(Dx11ArenaRenderer.WorldProjectedShapeInstance.Triangle(a, b, c, color, projectionHeight, outlineWidth),
             arenaSdf: arenaClip, arenaSdfOrigin: arenaOrigin, holeFillRadius: holeFillRadius);
 
     // Actor marker fast path: preserve PosRot.Y as the projection origin and derive the triangle directly
@@ -609,7 +609,7 @@ sealed class Camera
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void DrawProjectedActorTriangle(ref Vector4 posRot, float scale, uint fillColor, uint outlineColor, float projectionHeight, float outlineWidth = 0f,
         RelSimplifiedComplexPolygon? arenaClip = null, WPos arenaOrigin = default, float holeFillRadius = 0f)
-        => AppendWorldProjectedShapeUnchecked(Dx11ArenaRenderer.WorldProjectedShapeInstance.ActorTriangle(posRot, scale, fillColor, outlineColor, projectionHeight, outlineWidth),
+        => AppendWorldProjectedShape(Dx11ArenaRenderer.WorldProjectedShapeInstance.ActorTriangle(posRot, scale, fillColor, outlineColor, projectionHeight, outlineWidth),
             arenaSdf: arenaClip, arenaSdfOrigin: arenaOrigin, holeFillRadius: holeFillRadius, applyProjectionLayers: false);
 
     // Filled projected triangle with an optional outline in one GPU instance. Actor markers use this
@@ -617,7 +617,7 @@ sealed class Camera
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void DrawProjectedTriangleFilledOutlined(Vector3 a, Vector3 b, Vector3 c, uint fillColor, uint outlineColor, float projectionHeight = 2.5f, float outlineWidth = 0f, float boundsProjectionHeight = 0f,
         RelSimplifiedComplexPolygon? arenaClip = null, WPos arenaOrigin = default, float holeFillRadius = 0f)
-        => AppendWorldProjectedShapeUnchecked(Dx11ArenaRenderer.WorldProjectedShapeInstance.TriangleFilledOutlined(a, b, c, fillColor, outlineColor, projectionHeight, outlineWidth, boundsProjectionHeight),
+        => AppendWorldProjectedShape(Dx11ArenaRenderer.WorldProjectedShapeInstance.TriangleFilledOutlined(a, b, c, fillColor, outlineColor, projectionHeight, outlineWidth, boundsProjectionHeight),
             arenaSdf: arenaClip, arenaSdfOrigin: arenaOrigin, holeFillRadius: holeFillRadius);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -630,7 +630,7 @@ sealed class Camera
         var min = localMin + origin;
         var max = localMax + origin;
         var shape = Dx11ArenaRenderer.WorldProjectedShapeInstance.Sdf(referenceOrigin, min, max, color, projectionHeight, outlineWidth);
-        AppendWorldProjectedShapeUnchecked(shape, polygon, polygonWorldOrigin, arenaClip, arenaOrigin, holeFillRadius);
+        AppendWorldProjectedShape(shape, polygon, polygonWorldOrigin, arenaClip, arenaOrigin, holeFillRadius);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -642,7 +642,7 @@ sealed class Camera
         var dir = direction.ToDirection();
         var half = halfWidth.ToDirection();
         var curve = Dx11ArenaRenderer.WorldCurveInstance.ArcSector(center, radius, dir.ToVec2(), half.ToVec2(), color, thickness, segments);
-        AppendWorldCurveUnchecked(curve, segmentsP2);
+        AppendWorldCurve(curve, segmentsP2);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -650,7 +650,7 @@ sealed class Camera
     {
         const int segments = 256;
         var curve = Dx11ArenaRenderer.WorldCurveInstance.Circle(center, radius, color, thickness, segments);
-        AppendWorldCurveUnchecked(curve, segments);
+        AppendWorldCurve(curve, segments);
     }
 
     // Pass in both Vec 3 center and Shape rectangle so we have the Y coordinate as well.
@@ -669,7 +669,7 @@ sealed class Camera
         for (var i = 0; i < numSides; ++i)
         {
             var curr = center + dirs[i].ToVec3();
-            AppendWorldLineUnchecked(curr, prev, color, thickness);
+            AppendWorldLine(curr, prev, color, thickness);
             prev = curr;
         }
     }
@@ -690,7 +690,7 @@ sealed class Camera
         for (var i = 0; i < dirsCount; ++i)
         {
             var curr = center + dirs[i].ToVec3();
-            AppendWorldLineUnchecked(curr, prev, color, thickness);
+            AppendWorldLine(curr, prev, color, thickness);
             prev = curr;
         }
     }
@@ -729,7 +729,7 @@ sealed class Camera
             for (var i = 0; i < len; ++i)
             {
                 var curr = center + contour[i].ToVec3();
-                AppendWorldLineUnchecked(curr, prev, color, thickness);
+                AppendWorldLine(curr, prev, color, thickness);
                 prev = curr;
             }
         }
@@ -741,7 +741,7 @@ sealed class Camera
         const int segments = 256;
         const int tripleSegments = 3 * segments;
         var curve = Dx11ArenaRenderer.WorldCurveInstance.Sphere(center, radius, color, thickness, segments);
-        AppendWorldCurveUnchecked(curve, tripleSegments);
+        AppendWorldCurve(curve, tripleSegments);
     }
 
     // Procedural local-space cylinder. Returns false only when the shared transform table is full,
@@ -757,7 +757,7 @@ sealed class Camera
         const int tripleSegments = 3 * segments;
 
         var curve = Dx11ArenaRenderer.WorldCurveInstance.Cylinder(new Vector3(0f, halfHeight, 0f), radius, halfHeight, color, thickness, segments, transformIndex);
-        AppendWorldCurveUnchecked(curve, tripleSegments);
+        AppendWorldCurve(curve, tripleSegments);
         return true;
     }
 }

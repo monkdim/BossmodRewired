@@ -227,7 +227,7 @@ public abstract class ABRect : ArenaBounds
         {
             var cells = 2f * halfExtent / resolution;
             var nearest = MathF.Round(cells);
-            if (MathF.Abs(cells - nearest) <= 0.001f)
+            if (Math.Abs(cells - nearest) <= 0.001f)
             {
                 cells = nearest;
             }
@@ -755,7 +755,7 @@ public sealed class ArenaBoundsCustom : ArenaBounds
     {
         var cells = extent / resolution;
         var nearest = MathF.Round(cells);
-        if (MathF.Abs(cells - nearest) <= 0.001f)
+        if (Math.Abs(cells - nearest) <= 0.001f)
         {
             cells = nearest;
         }

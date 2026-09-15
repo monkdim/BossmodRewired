@@ -1118,7 +1118,7 @@ protected ZCallback64? _zCallback;
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void EnsureAdditionalVertexCapacity(int additionalCapacity)
     {
-        _vertexList.EnsureCapacity(checked(_vertexList.Count + additionalCapacity));
+        _vertexList.EnsureCapacity(_vertexList.Count + additionalCapacity);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

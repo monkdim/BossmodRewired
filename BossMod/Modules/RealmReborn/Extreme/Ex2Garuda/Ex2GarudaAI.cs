@@ -18,12 +18,12 @@ sealed class Ex2GarudaAI(BossModule module) : BossComponent(module)
                     if (_aerialBlast?.NumCasts > 0)
                     {
                         e.DesiredRotation = 135f.Degrees();
-                        e.DesiredPosition = Arena.Center + 18f * e.DesiredRotation.ToDirection();
+                        e.DesiredPosition = Arena.Center + 18f * e.DesiredRotation.Value.ToDirection();
                     }
                     else
                     {
                         e.DesiredRotation = 180f.Degrees();
-                        e.DesiredPosition = Arena.Center + 8f * e.DesiredRotation.ToDirection();
+                        e.DesiredPosition = Arena.Center + 8f * e.DesiredRotation.Value.ToDirection();
                     }
                     break;
                 case (uint)OID.Chirada:
@@ -35,7 +35,7 @@ sealed class Ex2GarudaAI(BossModule module) : BossComponent(module)
                     e.AttackStrength = 0.15f;
                     e.ShouldBeTanked = assignment == PartyRolesConfig.Assignment.OT;
                     e.DesiredRotation = (_aerialBlast?.NumCasts > 0 ? -45f : 0f).Degrees();
-                    e.DesiredPosition = Arena.Center + 18f * e.DesiredRotation.ToDirection();
+                    e.DesiredPosition = Arena.Center + 18f * e.DesiredRotation.Value.ToDirection();
                     break;
                 case (uint)OID.RazorPlume:
                     e.Priority = assignment != PartyRolesConfig.Assignment.MT ? 4 : 0;
@@ -51,7 +51,7 @@ sealed class Ex2GarudaAI(BossModule module) : BossComponent(module)
                     e.Priority = Module.PrimaryActor.IsTargetable ? AIHints.Enemy.PriorityPointless : 6;
                     e.AttackStrength = 0f;
                     e.ShouldBeTanked = false;
-                    if (actor.Role == Role.Tank && e.Actor.TargetID != actor.InstanceID && (WorldState.Actors.Find(e.Actor.TargetID)?.FindStatus(SID.ThermalLow)?.Extra ?? 0) >= 2)
+                    if (actor.Role == Role.Tank && e.Actor.TargetID != actor.InstanceID && (WorldState.Actors.Find(e.Actor.TargetID)?.FindStatus((uint)SID.ThermalLow)?.Extra ?? 0) >= 2)
                     {
                         e.Priority = 6;
                         e.ShouldBeTanked = e.PreferProvoking = true;

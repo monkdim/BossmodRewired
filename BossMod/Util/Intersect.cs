@@ -252,7 +252,7 @@ public static class Intersect
         {
             var distToXEdge = -cornerOffset.X;
             var distToZEdge = -cornerOffset.Z;
-            var distToNearestEdge = MathF.Min(distToXEdge, distToZEdge);
+            var distToNearestEdge = Math.Min(distToXEdge, distToZEdge);
 
             return circleRadius >= distToNearestEdge;
         }
@@ -382,8 +382,8 @@ public static class Intersect
         // Two solutions; keep only those in front
         if (t0Ok && t1Ok)
         {
-            degEnter = HitDeg(centerC, rayOriginO, rayDirD, MathF.Min(t0, t1)); // entry
-            degExit = HitDeg(centerC, rayOriginO, rayDirD, MathF.Max(t0, t1)); // exit
+            degEnter = HitDeg(centerC, rayOriginO, rayDirD, Math.Min(t0, t1)); // entry
+            degExit = HitDeg(centerC, rayOriginO, rayDirD, Math.Max(t0, t1)); // exit
             return 2;
         }
         else
