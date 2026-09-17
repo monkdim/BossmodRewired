@@ -41,6 +41,13 @@ instead.
   progression session to say whether its position was chosen or incidental.
 - **Learned positions appear on the mechanic timer bars**, which is the whole point: the answer arrives
   while the cast bar is still filling, rather than in a report you read afterwards.
+- **Optionally, what the position cost you.** Switched on in settings, exports also carry what everybody
+  pressed and how much of each pull they spent casting. A spot that drops two casts is a worse spot than
+  one that drops none, and positions alone will never say so.
+- **Downtime is told apart from standing still.** Seconds when the fight itself had stopped are separated
+  from seconds one player spent moving, by comparing the party against itself rather than by knowing the
+  fight. Charging everybody for a phase transition made uptime close to meaningless, and no fight needs
+  to have been modelled for the split to work.
 - **Mechanic shapes are inferred** from who actually got hit: stack, spread, raidwide, light party,
   probable tank buster, hedged openly where the data cannot decide.
 - **Arena taken from the module where one exists**, since every module carries the real centre and shape
@@ -81,6 +88,13 @@ export either way.
 
 If you do say yes, what goes is the position summary: which ability fired, when, which role and job was
 where. Not chat, not gear, not your name, not anything from outside a duty.
+
+Two optional extras go further, and both are off until you turn them on. **Damage, healing and deaths**
+is what tells you whether a pull was worth learning positions from at all. **What everybody pressed**
+is heavier again, since a busy pull is a few thousand button presses, and it is what produces the
+uptime figures. Each has its own separate switch for whether it may be shared, because the question
+asked during setup was about positions and nothing else. The button list itself is never shared under
+any setting: only the uptime summary derived from it can leave, and the presses stay on your disk.
 
 Names never leave your machine. A player becomes a short hash of their account ID salted with a key
 generated on your machine that is never sent anywhere, so the same person reads consistently within
@@ -130,7 +144,11 @@ sent the other way automatically.
 Bugs in an encounter module very likely came from upstream. Reporting them there fixes it for everybody and
 the fix arrives here on the next merge, which is a better outcome than patching around it locally. Anything
 about positions, exports, recording or sharing is this fork's, and belongs in
-[issues here](https://github.com/monkdim/BossmodRewired/issues).
+[issues here](https://github.com/monkdim/BossmodRewired/issues). There is also a **Feedback** tab in the
+settings window, which opens an issue for you without leaving the game. It carries what you typed, the
+plugin version, and the zone and module you were in, since a report without those three is usually a
+round trip asking for them. There is an optional box for a contact handle if you want to be replied to,
+and leaving it empty is fine. Nothing else goes: no names, no log, no recording.
 
 ## Licence
 
