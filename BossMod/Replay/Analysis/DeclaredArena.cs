@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.IO;
+
 namespace BossMod.ReplayAnalysis;
 
 /// <summary>
@@ -83,6 +86,125 @@ sealed record class DeclaredArena(WPos Center, float Radius, float NearEdge, flo
 
         _cache[oid] = res;
         return res;
+    }
+
+    /// <summary>
+    /// What a module declared after a particular director update, which is the only way to describe an arena
+    /// that moves.
+    ///
+    /// <see cref="Remember"/> keeps one value per encounter, taken when the module loaded. For most fights
+    /// that is the whole truth. For the ones that rebuild the arena partway through it is the opening state
+    /// and nothing else: M11S shifts its centre fifteen yalms when a platform collapses, and a single
+    /// remembered value says it never moved. Measured against the wrong centre, a position is wrong by the
+    /// distance the centre travelled, which in a twenty yalm arena is most of the way across it.
+    ///
+    /// Keyed by the update that caused the change rather than by a phase number, so nothing here knows
+    /// anything about any fight. The module already contains the mapping from update to arena; this records
+    /// what the module did with it, and the export replays the same updates back over the table.
+    /// </summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(uint OID, uint UpdateID, uint Param1), DeclaredArena> _afterDirector = new();
+
+    private static string? _path;
+
+    /// <summary>
+    /// Points the table at a file and loads whatever is in it.
+    ///
+    /// Persisted because the alternative restricts this to fights played since the game started, and the
+    /// export people actually run is a bulk re-export of a month of recordings, usually days later. In that
+    /// path no module ever loads, nothing is remembered, and every pull silently falls back to an estimate.
+    /// That is how a fork built on declared arenas shipped a corpus that never used one.
+    /// </summary>
+    public static void UseFile(string path)
+    {
+        _path = path;
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return;
+            }
+
+            foreach (var line in File.ReadAllLines(path))
+            {
+                // Shape runs to the end of the line because it contains commas and spaces.
+                var f = line.Split('\t', 10);
+                if (f.Length < 10)
+                {
+                    continue;
+                }
+
+                var ci = CultureInfo.InvariantCulture;
+                _afterDirector[(uint.Parse(f[0], ci), uint.Parse(f[1], ci), uint.Parse(f[2], ci))] = new(
+                    new(float.Parse(f[3], ci), float.Parse(f[4], ci)),
+                    float.Parse(f[5], ci), float.Parse(f[6], ci), float.Parse(f[7], ci), f[9], f[8] == "1");
+            }
+        }
+        catch (Exception e)
+        {
+            // A table that will not load costs accuracy, not the session. Estimates still stand on their own.
+            Service.Logger.Error($"[export] could not read arena table from {path}: {e.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Records the arena a live module is showing, against the director update that last reached it.
+    ///
+    /// Must be called a tick after the update rather than during it: the module is a subscriber to the same
+    /// event, and nothing orders the subscribers, so reading its arena in the handler reads the arena the
+    /// update was about to replace.
+    /// </summary>
+    public static void RememberAfterDirector(BossModule module, uint updateID, uint param1)
+    {
+        if (!Service.Framework.IsInFrameworkUpdateThread)
+        {
+            return;
+        }
+
+        var bounds = module.Bounds;
+        var key = (module.PrimaryActor.OID, updateID, param1);
+        var now = new DeclaredArena(module.Center, bounds.Radius, NearEdgeOf(bounds), ReachOf(bounds), Describe(bounds), module.Center != default);
+        if (_afterDirector.TryGetValue(key, out var was) && was == now)
+        {
+            return;
+        }
+
+        _afterDirector[key] = now;
+        Save();
+    }
+
+    /// <summary>What the arena became after this update, if it has ever been seen happening.</summary>
+    public static DeclaredArena? AfterDirector(uint oid, uint updateID, uint param1)
+        => _afterDirector.GetValueOrDefault((oid, updateID, param1));
+
+    private static void Save()
+    {
+        var path = _path;
+        if (path == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var ci = CultureInfo.InvariantCulture;
+            var sb = new StringBuilder();
+            foreach (var (k, v) in _afterDirector)
+            {
+                sb.Append(k.OID.ToString(ci)).Append('\t').Append(k.UpdateID.ToString(ci)).Append('\t').Append(k.Param1.ToString(ci)).Append('\t')
+                  .Append(v.Center.X.ToString(ci)).Append('\t').Append(v.Center.Z.ToString(ci)).Append('\t')
+                  .Append(v.Radius.ToString(ci)).Append('\t').Append(v.NearEdge.ToString(ci)).Append('\t').Append(v.MaxReach.ToString(ci)).Append('\t')
+                  .Append(v.CenterIsReliable ? '1' : '0').Append('\t')
+                  // Newlines would break the line-per-entry format. No shape string contains one, but a
+                  // future bounds type naming itself across two lines would corrupt every entry after it.
+                  .Append(v.Shape.ReplaceLineEndings(" ")).Append('\n');
+            }
+
+            File.WriteAllText(path, sb.ToString());
+        }
+        catch (Exception e)
+        {
+            Service.Logger.Error($"[export] could not write arena table to {path}: {e.Message}");
+        }
     }
 
     /// <summary>

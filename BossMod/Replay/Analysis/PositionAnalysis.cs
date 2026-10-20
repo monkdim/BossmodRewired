@@ -163,6 +163,18 @@ static class PositionAnalysis
 
             var perPlayer = byAbility.GetOrAdd(a.ID);
 
+            // Who the action actually reached, taken from the game's own effect list rather than worked out
+            // from geometry. This is the fact the whole corpus was missing: the shape classifier below has
+            // always had it, used it to write a sentence about which roles got caught, and then dropped it.
+            // Without it per player and per cast, nothing downstream can tell a position that worked from a
+            // position everybody happened to share, and a mistake repeated every pull reads as a convention
+            // held with confidence.
+            var caught = new HashSet<Replay.Participant>();
+            foreach (var t in a.Targets)
+            {
+                caught.Add(t.Target);
+            }
+
             foreach (var p in involved)
             {
                 if (p.DeadAt(hitAt))
@@ -186,7 +198,11 @@ static class PositionAnalysis
                 // conclusions cannot check them.
                 if (export != null && a.ID.Type == ActionType.Spell)
                 {
-                    export.Add(a.ID.ID, label(p), p.Class, slot(p), hitAt, into, castWorld, hitWorld, settledWorld, castOrigin);
+                    // a.Rotation rather than the facing interpolated out of the source's position history:
+                    // it is the rotation the action was fired with, and AOEShape.Check needs exactly that to
+                    // decide a cone or a rectangle. Every non-circular shape was uncheckable without it.
+                    export.Add(a.ID.ID, label(p), p.Class, slot(p), hitAt, into, castWorld, hitWorld, settledWorld,
+                        castOrigin, a.Rotation.Rad, caught.Contains(p));
                 }
             }
         }
