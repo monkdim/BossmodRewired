@@ -27,6 +27,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
     private AIHints _hints = null!;
     private BossModuleManager _bossmod = null!;
     private EventSubscription _rememberArenas = null!;
+    private EventSubscription _rememberArenaChanges = null!;
     private ZoneModuleManager _zonemod = null!;
     private AIHintsBuilder _hintsBuilder = null!;
     private MovementOverride _movementOverride = null!;
@@ -150,6 +151,28 @@ public sealed class Plugin : IAsyncDalamudPlugin
         // manager of its own, but it is a reconstruction built while parsing a log on a worker thread, so
         // hooking that one recorded nothing at all.
         _rememberArenas = _bossmod.ModuleLoaded.Subscribe(ReplayAnalysis.DeclaredArena.Remember);
+
+        // Module load catches the arena a fight opens with, which is the whole story for most of them and
+        // the opening paragraph for the ones that rebuild their floor partway through. This catches the rest,
+        // keyed by the update that caused each change, so an export can replay the same updates back over the
+        // table and recover the arena that was actually in force at any moment.
+        //
+        // Deferred a tick rather than read in the handler. The module subscribes to this same event and
+        // nothing orders the subscribers, so reading its arena here would as often as not read the one the
+        // update was in the middle of replacing.
+        ReplayAnalysis.DeclaredArena.UseFile(dalamud.ConfigDirectory.FullName + "/arenas.tsv");
+        _rememberArenaChanges = _ws.DirectorUpdate.Subscribe(op =>
+        {
+            var id = op.UpdateID;
+            var p1 = op.Param1;
+            Service.Framework.RunOnTick(() =>
+            {
+                if (_bossmod.ActiveModule is BossModule m)
+                {
+                    ReplayAnalysis.DeclaredArena.RememberAfterDirector(m, id, p1);
+                }
+            }, delayTicks: 1);
+        });
         _zonemod = new(_ws);
         _hintsBuilder = new(_ws, _bossmod, _zonemod, _rsr);
         _movementOverride = new(_dalamud);
@@ -240,6 +263,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
         _hintsBuilder.Dispose();
         _zonemod.Dispose();
         _rememberArenas.Dispose();
+        _rememberArenaChanges.Dispose();
         _bossmod.Dispose();
         _rsr.Dispose();
         CommandManager.RemoveHandler("/bmr");

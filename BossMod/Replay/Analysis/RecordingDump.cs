@@ -159,6 +159,41 @@ static class RecordingDump
                 export.BeginPull(index, fight.OID, fight.Label, fight.Start, fight.End,
                     arena?.Reference, arena?.Scale ?? 0f, arena?.Shape,
                     PositionAnalysis.WasThere(replay, me, fight.Start, fight.End));
+
+                // The arena as a sequence, opening with whatever holds at the start of the fight. Source is
+                // stated outright rather than buried in the shape prose, because a declaration and an
+                // estimate are not the same kind of number and every consumer of the corpus so far has had to
+                // guess which one it had.
+                // Skipped rather than zeroed when there is no arena at all, which happens when a fight had
+                // too few positions to estimate from and no module to ask. An empty list says that; a segment
+                // centred on the origin would say the fight took place at the corner of the map.
+                if (arena != null)
+                {
+                    export.AddArena(index, fight.Start, arena.Reference, arena.Scale,
+                        arena.Declared?.Shape ?? arena.Shape ?? "", arena.Declared != null ? "module" : "estimate");
+                }
+
+                // Then every director update the fight saw, written down whether or not it is known to mean
+                // anything, and a fresh segment wherever one is known to have rebuilt the arena. The mapping
+                // lives in the encounter module, so nothing here needs to know which fights move their floor
+                // or what their phases are called: a fight whose table has never been observed still carries
+                // the updates, which is enough for a reader to notice the arena changed and enough to rebuild
+                // the segments later once it has been.
+                foreach (var du in replay.DirectorUpdates)
+                {
+                    if (du.Timestamp < fight.Start || du.Timestamp > fight.End)
+                    {
+                        continue;
+                    }
+
+                    export.AddDirector(index, du.Timestamp, du.UpdateID, du.Param1);
+
+                    var after = DeclaredArena.AfterDirector(fight.OID, du.UpdateID, du.Param1);
+                    if (after != null)
+                    {
+                        export.AddArena(index, du.Timestamp, after.Center, after.NearEdge, after.Shape, "module");
+                    }
+                }
                 RecordContributions(export, replay, involved, index, fight.Start, fight.End);
             }
 
