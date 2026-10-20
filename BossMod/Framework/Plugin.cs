@@ -28,6 +28,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
     private BossModuleManager _bossmod = null!;
     private EventSubscription _rememberArenas = null!;
     private EventSubscription _rememberArenaChanges = null!;
+    private (uint UpdateID, uint Param1)? _lastDirector;
     private ZoneModuleManager _zonemod = null!;
     private AIHintsBuilder _hintsBuilder = null!;
     private MovementOverride _movementOverride = null!;
@@ -156,23 +157,9 @@ public sealed class Plugin : IAsyncDalamudPlugin
         // the opening paragraph for the ones that rebuild their floor partway through. This catches the rest,
         // keyed by the update that caused each change, so an export can replay the same updates back over the
         // table and recover the arena that was actually in force at any moment.
-        //
-        // Deferred a tick rather than read in the handler. The module subscribes to this same event and
-        // nothing orders the subscribers, so reading its arena here would as often as not read the one the
-        // update was in the middle of replacing.
-        ReplayAnalysis.DeclaredArena.UseFile(dalamud.ConfigDirectory.FullName + "/arenas.tsv");
-        _rememberArenaChanges = _ws.DirectorUpdate.Subscribe(op =>
-        {
-            var id = op.UpdateID;
-            var p1 = op.Param1;
-            Service.Framework.RunOnTick(() =>
-            {
-                if (_bossmod.ActiveModule is BossModule m)
-                {
-                    ReplayAnalysis.DeclaredArena.RememberAfterDirector(m, id, p1);
-                }
-            }, delayTicks: 1);
-        });
+        ReplayAnalysis.DeclaredArena.UseFile(_dalamud.ConfigDirectory.FullName + "/arenas.tsv");
+        _rememberArenaChanges = _ws.DirectorUpdate.Subscribe(op => _lastDirector = (op.UpdateID, op.Param1));
+        Service.Framework.Update += RememberArenaForLastDirector;
         _zonemod = new(_ws);
         _hintsBuilder = new(_ws, _bossmod, _zonemod, _rsr);
         _movementOverride = new(_dalamud);
@@ -264,6 +251,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
         _zonemod.Dispose();
         _rememberArenas.Dispose();
         _rememberArenaChanges.Dispose();
+        Service.Framework.Update -= RememberArenaForLastDirector;
         _bossmod.Dispose();
         _rsr.Dispose();
         CommandManager.RemoveHandler("/bmr");
@@ -416,6 +404,26 @@ public sealed class Plugin : IAsyncDalamudPlugin
 
         Camera.Instance?.DrawWorldPrimitives();
         _prevUpdateTime = DateTime.Now - tsStart;
+    }
+
+    /// <summary>
+    /// Records the arena against the director update that last arrived, every frame a module is up.
+    ///
+    /// Per frame rather than once when the update lands, because the module subscribes to that same event and
+    /// nothing orders the subscribers: reading its arena from inside the handler would as often as not read
+    /// the one the update was in the middle of replacing. Checking every frame sidesteps the ordering
+    /// question entirely, since whatever frame the arena settles on is the one that gets recorded against the
+    /// update that caused it.
+    ///
+    /// Cheap enough to do unconditionally: the recorder compares against what it already holds and returns
+    /// without writing when nothing moved, which is every frame except the handful where a floor collapses.
+    /// </summary>
+    private void RememberArenaForLastDirector(IFramework framework)
+    {
+        if (_lastDirector is { } last && _bossmod.ActiveModule is BossModule m)
+        {
+            ReplayAnalysis.DeclaredArena.RememberAfterDirector(m, last.UpdateID, last.Param1);
+        }
     }
 
     private void UpdateScreenRiskBorder(bool uiHidden)

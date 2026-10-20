@@ -170,7 +170,7 @@ static class RecordingDump
                 if (arena != null)
                 {
                     export.AddArena(index, fight.Start, arena.Reference, arena.Scale,
-                        arena.Declared?.Shape ?? arena.Shape ?? "", arena.Declared != null ? "module" : "estimate");
+                        arena.Declared?.Shape ?? arena.Shape, arena.Declared != null ? "module" : "estimate");
                 }
 
                 // Then every director update the fight saw, written down whether or not it is known to mean
