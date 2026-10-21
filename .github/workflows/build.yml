@@ -67,6 +67,9 @@ jobs:
       - name: Restore NuGet Packages
         run: dotnet restore     BossMod/BossModReborn.csproj
 
+      - name: Check learned-position eligibility
+        run: dotnet run --project Tests/PositionLearning/PositionLearning.csproj -c Release
+
       - name: Build Plugin
         run: dotnet build --no-restore -c Release BossMod/BossModReborn.csproj
 

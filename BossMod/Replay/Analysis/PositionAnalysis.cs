@@ -80,6 +80,7 @@ static class PositionAnalysis
         // An ability that never touched anybody teaches nothing about where to stand, only that it was
         // avoidable, so the hints below are built from the ones that connected at least once.
         var landed = new HashSet<ActionID>();
+        var damaging = new HashSet<ActionID>();
 
         // When each player was last marked or tethered. A cast bar is not the only way a mechanic announces
         // itself: savage marks its targets and resolves instantly, and filtering the hints to cast bars alone
@@ -128,6 +129,14 @@ static class PositionAnalysis
                 if (t.Target.Type == ActorType.Player)
                 {
                     ++playersHit;
+                    foreach (var effect in t.Effects.AsSpan())
+                    {
+                        if (effect.Type is ActionEffectType.Damage or ActionEffectType.BlockedDamage or ActionEffectType.ParriedDamage)
+                        {
+                            damaging.Add(a.ID);
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -280,7 +289,7 @@ static class PositionAnalysis
             sb.AppendLine();
         }
 
-        AppendHints(sb, byAbility, resolutions, telegraphed, marked, landed, grouped, shapes, moments, label, slot, arena, outcomes, elapsed != null, learned);
+        AppendHints(sb, byAbility, resolutions, telegraphed, marked, landed, grouped, shapes, moments, label, slot, arena, outcomes, elapsed != null, learned, damaging);
         return outcomes;
     }
 
@@ -322,7 +331,8 @@ static class PositionAnalysis
         ArenaEstimate? arena,
         Dictionary<uint, Coverage> outcomes,
         bool haveElapsed,
-        LearnedPositions? learned)
+        LearnedPositions? learned,
+        HashSet<ActionID> damaging)
     {
         // Only spells, and only the best outcome for one that appears twice. Everything that joins against a
         // cactbot timeline joins on the spell ID, and nothing else has one.
@@ -338,8 +348,8 @@ static class PositionAnalysis
         sb.AppendLine("WHERE TO STAND, per role, at the moment each cast begins");
         sb.AppendLine("Only abilities that announced themselves first, by cast bar, headmarker or tether, and");
         sb.AppendLine("only positions that were actually held.");
-        sb.AppendLine("An ability that touched nobody is the best case here rather than the worst: the party");
-        sb.AppendLine("dodged it, so where they stood is a spot proven to be safe.");
+        sb.AppendLine("No recorded player hits does not establish avoidance: the action may be a visual cast.");
+        sb.AppendLine("These rows describe observations; live arena hints have stricter evidence requirements.");
         sb.AppendLine("Anything a player wandered around is left out: a mean position with a wide spread behind it");
         sb.AppendLine("reads as a place to stand, and is not one.");
         sb.AppendLine();
@@ -350,12 +360,8 @@ static class PositionAnalysis
 
         foreach (var (aid, perPlayer) in byAbility)
         {
-            // An ability that touched nobody used to be skipped here, on the reasoning that it teaches
-            // nothing about where to stand. That is exactly backwards for the question this section asks. A
-            // telegraphed mechanic that landed on nobody is one the party dodged clean, and where they stood
-            // through its cast bar is the right answer by definition, with no damage taken to argue against
-            // it. Measured across five real exports it was not an edge case either: fifty-seven of the
-            // ninety-two mechanics being reported as gaps were mechanics the party had played perfectly.
+            // No player hits is descriptive only. It may be a visual action, not a successful dodge;
+            // live hints additionally require observed player damage and independent, stable pulls.
             var avoided = !landed.Contains(aid);
 
             // Nothing announced this one. If it hit, nobody had time to move for it and there is no position
@@ -376,7 +382,7 @@ static class PositionAnalysis
             // the ability was aimed at does not matter when the answer is the same either way: stand where
             // they stood.
             (string Text, bool Positional) shape = avoided
-                ? ("dodged every cast, so this is where the party stood to avoid it", true)
+                ? ("no player hits recorded; sampled positions do not establish avoidance", true)
                 : shapes.GetValueOrDefault(aid);
 
             // An ability that caught everyone wherever they were has no position to take, and printing one
@@ -511,18 +517,28 @@ static class PositionAnalysis
                         var fraction = arena.Scale > 0f ? fromCentre.Length() / arena.Scale : 0f;
                         row.Append("from centre ").Append(fraction.ToString("f2")).Append("r ").Append(Octant(fromCentre).PadRight(8));
 
-                        // The same conclusion, kept rather than only printed. A report is read afterwards; this
-                        // is what the timer window can say while the cast bar is still filling. Only rows that
-                        // reached this point are recorded, so nothing a player wandered through is shown live.
-                        // Not one this player was ever part of. A mining trip past Rrax Yitya learned a
-                        // position for a boss averaging four hundred and fifty-four yards away, which nobody
-                        // walked to and nothing hit them from; a second trip would have turned it into two
-                        // observations and put it on a bar. The report may describe such a cast, since it did
-                        // happen; a hint may not prescribe for it, since it never involved anybody.
-                        if (learned != null && aid.Type == ActionType.Spell && mean.Length() <= WithinTheFight)
+                        // Reports can describe a moving player or a visual cast. A fixed hint must instead
+                        // be stable in arena coordinates, require little movement, and recur on separate pulls.
+                        // Check all occurrences as well, since the current file key cannot distinguish them.
+                        FixedPositionEvidence.Result evidence(IReadOnlyList<Sample> readings)
+                        {
+                            var observations = new List<FixedPositionEvidence.Observation>(readings.Count);
+                            foreach (var reading in readings)
+                            {
+                                observations.Add(new(new(reading.CastWorld.X, reading.CastWorld.Z),
+                                    new(reading.HitWorld.X, reading.HitWorld.Z),
+                                    new(reading.SettledWorld.X, reading.SettledWorld.Z),
+                                    reading.When.AddSeconds(-reading.Elapsed)));
+                            }
+                            return FixedPositionEvidence.Evaluate(observations, haveElapsed, damaging.Contains(aid));
+                        }
+
+                        var localEvidence = evidence(samples);
+                        if (learned != null && aid.Type == ActionType.Spell && mean.Length() <= WithinTheFight
+                            && localEvidence.Eligible && evidence(all).Eligible)
                         {
                             candidates.GetOrAdd(slot(p)).Add((fromCentre, new(fraction, Bearing(fromCentre), mean.Length(),
-                                samples.Count, castsHere, spread, avoided)));
+                                samples.Count, castsHere, localEvidence.Spread, avoided, localEvidence.Pulls)));
                         }
                     }
 
@@ -705,13 +721,13 @@ static class PositionAnalysis
     private static string Confidence(int samples, int casts, float spread, bool avoided) => samples switch
     {
         < 2 => avoided
-            ? "the only cast, and it hit nobody, so the spot was safe at least once"
+            ? "the only cast; no player hits recorded, which does not establish safety"
             : "the only cast, so this is where they were rather than where to be",
         _ => (spread < FixedSpot, avoided) switch
         {
-            (true, true) => $"safe from within {Tight(spread)} across {samples} of {casts} casts, none of which hit anybody",
+            (true, true) => $"observed within {Tight(spread)} across {samples} of {casts} casts, none of which hit anybody",
             (true, false) => $"held to within {Tight(spread)} across {samples} of {casts} casts",
-            (false, true) => $"safe from roughly here, {Tight(spread)} across {samples} of {casts} casts, none of which hit anybody",
+            (false, true) => $"observed roughly here, {Tight(spread)} across {samples} of {casts} casts, none of which hit anybody",
             _ => $"roughly held, {Tight(spread)} across {samples} of {casts} casts"
         }
     };
@@ -1102,10 +1118,10 @@ static class PositionAnalysis
         }
     }
 
-    // The same preference the file uses when it already holds a reading: more casts behind it wins, and at
+    // The same preference the file uses when it already holds a reading: more independent pulls wins, and at
     // equal support the tighter one does.
     private static bool Better(LearnedPositions.Spot a, LearnedPositions.Spot b)
-        => a.Samples != b.Samples ? a.Samples > b.Samples : a.Spread < b.Spread;
+        => a.Pulls != b.Pulls ? a.Pulls > b.Pulls : a.Spread < b.Spread;
 
     private static string Octant(WDir offset)
     {

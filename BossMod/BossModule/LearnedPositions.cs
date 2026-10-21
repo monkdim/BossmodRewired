@@ -19,7 +19,7 @@ public sealed class LearnedPositions
     public const string FileName = "learned-positions.json";
 
     /// <summary>One slot's place for one ability, measured the way the export measures it.</summary>
-    public readonly record struct Spot(float Fraction, float Bearing, float FromCaster, int Samples, int Casts, float Spread, bool Avoided)
+    public readonly record struct Spot(float Fraction, float Bearing, float FromCaster, int Samples, int Casts, float Spread, bool Avoided, int Pulls = 0)
     {
         /// <summary>The compass point, named as the reports name it.</summary>
         public string Where => Fraction < 0.06f ? "middle" : $"{Compass(Bearing)} {Fraction:f2}r";
@@ -27,19 +27,13 @@ public sealed class LearnedPositions
         /// <summary>
         /// Whether this is worth showing during a fight at all.
         ///
-        /// One observation is where somebody happened to be, and the reports say exactly that: "the only
-        /// cast, so this is where they were rather than where to be". A hint on a bar cannot carry that
-        /// sentence, and is acted on rather than weighed, so the live path has to be stricter than the report
-        /// rather than looser. Measured on a real export, twenty of twenty-one learned spots came from a
-        /// single cast, so without this the window would have been almost entirely guesses.
-        ///
-        /// The file still keeps them. A second run of the same duty turns a guess into evidence, and that is
-        /// the behaviour worth encouraging.
+        /// Repeated hits within one mechanic are correlated. Only evidence from separate pulls can
+        /// qualify for display; schema 1 files do not carry this count and are intentionally ignored.
         /// </summary>
-        public bool Worth => Samples > 1;
+        public bool Worth => Pulls >= 2;
 
         /// <summary>How much this deserves to be believed, so a thin reading can be shown as one.</summary>
-        public bool Confident => Samples > 2 && Spread < 1.5f;
+        public bool Confident => Pulls >= 3 && Spread < 1.5f;
     }
 
     private static readonly string[] Points = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
@@ -234,8 +228,8 @@ public sealed class LearnedPositions
     /// <summary>
     /// Remembers a spot, keeping the better-supported of the two when one is already known.
     ///
-    /// Exporting the same fight twice must not make the answer worse, and a night with more pulls in it should
-    /// win over a night with fewer.
+    /// Exporting the same fight twice must not make the answer worse. More independent pulls win over
+    /// fewer; summaries are selected rather than added, so re-exporting cannot inflate support.
     /// </summary>
     public void Learn(uint ability, string slot, Spot spot)
     {
@@ -251,13 +245,13 @@ public sealed class LearnedPositions
         }
     }
 
-    // More casts behind it wins; the same number of casts, tighter wins.
-    private static bool Better(Spot a, Spot b) => a.Samples != b.Samples ? a.Samples > b.Samples : a.Spread < b.Spread;
+    // More independent pulls wins; at equal support the tighter arena position wins.
+    private static bool Better(Spot a, Spot b) => a.Pulls != b.Pulls ? a.Pulls > b.Pulls : a.Spread < b.Spread;
 
     public string Build()
     {
         var sb = new StringBuilder();
-        sb.Append("{\n  \"schema\": 1,\n  \"abilities\": {\n");
+        sb.Append("{\n  \"schema\": 2,\n  \"abilities\": {\n");
         var first = true;
         foreach (var (ability, bySlot) in _spots)
         {
@@ -281,7 +275,8 @@ public sealed class LearnedPositions
                   .Append(F(s.Fraction)).Append(',').Append(F(s.Bearing)).Append(',').Append(F(s.FromCaster)).Append(',')
                   .Append(s.Samples.ToString(CultureInfo.InvariantCulture)).Append(',')
                   .Append(s.Casts.ToString(CultureInfo.InvariantCulture)).Append(',')
-                  .Append(F(s.Spread)).Append(',').Append(s.Avoided ? '1' : '0').Append(']');
+                  .Append(F(s.Spread)).Append(',').Append(s.Avoided ? '1' : '0').Append(',')
+                  .Append(s.Pulls.ToString(CultureInfo.InvariantCulture)).Append(']');
             }
 
             sb.Append('}');
@@ -338,7 +333,8 @@ public sealed class LearnedPositions
     private static IEnumerable<(uint Ability, string Slot, Spot Spot)> Parse(string text)
     {
         using var doc = JsonDocument.Parse(text);
-        if (!doc.RootElement.TryGetProperty("abilities", out var abilities) || abilities.ValueKind != JsonValueKind.Object)
+        if (!doc.RootElement.TryGetProperty("schema", out var schema) || schema.ValueKind != JsonValueKind.Number || !schema.TryGetInt32(out var version) || version != 2
+            || !doc.RootElement.TryGetProperty("abilities", out var abilities) || abilities.ValueKind != JsonValueKind.Object)
         {
             yield break;
         }
@@ -357,15 +353,18 @@ public sealed class LearnedPositions
                     continue;
                 }
 
-                var n = new List<float>(7);
+                var n = new List<float>(8);
                 foreach (var v in bySlot.Value.EnumerateArray())
                 {
-                    n.Add(v.ValueKind == JsonValueKind.Number && v.TryGetSingle(out var f) ? f : 0f);
+                    n.Add(v.ValueKind == JsonValueKind.Number && v.TryGetSingle(out var f) ? f : float.NaN);
                 }
 
-                if (n.Count >= 7)
+                if (n.Count == 8 && n.All(float.IsFinite) && n[0] >= 0f && n[2] >= 0f && n[5] >= 0f
+                    && n[3] >= 0f && n[3] < int.MaxValue && n[4] >= 0f && n[4] < int.MaxValue
+                    && n[7] >= 0f && n[7] <= n[3] && n[7] < int.MaxValue
+                    && n[3] == MathF.Truncate(n[3]) && n[4] == MathF.Truncate(n[4]) && n[7] == MathF.Truncate(n[7]))
                 {
-                    yield return (ability, bySlot.Name, new(n[0], n[1], n[2], (int)n[3], (int)n[4], n[5], n[6] > 0.5f));
+                    yield return (ability, bySlot.Name, new(n[0], n[1], n[2], (int)n[3], (int)n[4], n[5], n[6] > 0.5f, (int)n[7]));
                 }
             }
         }
