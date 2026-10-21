@@ -164,13 +164,13 @@ public sealed class MechanicTimersWindow : UIWindow
         foreach (var id in abilities)
         {
             var spot = Learned.For(id, slot);
-            if (spot is LearnedPositions.Spot s && s.Worth && (best is not LearnedPositions.Spot b || s.Samples > b.Samples))
+            if (spot is LearnedPositions.Spot s && s.Worth && (best is not LearnedPositions.Spot b || s.Pulls > b.Pulls || (s.Pulls == b.Pulls && s.Spread < b.Spread)))
             {
                 best = s;
             }
         }
 
-        // Two observations is thin and says so with a question mark; three or more that agree drops it. One is
+        // Two independent pulls is thin and says so with a question mark; three that agree drops it. One is
         // not shown at all, so the mark means something rather than sitting on every line.
         return best is LearnedPositions.Spot found
             ? $"{name}  {found.Where}{(found.Confident ? "" : "?")}"

@@ -181,7 +181,7 @@ static class TimelineCoverage
 
         Section(sb, taught,
             "COVERED, and now under the name people say out loud",
-            "A position was found for these, or the party dodged them outright, or they were established as",
+            "A position was found for these, or no player hits were recorded, or they were established as",
             "catching everyone wherever they stood. The sections above give the numbers; this says which",
             "mechanic each of them is.");
     }
@@ -215,7 +215,7 @@ static class TimelineCoverage
         ? "not in this recording"
         : m.Best switch
         {
-            PositionAnalysis.Coverage.Avoided => "dodged clean, so the spot is proven safe",
+            PositionAnalysis.Coverage.Avoided => "no player hits recorded; safety not established",
             PositionAnalysis.Coverage.Prescribed => "position found",
             PositionAnalysis.Coverage.Incidental => "position does not matter",
             PositionAnalysis.Coverage.Unheld => "nobody held a position",

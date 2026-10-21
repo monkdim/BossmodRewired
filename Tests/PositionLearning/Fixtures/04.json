@@ -1,0 +1,69 @@
+{
+  "name": "M11S preparation differs from resolution",
+  "ability": 46116,
+  "slot": "H2",
+  "observedPlayerDamage": true,
+  "eligible": false,
+  "observations": [
+    {
+      "cast": [
+        100.175,
+        105.15
+      ],
+      "hit": [
+        84.752,
+        106.856
+      ],
+      "settled": [
+        87.358,
+        106.584
+      ],
+      "pull": 0
+    },
+    {
+      "cast": [
+        100.145,
+        104.906
+      ],
+      "hit": [
+        84.062,
+        105.791
+      ],
+      "settled": [
+        95.636,
+        102.088
+      ],
+      "pull": 1
+    },
+    {
+      "cast": [
+        99.565,
+        107.011
+      ],
+      "hit": [
+        93.822,
+        84.416
+      ],
+      "settled": [
+        97.948,
+        94.865
+      ],
+      "pull": 2
+    },
+    {
+      "cast": [
+        99.992,
+        105.272
+      ],
+      "hit": [
+        94.771,
+        87.461
+      ],
+      "settled": [
+        95.787,
+        92.116
+      ],
+      "pull": 3
+    }
+  ]
+}
