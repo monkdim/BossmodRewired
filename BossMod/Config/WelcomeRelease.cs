@@ -16,7 +16,7 @@ static class WelcomeRelease
     public static readonly Note[] Notes =
     [
         new("A little hello, just for you", "First visit or fresh update? Your new welcome window brings the highlights together."),
-        new("Your cozy corner stays yours", "Updating keeps your settings. First-time adventurers can head straight into the existing setup."),
+        new("A little more care with every hint", "Learned position hints now need consistent evidence across separate pulls. Older learned positions need a fresh replay export; you may see fewer hints."),
         new("Catch up whenever you like", "Missed something? Type /bmr welcome to come back, or open the full release history below.")
     ];
 }
