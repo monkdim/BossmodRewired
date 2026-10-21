@@ -183,6 +183,7 @@ public sealed class ConfigUI : IDisposable
 
     private static readonly (string, string)[] _availableOtherCommands =
     [
+        ( "welcome", "Reopen the welcome window and current release notes." ),
         ( "restorerotation", "Toggle restore character orientation after action use setting." ),
         ( "resetcolors", "Resets all colors to their default values." ),
         ( "d", "Opens the debug menu." ),
