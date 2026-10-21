@@ -55,6 +55,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
     private ZoneModuleWindow _wndZone = null!;
     private Timelines.TimelineTracker _timelines = null!;
     private SetupWizard _wndSetup = null!;
+    private WelcomeWindow _wndWelcome = null!;
     private MechanicTimersWindow _wndTimers = null!;
     private MechanicDivergenceTracker _divergence = null!;
     private MechanicDivergenceWindow _wndDivergence = null!;
@@ -187,6 +188,11 @@ public sealed class Plugin : IAsyncDalamudPlugin
         // Last, so everything it can point at already exists. It opens itself only when it has not been
         // through, which is once per install rather than once per launch.
         _wndSetup = new(() => OpenConfigUI());
+        _wndWelcome = new(() => _wndSetup.OpenAndBringToFront(), () => OpenConfigUI());
+        if (_wndWelcome.IsOpen)
+        {
+            _wndSetup.IsOpen = false;
+        }
 
         _dalamud.UiBuilder.DisableAutomaticUiHide = true;
         _dalamud.UiBuilder.Draw += DrawUI;
@@ -220,6 +226,7 @@ public sealed class Plugin : IAsyncDalamudPlugin
         _wndDutyExport.Dispose();
         _wndDivergence.Dispose();
         _divergence.Dispose();
+        _wndWelcome.Dispose();
         _wndSetup.Dispose();
         _wndTimers.Dispose();
         _timelines.Dispose();
@@ -258,6 +265,9 @@ public sealed class Plugin : IAsyncDalamudPlugin
 
         switch (split[0].ToUpperInvariant())
         {
+            case "WELCOME":
+                _wndWelcome.Show();
+                break;
             case "D":
                 _wndDebug.IsOpen = true;
                 _wndDebug.BringToFront();

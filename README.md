@@ -77,6 +77,11 @@ arrive through Dalamud on their own.
 
 A first-run window walks through the radar, roles, and one question about sharing.
 
+A little welcome window greets first-time adventurers before setup and returns once after each newer
+plugin version, with the current release highlights. It waits until you are logged in and out of combat.
+Close it whenever you like; `/bmr welcome` brings it back, including the link to the full release history.
+Your existing setup and sharing choices stay as they are.
+
 ## What it records, and what leaves your machine
 
 Recording is local and on by default. Exports are written to your own disk as readable text alongside a
