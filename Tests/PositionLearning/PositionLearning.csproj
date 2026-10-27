@@ -10,6 +10,7 @@
     <Using Include="System.Text" />
     <Compile Include="../../BossMod/Replay/Analysis/FixedPositionEvidence.cs" Link="FixedPositionEvidence.cs" />
     <Compile Include="../../BossMod/BossModule/LearnedPositions.cs" Link="LearnedPositions.cs" />
+    <Compile Include="../../BossMod/BossModule/LearnedPositionEvidence.cs" Link="LearnedPositionEvidence.cs" />
     <None Update="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

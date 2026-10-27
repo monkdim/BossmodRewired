@@ -14,7 +14,7 @@ namespace BossMod;
 /// Only positions that were actually held get in here. A mechanic where people wandered has nothing to teach
 /// and would be worse than silence, because a hint shown during a fight is acted on rather than weighed.
 /// </summary>
-public sealed class LearnedPositions
+public sealed partial class LearnedPositions
 {
     public const string FileName = "learned-positions.json";
 
@@ -213,14 +213,21 @@ public sealed class LearnedPositions
     /// </summary>
     public static void Merge(string path, LearnedPositions fresh)
     {
-        var all = Load(path);
-        foreach (var (ability, slot, spot) in fresh.All())
+        lock (MergeGate)
         {
-            all.Learn(ability, slot, spot);
+            var all = Load(path);
+            foreach (var row in fresh.EvidenceRows())
+            {
+                all.Observe(row);
+            }
+            all.Rebuild();
+            var temporary = path + ".tmp";
+            File.WriteAllText(temporary, all.Build());
+            File.Move(temporary, path, true);
         }
-
-        File.WriteAllText(path, all.Build());
     }
+
+    private static readonly object MergeGate = new();
 
     public Spot? For(uint ability, string slot)
         => slot.Length > 0 && _spots.TryGetValue(ability, out var bySlot) && bySlot.TryGetValue(slot, out var spot) ? spot : null;
@@ -231,7 +238,7 @@ public sealed class LearnedPositions
     /// Exporting the same fight twice must not make the answer worse. More independent pulls win over
     /// fewer; summaries are selected rather than added, so re-exporting cannot inflate support.
     /// </summary>
-    public void Learn(uint ability, string slot, Spot spot)
+    private void Learn(uint ability, string slot, Spot spot)
     {
         if (slot.Length == 0)
         {
@@ -248,125 +255,32 @@ public sealed class LearnedPositions
     // More independent pulls wins; at equal support the tighter arena position wins.
     private static bool Better(Spot a, Spot b) => a.Pulls != b.Pulls ? a.Pulls > b.Pulls : a.Spread < b.Spread;
 
-    public string Build()
-    {
-        var sb = new StringBuilder();
-        sb.Append("{\n  \"schema\": 2,\n  \"abilities\": {\n");
-        var first = true;
-        foreach (var (ability, bySlot) in _spots)
-        {
-            if (!first)
-            {
-                sb.Append(",\n");
-            }
+    public string Build() => JsonSerializer.Serialize(new EvidenceFile(3, EvidenceRows().ToList()), new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 
-            first = false;
-            sb.Append("    \"").Append(ability.ToString(CultureInfo.InvariantCulture)).Append("\": {");
-            var firstSlot = true;
-            foreach (var (slot, s) in bySlot)
-            {
-                if (!firstSlot)
-                {
-                    sb.Append(", ");
-                }
-
-                firstSlot = false;
-                sb.Append('"').Append(slot).Append("\": [")
-                  .Append(F(s.Fraction)).Append(',').Append(F(s.Bearing)).Append(',').Append(F(s.FromCaster)).Append(',')
-                  .Append(s.Samples.ToString(CultureInfo.InvariantCulture)).Append(',')
-                  .Append(s.Casts.ToString(CultureInfo.InvariantCulture)).Append(',')
-                  .Append(F(s.Spread)).Append(',').Append(s.Avoided ? '1' : '0').Append(',')
-                  .Append(s.Pulls.ToString(CultureInfo.InvariantCulture)).Append(']');
-            }
-
-            sb.Append('}');
-        }
-
-        return sb.Append("\n  }\n}\n").ToString();
-    }
-
-    // Coordinates again, so the machine's idea of a decimal separator stays out of it.
-    private static string F(float v) => v.ToString("f3", CultureInfo.InvariantCulture);
-
-    /// <summary>
-    /// Reads the file back, tolerating everything.
-    ///
-    /// This runs while the game is starting and feeds a window that draws every frame. A malformed file, a file
-    /// from a newer build, a half-written file: none of them are worth taking the plugin down for, and an empty
-    /// set of hints is a perfectly good answer.
-    /// </summary>
     public static LearnedPositions Load(string path)
     {
-        var res = new LearnedPositions();
+        var result = new LearnedPositions();
         try
         {
             if (!File.Exists(path))
-            {
-                return res;
-            }
-
+                return result;
             var text = File.ReadAllText(path);
-            foreach (var (ability, slot, spot) in Parse(text))
-            {
-                res.Learn(ability, slot, spot);
-            }
+            using var document = JsonDocument.Parse(text);
+            if (!document.RootElement.TryGetProperty("schema", out var schema) || !schema.TryGetInt32(out var version) || version != 3)
+                return result;
+            var file = JsonSerializer.Deserialize<EvidenceFile>(text, new JsonSerializerOptions { RespectRequiredConstructorParameters = true, PropertyNameCaseInsensitive = true });
+            // Old summaries cannot establish pull identity or preserve contradictions. Re-export to rebuild.
+            if (file is not { Schema: 3, Evidence: not null })
+                return result;
+            foreach (var row in file.Evidence)
+                result.Observe(row);
+            result.Rebuild();
         }
         catch (Exception e)
         {
             Service.Log($"[LearnedPositions] could not read {path}: {e.Message}");
+            return new();
         }
-
-        return res;
-    }
-
-    /// <summary>
-    /// Reads the shape Build writes, with a real parser.
-    ///
-    /// The first version scanned for quote pairs by hand and recovered nothing at all from its own output: it
-    /// walked the gaps between the keys rather than the keys. Load silently returned empty, so Merge had
-    /// nothing to merge into and every export overwrote the file with only its own findings.
-    ///
-    /// Writing still goes through StringBuilder, because a serializer honouring the machine's locale would
-    /// write coordinates with a decimal comma. Reading has no such hazard: JSON numbers are invariant by
-    /// specification, so a real parser is both safer and shorter than being clever here.
-    /// </summary>
-    private static IEnumerable<(uint Ability, string Slot, Spot Spot)> Parse(string text)
-    {
-        using var doc = JsonDocument.Parse(text);
-        if (!doc.RootElement.TryGetProperty("schema", out var schema) || schema.ValueKind != JsonValueKind.Number || !schema.TryGetInt32(out var version) || version != 2
-            || !doc.RootElement.TryGetProperty("abilities", out var abilities) || abilities.ValueKind != JsonValueKind.Object)
-        {
-            yield break;
-        }
-
-        foreach (var byAbility in abilities.EnumerateObject())
-        {
-            if (!uint.TryParse(byAbility.Name, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ability) || byAbility.Value.ValueKind != JsonValueKind.Object)
-            {
-                continue;
-            }
-
-            foreach (var bySlot in byAbility.Value.EnumerateObject())
-            {
-                if (bySlot.Name.Length == 0 || bySlot.Value.ValueKind != JsonValueKind.Array)
-                {
-                    continue;
-                }
-
-                var n = new List<float>(8);
-                foreach (var v in bySlot.Value.EnumerateArray())
-                {
-                    n.Add(v.ValueKind == JsonValueKind.Number && v.TryGetSingle(out var f) ? f : float.NaN);
-                }
-
-                if (n.Count == 8 && n.All(float.IsFinite) && n[0] >= 0f && n[2] >= 0f && n[5] >= 0f
-                    && n[3] >= 0f && n[3] < int.MaxValue && n[4] >= 0f && n[4] < int.MaxValue
-                    && n[7] >= 0f && n[7] <= n[3] && n[7] < int.MaxValue
-                    && n[3] == MathF.Truncate(n[3]) && n[4] == MathF.Truncate(n[4]) && n[7] == MathF.Truncate(n[7]))
-                {
-                    yield return (ability, bySlot.Name, new(n[0], n[1], n[2], (int)n[3], (int)n[4], n[5], n[6] > 0.5f, (int)n[7]));
-                }
-            }
-        }
+        return result;
     }
 }
