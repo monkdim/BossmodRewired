@@ -15,8 +15,13 @@ players. It is an eligibility requirement, not a claim that damage is always a f
 These checks exercise the new policy on real observations and verify persistence migration. They do
 not replace replay-parser integration, separate-session evaluation, or watching the live window in a duty.
 
-Schema 2 learned files require independent pull counts. Schema 1 files are ignored because their sample
-counts and spread cannot establish the new requirements. Export format 6 makes earlier exports eligible
-for re-export. Separate recording summaries still compete rather than accumulate; re-exporting therefore
-cannot manufacture independent support. Cross-session provenance and contextual movement advice remain
-separate work.
+Schema 3 retains absolute pull/event identities, arena-relative cast/hit/settled positions and
+qualification flags. Separate recordings accumulate; re-importing the same observation does not add
+support. All retained observations participate in rebuilding hints, including rejected/conflicting pulls.
+Old schema 1/2 summaries are ignored because they cannot reconstruct evidence. Export format 7 makes
+older recordings eligible for re-export. No installed user data is modified by these tests.
+
+An optional argument accepts a JSON array of `{ "name": "recording", "rows": [Evidence...] }` to run
+the production merger against local replay-derived observations. The local audit verifies these rows'
+ability/timestamp correspondence and damage qualification against raw recordings before conversion.
+This does not initialize the full in-game replay-analysis pipeline or test the live timer window.

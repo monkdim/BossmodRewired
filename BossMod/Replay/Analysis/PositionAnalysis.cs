@@ -360,6 +360,27 @@ static class PositionAnalysis
 
         foreach (var (aid, perPlayer) in byAbility)
         {
+            // Capture every observation before descriptive filters. A rejected pull must be able to
+            // contradict an existing hint; one pull must survive to combine with a later recording.
+            if (learned != null && arena != null && haveElapsed && aid.Type == ActionType.Spell)
+            {
+                var qualified = damaging.Contains(aid)
+                    && (telegraphed.GetValueOrDefault(aid) > 0 || marked.Contains(aid))
+                    && (!landed.Contains(aid) || shapes.GetValueOrDefault(aid).Positional);
+                foreach (var (player, readings) in perPlayer)
+                {
+                    foreach (var reading in readings)
+                    {
+                        var cast = reading.CastWorld - arena.Reference;
+                        var hit = reading.HitWorld - arena.Reference;
+                        var settled = reading.SettledWorld - arena.Reference;
+                        learned.Observe(new(aid.ID, slot(player), reading.When.AddSeconds(-reading.Elapsed).Ticks,
+                            reading.When.Ticks, cast.X, cast.Z, hit.X, hit.Z, settled.X, settled.Z,
+                            arena.Scale, reading.AtCast.Length(), qualified));
+                    }
+                }
+            }
+
             // No player hits is descriptive only. It may be a visual action, not a successful dodge;
             // live hints additionally require observed player damage and independent, stable pulls.
             var avoided = !landed.Contains(aid);
@@ -419,11 +440,6 @@ static class PositionAnalysis
                 var rows = new List<string>();
                 var castsHere = 0;
                 var staleReads = 0;
-
-                // Gathered rather than learned on the spot, because a slot may be several people. Whether they
-                // agree is only knowable once they have all been measured, and a slot whose members disagree
-                // has no place to teach.
-                var candidates = new Dictionary<string, List<(WDir FromCentre, LearnedPositions.Spot Spot)>>();
 
                 foreach (var (p, all) in perPlayer)
                 {
@@ -517,35 +533,12 @@ static class PositionAnalysis
                         var fraction = arena.Scale > 0f ? fromCentre.Length() / arena.Scale : 0f;
                         row.Append("from centre ").Append(fraction.ToString("f2")).Append("r ").Append(Octant(fromCentre).PadRight(8));
 
-                        // Reports can describe a moving player or a visual cast. A fixed hint must instead
-                        // be stable in arena coordinates, require little movement, and recur on separate pulls.
-                        // Check all occurrences as well, since the current file key cannot distinguish them.
-                        FixedPositionEvidence.Result evidence(IReadOnlyList<Sample> readings)
-                        {
-                            var observations = new List<FixedPositionEvidence.Observation>(readings.Count);
-                            foreach (var reading in readings)
-                            {
-                                observations.Add(new(new(reading.CastWorld.X, reading.CastWorld.Z),
-                                    new(reading.HitWorld.X, reading.HitWorld.Z),
-                                    new(reading.SettledWorld.X, reading.SettledWorld.Z),
-                                    reading.When.AddSeconds(-reading.Elapsed)));
-                            }
-                            return FixedPositionEvidence.Evaluate(observations, haveElapsed, damaging.Contains(aid));
-                        }
 
-                        var localEvidence = evidence(samples);
-                        if (learned != null && aid.Type == ActionType.Spell && mean.Length() <= WithinTheFight
-                            && localEvidence.Eligible && evidence(all).Eligible)
-                        {
-                            candidates.GetOrAdd(slot(p)).Add((fromCentre, new(fraction, Bearing(fromCentre), mean.Length(),
-                                samples.Count, castsHere, localEvidence.Spread, avoided, localEvidence.Pulls)));
-                        }
                     }
 
                     rows.Add(row.Append(Confidence(samples.Count, castsHere, spread, avoided)).ToString());
                 }
 
-                Teach(learned, aid, candidates);
 
                 if (rows.Count == 0)
                 {
@@ -1061,67 +1054,6 @@ static class PositionAnalysis
     // An assigned slot is one person and never trips this; a job slot can be eight melees, and eight melees
     // spread around a boss have no shared position to teach even though each of them held theirs perfectly.
     private const float SameSpot = 3f;
-
-    /// <summary>
-    /// Files one occurrence's findings, keeping only the slots that describe somewhere.
-    ///
-    /// An assigned slot is one person, so it arrives with a single reading and goes straight in. A job slot
-    /// can be everybody who happens to play that role, and those are two different situations wearing the same
-    /// name: four healers stacked on the boss have a position to teach, four melees spread around it do not,
-    /// even though each of the four held their own spot perfectly. Averaging the second case would invent a
-    /// place nobody stood and hand it to somebody mid-pull as advice.
-    ///
-    /// So the members have to agree before anything is learned, and the best-supported reading among them is
-    /// what gets kept. Disagreement is silence rather than a guess.
-    /// </summary>
-    private static void Teach(LearnedPositions? learned, ActionID aid, Dictionary<string, List<(WDir FromCentre, LearnedPositions.Spot Spot)>> candidates)
-    {
-        if (learned == null)
-        {
-            return;
-        }
-
-        foreach (var (slot, found) in candidates)
-        {
-            if (found.Count == 0)
-            {
-                continue;
-            }
-
-            var best = found[0];
-            var centre = new WDir();
-            for (var i = 0; i < found.Count; ++i)
-            {
-                centre += found[i].FromCentre;
-                if (i > 0 && Better(found[i].Spot, best.Spot))
-                {
-                    best = found[i];
-                }
-            }
-
-            centre /= found.Count;
-
-            var agreed = true;
-            foreach (var (from, _) in found)
-            {
-                if ((from - centre).Length() > SameSpot)
-                {
-                    agreed = false;
-                    break;
-                }
-            }
-
-            if (agreed)
-            {
-                learned.Learn(aid.ID, slot, best.Spot);
-            }
-        }
-    }
-
-    // The same preference the file uses when it already holds a reading: more independent pulls wins, and at
-    // equal support the tighter one does.
-    private static bool Better(LearnedPositions.Spot a, LearnedPositions.Spot b)
-        => a.Pulls != b.Pulls ? a.Pulls > b.Pulls : a.Spread < b.Spread;
 
     private static string Octant(WDir offset)
     {
