@@ -11,21 +11,21 @@ namespace BossMod;
 /// report nobody can read while a mechanic is landing on them. This is the same answer in a form the plugin can
 /// hold: keyed on the ability, so the timer window can look up what is coming and say where to go.
 ///
-/// Only positions that were actually held get in here. A mechanic where people wandered has nothing to teach
-/// and would be worse than silence, because a hint shown during a fight is acted on rather than weighed.
+    /// Compact evidence retains failures as well as agreement. Candidates are separate from live advice,
+    /// which requires a matching encounter, occurrence, recent session and independent corroboration.
 /// </summary>
 public sealed partial class LearnedPositions
 {
     public const string FileName = "learned-positions.json";
 
     /// <summary>One slot's place for one ability, measured the way the export measures it.</summary>
-    public readonly record struct Spot(float Fraction, float Bearing, float FromCaster, int Samples, int Casts, float Spread, bool Avoided, int Pulls = 0)
+    public readonly record struct Spot(float Fraction, float Bearing, float FromCaster, int Samples, int Casts, float Spread, bool Avoided, int Pulls = 0, float WorldX = 0, float WorldZ = 0)
     {
         /// <summary>The compass point, named as the reports name it.</summary>
         public string Where => Fraction < 0.06f ? "middle" : $"{Compass(Bearing)} {Fraction:f2}r";
 
         /// <summary>
-        /// Whether this is worth showing during a fight at all.
+        /// Whether there is a candidate supported by independent pulls. ContextHint.Ready gates live advice.
         ///
         /// Repeated hits within one mechanic are correlated. Only evidence from separate pulls can
         /// qualify for display; schema 1 files do not carry this count and are intentionally ignored.
@@ -186,101 +186,29 @@ public sealed partial class LearnedPositions
         _ => ""
     };
 
-    // ability -> slot -> where that slot stood. Abilities rather than mechanic names, because an ID is the one
-    // thing cactbot, the game and this analysis all agree on without a translation table. Slots are strings
-    // rather than the roles enum because half of them are jobs, and a file anybody may read is better off
-    // saying "Healer" than carrying a second enum nobody outside this build can resolve.
-    private readonly Dictionary<uint, Dictionary<string, Spot>> _spots = [];
-
-    public int Count => _spots.Count;
+    public int Count => Contexts.Select(c => c.Ability).Distinct().Count();
 
     public IEnumerable<(uint Ability, string Slot, Spot Spot)> All()
-    {
-        foreach (var (ability, bySlot) in _spots)
-        {
-            foreach (var (slot, spot) in bySlot)
-            {
-                yield return (ability, slot, spot);
-            }
-        }
-    }
+        => Contexts.Select(c => (c.Ability, c.Slot, c.Spot));
 
-    /// <summary>
-    /// Folds a night's findings into what was already known and writes the result.
-    ///
-    /// Reading before writing is the point: the file accumulates across every fight anybody exports, so a
-    /// single-boss export must never replace the rest of what has been learned.
-    /// </summary>
+    private static readonly object MergeGate = new();
+
     public static void Merge(string path, LearnedPositions fresh)
     {
         lock (MergeGate)
         {
-            var all = Load(path);
-            foreach (var row in fresh.EvidenceRows())
-            {
-                all.Observe(row);
-            }
+            var all = Read(path);
+            foreach (var row in fresh.PullEvidenceRows())
+                all.MergePull(row);
             all.Rebuild();
-            var temporary = path + ".tmp";
-            File.WriteAllText(temporary, all.Build());
-            File.Move(temporary, path, true);
+            WriteAtomic(path, all);
         }
     }
 
-    private static readonly object MergeGate = new();
-
-    public Spot? For(uint ability, string slot)
-        => slot.Length > 0 && _spots.TryGetValue(ability, out var bySlot) && bySlot.TryGetValue(slot, out var spot) ? spot : null;
-
-    /// <summary>
-    /// Remembers a spot, keeping the better-supported of the two when one is already known.
-    ///
-    /// Exporting the same fight twice must not make the answer worse. More independent pulls win over
-    /// fewer; summaries are selected rather than added, so re-exporting cannot inflate support.
-    /// </summary>
-    private void Learn(uint ability, string slot, Spot spot)
+    // Diagnostics only: candidates are not certified live advice. The timer uses the public contextual lookup.
+    internal Spot? For(uint ability, string slot)
     {
-        if (slot.Length == 0)
-        {
-            return;
-        }
-
-        var bySlot = _spots.GetOrAdd(ability);
-        if (!bySlot.TryGetValue(slot, out var prev) || Better(spot, prev))
-        {
-            bySlot[slot] = spot;
-        }
-    }
-
-    // More independent pulls wins; at equal support the tighter arena position wins.
-    private static bool Better(Spot a, Spot b) => a.Pulls != b.Pulls ? a.Pulls > b.Pulls : a.Spread < b.Spread;
-
-    public string Build() => JsonSerializer.Serialize(new EvidenceFile(3, EvidenceRows().ToList()), new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-
-    public static LearnedPositions Load(string path)
-    {
-        var result = new LearnedPositions();
-        try
-        {
-            if (!File.Exists(path))
-                return result;
-            var text = File.ReadAllText(path);
-            using var document = JsonDocument.Parse(text);
-            if (!document.RootElement.TryGetProperty("schema", out var schema) || !schema.TryGetInt32(out var version) || version != 3)
-                return result;
-            var file = JsonSerializer.Deserialize<EvidenceFile>(text, new JsonSerializerOptions { RespectRequiredConstructorParameters = true, PropertyNameCaseInsensitive = true });
-            // Old summaries cannot establish pull identity or preserve contradictions. Re-export to rebuild.
-            if (file is not { Schema: 3, Evidence: not null })
-                return result;
-            foreach (var row in file.Evidence)
-                result.Observe(row);
-            result.Rebuild();
-        }
-        catch (Exception e)
-        {
-            Service.Log($"[LearnedPositions] could not read {path}: {e.Message}");
-            return new();
-        }
-        return result;
+        var matches = _contexts.Where(c => c.Ability == ability && c.Slot == slot).Take(2).ToList();
+        return matches.Count == 1 && matches[0].Spot.Worth ? matches[0].Spot : null;
     }
 }
