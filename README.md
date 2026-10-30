@@ -39,8 +39,12 @@ instead.
   casts and a position somebody happened to be in once read differently, and are reported differently.
 - **Pulls pool per boss**, so a mechanic that fires once a pull still has enough observations across a
   progression session to say whether its position was chosen or incidental.
-- **Learned positions appear on the mechanic timer bars**, which is the whole point: the answer arrives
-  while the cast bar is still filling, rather than in a report you read afterwards.
+- **Contextual positions appear on the mechanic timer bars** for the matching boss, mechanic occurrence
+  and recent session. Live hints need five agreeing current-session pulls and independent session support;
+  new conflicts hide them. They describe recent positions rather than proving a mechanic was resolved safely.
+  An active encounter and reliable timing are required, so unsupported contexts remain quiet.
+- **Compact learning history** retains per-pull bounds and failure evidence across recordings. Existing
+  histories upgrade in the background; old positions without verifiable arena context stay quarantined.
 - **Optionally, what the position cost you.** Switched on in settings, exports also carry what everybody
   pressed and how much of each pull they spent casting. A spot that drops two casts is a worse spot than
   one that drops none, and positions alone will never say so.

@@ -23,7 +23,7 @@ static class ReplayExport
     /// The number is the only thing that changed, and it changed on every row, which is exactly the case this
     /// version exists to catch: without the bump a re-export would look current and be skipped.
     /// </summary>
-    public const int FormatVersion = 7;
+    public const int FormatVersion = 8;
 
     private static string Stamp => $"Export format {FormatVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)}.";
 
@@ -108,6 +108,7 @@ static class ReplayExport
         var learned = new LearnedPositions();
         var (text, summary) = Build(replay, export, learned);
         var dir = EncounterDump.TargetDirectory();
+        Directory.CreateDirectory(dir);
         var target = Path.Combine(dir, FileName(replay.Path));
         File.WriteAllText(target, text);
 

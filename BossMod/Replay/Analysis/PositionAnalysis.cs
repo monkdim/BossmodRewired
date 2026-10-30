@@ -55,7 +55,7 @@ static class PositionAnalysis
     /// Also returns what it managed to say about each ability, which is what the coverage report reads to work
     /// out which of a fight's named mechanics this export still has nothing useful to say about.
     /// </remarks>
-    public static Dictionary<uint, Coverage> Append(StringBuilder sb, Replay replay, IReadOnlyCollection<Replay.Participant> involved, Func<Replay.Participant, string> label, Func<Replay.Action, bool> inScope, ArenaEstimate? arena = null, Func<DateTime, double>? elapsed = null, PositionExport? export = null, LearnedPositions? learned = null)
+    public static Dictionary<uint, Coverage> Append(StringBuilder sb, Replay replay, IReadOnlyCollection<Replay.Participant> involved, Func<Replay.Participant, string> label, Func<Replay.Action, bool> inScope, ArenaEstimate? arena = null, Func<DateTime, double>? elapsed = null, PositionExport? export = null, LearnedPositions? learned = null, uint encounter = 0)
     {
         var outcomes = new Dictionary<uint, Coverage>();
         if (involved.Count == 0)
@@ -289,7 +289,7 @@ static class PositionAnalysis
             sb.AppendLine();
         }
 
-        AppendHints(sb, byAbility, resolutions, telegraphed, marked, landed, grouped, shapes, moments, label, slot, arena, outcomes, elapsed != null, learned, damaging);
+        AppendHints(sb, byAbility, resolutions, telegraphed, marked, landed, grouped, shapes, moments, label, slot, arena, outcomes, elapsed != null, learned, damaging, encounter);
         return outcomes;
     }
 
@@ -332,7 +332,7 @@ static class PositionAnalysis
         Dictionary<uint, Coverage> outcomes,
         bool haveElapsed,
         LearnedPositions? learned,
-        HashSet<ActionID> damaging)
+        HashSet<ActionID> damaging, uint encounter)
     {
         // Only spells, and only the best outcome for one that appears twice. Everything that joins against a
         // cactbot timeline joins on the spell ID, and nothing else has one.
@@ -362,7 +362,7 @@ static class PositionAnalysis
         {
             // Capture every observation before descriptive filters. A rejected pull must be able to
             // contradict an existing hint; one pull must survive to combine with a later recording.
-            if (learned != null && arena != null && haveElapsed && aid.Type == ActionType.Spell)
+            if (learned != null && arena != null && float.IsFinite(arena.Scale) && arena.Scale > 0 && haveElapsed && aid.Type == ActionType.Spell)
             {
                 var qualified = damaging.Contains(aid)
                     && (telegraphed.GetValueOrDefault(aid) > 0 || marked.Contains(aid))
@@ -371,12 +371,12 @@ static class PositionAnalysis
                 {
                     foreach (var reading in readings)
                     {
-                        var cast = reading.CastWorld - arena.Reference;
-                        var hit = reading.HitWorld - arena.Reference;
-                        var settled = reading.SettledWorld - arena.Reference;
-                        learned.Observe(new(aid.ID, slot(player), reading.When.AddSeconds(-reading.Elapsed).Ticks,
-                            reading.When.Ticks, cast.X, cast.Z, hit.X, hit.Z, settled.X, settled.Z,
-                            arena.Scale, reading.AtCast.Length(), qualified));
+                        var cast = reading.CastWorld;
+                        var hit = reading.HitWorld;
+                        var settled = reading.SettledWorld;
+                        learned.Observe(new(aid.ID, slot(player), reading.When.ToUniversalTime().AddSeconds(-reading.Elapsed).Ticks,
+                            reading.When.ToUniversalTime().Ticks, cast.X, cast.Z, hit.X, hit.Z, settled.X, settled.Z,
+                            arena.Scale, reading.AtCast.Length(), qualified, encounter));
                     }
                 }
             }

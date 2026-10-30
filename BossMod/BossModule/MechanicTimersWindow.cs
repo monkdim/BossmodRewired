@@ -42,6 +42,7 @@ public sealed class MechanicTimersWindow : UIWindow
         _mgr = mgr;
         _timeline = timeline;
         RespectCloseHotkey = false;
+        _ = Learned; // Start any one-time migration in the background, before the next pull.
     }
 
     public override void PreOpenCheck()
@@ -141,7 +142,7 @@ public sealed class MechanicTimersWindow : UIWindow
         {
             // Filled proportionally over the horizon rather than a real duration: the timeline says when a
             // mechanic lands, not how long it has been coming.
-            _bars.Add((Label(name, abilities, slot), seconds, TimelineHorizon));
+            _bars.Add((Label(name, abilities, slot, seconds), seconds, TimelineHorizon));
         }
     }
 
@@ -151,7 +152,7 @@ public sealed class MechanicTimersWindow : UIWindow
     /// This is the whole point of the fork. Everything else here says a mechanic is coming, which the game
     /// mostly manages on its own; this says where to be for it, in the seconds when that is still actionable.
     /// </summary>
-    private string Label(string name, uint[] abilities, string slot)
+    private string Label(string name, uint[] abilities, string slot, float secondsUntil)
     {
         if (slot.Length == 0 || !Config.ShowLearned)
         {
@@ -163,17 +164,27 @@ public sealed class MechanicTimersWindow : UIWindow
         LearnedPositions.Spot? best = null;
         foreach (var id in abilities)
         {
-            var spot = Learned.For(id, slot);
+            var module = _mgr.ActiveModule;
+            var nearEdge = module?.Bounds is ABRect rect ? Math.Min(rect.HalfWidth, rect.HalfHeight) : module?.Bounds.Radius ?? 0;
+            var reach = module?.Bounds is ABRect rectangle ? MathF.Sqrt(rectangle.HalfWidth * rectangle.HalfWidth + rectangle.HalfHeight * rectangle.HalfHeight) : nearEdge;
+            var spot = module?.StateMachine.ActiveState != null
+                ? Learned.For(id, slot, module.PrimaryActor.OID, module.StateMachine.TimeSinceActivation + secondsUntil,
+                    _ws.CurrentTime.ToUniversalTime().AddSeconds(-module.StateMachine.TimeSinceActivation).Ticks,
+                    module.Center.X, module.Center.Z, nearEdge, reach)
+                : null;
+            if (spot is LearnedPositions.Spot position && module != null
+                && !module.Bounds.Contains(new WDir(position.WorldX - module.Center.X, position.WorldZ - module.Center.Z)))
+                spot = null;
             if (spot is LearnedPositions.Spot s && s.Worth && (best is not LearnedPositions.Spot b || s.Pulls > b.Pulls || (s.Pulls == b.Pulls && s.Spread < b.Spread)))
             {
                 best = s;
             }
         }
 
-        // Two independent pulls is thin and says so with a question mark; three that agree drops it. One is
-        // not shown at all, so the mark means something rather than sitting on every line.
+        // The contextual lookup already requires five current pulls and independent session support.
+        // A question mark still distinguishes the wider measured positions from precise agreement.
         return best is LearnedPositions.Spot found
-            ? $"{name}  {found.Where}{(found.Confident ? "" : "?")}"
+            ? $"{name}  recent {found.Where}{(found.Confident ? "" : "?")}"
             : name;
     }
 
@@ -236,10 +247,30 @@ public sealed class MechanicTimersWindow : UIWindow
     // Loaded once and kept, since this is read every frame and rewritten only when somebody exports. The
     // reload button in the replay window is what picks up a fresh export without a restart.
     private static LearnedPositions? _learned;
-    public static LearnedPositions Learned => _learned ??= LearnedPositions.Load(
-        System.IO.Path.Combine(ReplayAnalysis.EncounterDump.TargetDirectory(), LearnedPositions.FileName));
+    private static Task<LearnedPositions>? _learningLoad;
+    private static readonly LearnedPositions EmptyLearning = new();
+    public static LearnedPositions Learned
+    {
+        get
+        {
+            if (_learned != null) return _learned;
+            _learningLoad ??= Task.Run(() => LearnedPositions.LoadAndCompact(
+                System.IO.Path.Combine(ReplayAnalysis.EncounterDump.TargetDirectory(), LearnedPositions.FileName)));
+            if (_learningLoad.IsCompletedSuccessfully) _learned = _learningLoad.Result;
+            else if (_learningLoad.IsFaulted)
+            {
+                Service.Log($"[LearnedPositions] background load failed: {_learningLoad.Exception}");
+                _learned = new();
+            }
+            return _learned ?? EmptyLearning;
+        }
+    }
 
-    public static void ForgetLearned() => _learned = null;
+    public static void ForgetLearned()
+    {
+        _learned = null;
+        _learningLoad = null;
+    }
 
     private void CollectCasts()
     {

@@ -108,7 +108,9 @@ sealed class EncounterDump : CommonEnumInfo
 
         try
         {
-            var path = Path.Combine(TargetDirectory(), name);
+            var directory = TargetDirectory();
+            Directory.CreateDirectory(directory);
+            var path = Path.Combine(directory, name);
             File.WriteAllText(path, text);
 
             // Alongside rather than instead: the text is what a person reads, this is what anything else does,
@@ -373,7 +375,7 @@ sealed class EncounterDump : CommonEnumInfo
                 }
             }
 
-            merge(PositionAnalysis.Append(sb, pooled, party, label, InAnyPull, arena, ElapsedIntoPull, export, learned));
+            merge(PositionAnalysis.Append(sb, pooled, party, label, InAnyPull, arena, ElapsedIntoPull, export, learned, encounter: _oid));
             AppendCoverage(sb, coverage, export);
             return;
         }
@@ -406,7 +408,7 @@ sealed class EncounterDump : CommonEnumInfo
 
             merge(PositionAnalysis.Append(sb, replay, party, label,
                 a => enc.Time.Contains(a.Timestamp),
-                arena, ElapsedIntoPull, export, learned));
+                arena, ElapsedIntoPull, export, learned, encounter: _oid));
         }
 
         AppendCoverage(sb, coverage, export);

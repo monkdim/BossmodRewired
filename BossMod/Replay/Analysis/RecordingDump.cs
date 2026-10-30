@@ -164,7 +164,7 @@ static class RecordingDump
 
             var coverage = PositionAnalysis.Append(sb, replay, involved, Label,
                 a => a.Timestamp >= fight.Start && a.Timestamp <= fight.End, arena,
-                t => (t - fight.Start).TotalSeconds, export, learned);
+                t => (t - fight.Start).TotalSeconds, export, learned, encounter: fight.OID);
 
             // Per fight rather than per recording, since a recording is a night of several different ones and
             // each has a timeline of its own.
