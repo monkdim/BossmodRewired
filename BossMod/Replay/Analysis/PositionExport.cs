@@ -26,7 +26,7 @@ sealed class PositionExport
     /// "BLM 4ed5bd43" for somebody without: the same two words in the opposite order. Anything splitting that
     /// at scale gets it wrong on half the rows, so the data file says which is which.
     /// </remarks>
-    public readonly record struct Row(uint Ability, string Who, string Job, string Slot, DateTime When, double Elapsed, WPos Cast, WPos Hit, WPos Settled, WPos Caster);
+    public readonly record struct Row(uint Ability, string Who, string Job, string Slot, DateTime When, double Elapsed, WPos Cast, WPos Hit, WPos Settled, WPos Caster, float CasterRot, bool Caught);
 
     /// <summary>
     /// One player's damage, healing and deaths over one pull.
@@ -69,6 +69,32 @@ sealed class PositionExport
     /// observations and worth keeping, but they are not the same evidence as a fight somebody stood in, and
     /// nothing downstream can tell them apart unless the file says so.
     /// </summary>
+    /// <summary>
+    /// The arena in force from a moment until the next segment begins.
+    ///
+    /// A pull used to carry one arena, which is wrong for any fight that rebuilds its floor partway through.
+    /// M11S moves its centre fifteen yalms when a platform collapses, and seven per cent of the M11S samples
+    /// already recorded are measured against the centre the fight no longer had, a median of five yalms out
+    /// in an arena whose half-width is twenty.
+    ///
+    /// <c>Source</c> is the field a reader needs most and the old format could not express: "module" means a
+    /// person typed these numbers while writing the encounter, "estimate" means they were inferred from where
+    /// the party stood. The previous format said "occupied area only" somewhere in a prose shape string, and
+    /// every consumer of the corpus had to parse English to find out whether it was looking at a measurement
+    /// or a guess.
+    /// </summary>
+    public readonly record struct ArenaSegment(int Pull, DateTime From, WPos Center, float Scale, string Shape, string Source);
+
+    /// <summary>
+    /// The director updates seen during a pull, as they arrived.
+    ///
+    /// Exported raw and uninterpreted on purpose. These are what tell an encounter its floor has changed, and
+    /// the mapping from update to arena lives in the module rather than here. Writing them down means a reader
+    /// who disagrees with the segments above can rebuild them, and means a fight whose arena table has never
+    /// been observed still carries the evidence that it moved.
+    /// </summary>
+    public readonly record struct DirectorEvent(int Pull, DateTime At, uint UpdateID, uint Param1);
+
     public readonly record struct PullInfo(int Index, uint OID, string Boss, DateTime From, DateTime To, WPos? ArenaCenter, float ArenaScale, string? ArenaShape, bool Mine);
 
     public string Boss = "";
@@ -80,6 +106,8 @@ sealed class PositionExport
     // whichever encounter happened to be written last.
     public readonly List<PullInfo> Pulls = [];
     public readonly List<Row> Rows = [];
+    public readonly List<ArenaSegment> ArenaSegments = [];
+    public readonly List<DirectorEvent> DirectorEvents = [];
     public readonly List<AbilityInfo> Abilities = [];
     public readonly List<Contribution> Contributions = [];
     public readonly List<Rotation> Rotations = [];
@@ -91,8 +119,14 @@ sealed class PositionExport
     public void BeginPull(int index, uint oid, string boss, DateTime from, DateTime to, WPos? arenaCenter, float arenaScale, string? arenaShape, bool mine)
         => Pulls.Add(new(index, oid, boss, from, to, arenaCenter, arenaScale, arenaShape, mine));
 
-    public void Add(uint ability, string who, Class job, string slot, DateTime when, double elapsed, WPos cast, WPos hit, WPos settled, WPos caster)
-        => Rows.Add(new(ability, who, job.ToString(), slot, when, elapsed, cast, hit, settled, caster));
+    public void Add(uint ability, string who, Class job, string slot, DateTime when, double elapsed, WPos cast, WPos hit, WPos settled, WPos caster, float casterRot, bool caught)
+        => Rows.Add(new(ability, who, job.ToString(), slot, when, elapsed, cast, hit, settled, caster, casterRot, caught));
+
+    public void AddArena(int pull, DateTime from, WPos center, float scale, string shape, string source)
+        => ArenaSegments.Add(new(pull, from, center, scale, shape, source));
+
+    public void AddDirector(int pull, DateTime at, uint updateID, uint param1)
+        => DirectorEvents.Add(new(pull, at, updateID, param1));
 
     /// <summary>
     /// Which pull a moment belongs to, worked out from when it happened.
@@ -198,7 +232,7 @@ sealed class PositionExport
 
         // Bumped whenever a field changes meaning, so a reader can refuse a file it would misread rather than
         // silently interpreting an old one under new rules.
-        sb.Append("  \"schema\": 4,\n");
+        sb.Append("  \"schema\": 5,\n");
         sb.Append("  \"boss\": ").Append(Str(Boss)).Append(",\n");
         sb.Append("  \"oid\": ").Append(OID.ToString(CultureInfo.InvariantCulture)).Append(",\n");
         sb.Append("  \"zone\": ").Append(Zone.ToString(CultureInfo.InvariantCulture)).Append(",\n");
@@ -227,6 +261,34 @@ sealed class PositionExport
             {
                 sb.Append("null");
             }
+
+            sb.Append(", \"arenas\": [");
+            var segs = ArenaSegments.FindAll(x => x.Pull == p.Index);
+            for (var j = 0; j < segs.Count; ++j)
+            {
+                var g = segs[j];
+                sb.Append(j > 0 ? ", " : "")
+                  .Append("{\"from\": ").Append(Str(T(g.From)))
+                  .Append(", \"center\": ").Append(Pos(g.Center))
+                  .Append(", \"scale\": ").Append(N(g.Scale))
+                  .Append(", \"shape\": ").Append(Str(g.Shape))
+                  .Append(", \"source\": ").Append(Str(g.Source))
+                  .Append('}');
+            }
+
+            sb.Append("], \"director\": [");
+            var evs = DirectorEvents.FindAll(x => x.Pull == p.Index);
+            for (var j = 0; j < evs.Count; ++j)
+            {
+                var e = evs[j];
+                sb.Append(j > 0 ? ", " : "")
+                  .Append("{\"at\": ").Append(Str(T(e.At)))
+                  .Append(", \"update\": ").Append(e.UpdateID.ToString(CultureInfo.InvariantCulture))
+                  .Append(", \"param1\": ").Append(e.Param1.ToString(CultureInfo.InvariantCulture))
+                  .Append('}');
+            }
+
+            sb.Append(']');
 
             sb.Append('}').Append(i + 1 < Pulls.Count ? ",\n" : "\n");
         }
@@ -343,6 +405,8 @@ sealed class PositionExport
               .Append(", \"hit\": ").Append(Pos(r.Hit))
               .Append(", \"settled\": ").Append(Pos(r.Settled))
               .Append(", \"caster\": ").Append(Pos(r.Caster))
+              .Append(", \"casterRot\": ").Append(N(r.CasterRot))
+              .Append(", \"caught\": ").Append(r.Caught ? "true" : "false")
               .Append('}')
               .Append(i + 1 < Rows.Count ? ",\n" : "\n");
         }
