@@ -15,8 +15,8 @@ static class WelcomeRelease
     // Update these alongside each release. Older releases remain available through the release-history link.
     public static readonly Note[] Notes =
     [
-        new("Right fight, right little moment", "Position hints now match the boss, mechanic and recent session. New conflicts hide the affected hint."),
-        new("Tiny memories, big adventures", "Saved recording history is compacted in the background. Older positions without verifiable context stay hidden."),
-        new("A little patience for new strategies", "Live hints need five agreeing pulls in the current session and support from another session. Type /bmr welcome to visit again.")
+        new("A little banana buddy", "Lindwurm's Replication 2 now gives you a personal marker, a connecting line and an instruction for each step when Banana Codex is selected."),
+        new("Your spot, even without a tether", "The guide follows your actual assignment through baits, defamations, stacks, cone facing, close/far pairs and replay towers."),
+        new("Ready for your next adventure", "Keep Replication 2 strategy set to Banana Codex in Lindwurm phase-two settings. Type /bmr welcome to visit again.")
     ];
 }

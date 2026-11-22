@@ -70,6 +70,9 @@ jobs:
       - name: Check learned-position eligibility
         run: dotnet run --project Tests/PositionLearning/PositionLearning.csproj -c Release
 
+      - name: Check Banana Codex guidance
+        run: dotnet run --project Tests/BananaCodex/BananaCodex.csproj -c Release
+
       - name: Build Plugin
         run: dotnet build --no-restore -c Release BossMod/BossModReborn.csproj
 

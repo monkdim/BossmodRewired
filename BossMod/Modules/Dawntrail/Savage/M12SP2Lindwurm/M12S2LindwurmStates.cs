@@ -79,7 +79,8 @@ class M12S2LindwurmStates : StateMachineBuilder
     void Replication2(uint id, float delay)
     {
         Cast(id, AID.Staging, delay, 3f)
-            .ActivateOnEnter<Replication2Staging>();
+            .ActivateOnEnter<Replication2Staging>()
+            .ActivateOnEnter<BananaCodexGuidance>();
         ComponentCondition<Replication2Staging>(id + 3u, 7.9f, static comp => comp.PlayersAssigned, "Player clones appear");
         Cast(id + 0x10u, AID.Replication, 3.3f, 3f);
 
@@ -132,6 +133,7 @@ class M12S2LindwurmStates : StateMachineBuilder
             .DeactivateOnExit<Replication2ReenactmentTowers>()
             .DeactivateOnExit<Replication2ReenactmentScaldingWaves>()
             .DeactivateOnExit<Replication2ReenactmentAOEs>()
+            .DeactivateOnExit<BananaCodexGuidance>()
             .DeactivateOnExit<Replication2Staging>();
 
         Cast(id + 1u, AID.MutatingCells, 5.1f, 3f)

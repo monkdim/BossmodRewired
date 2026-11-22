@@ -192,6 +192,8 @@ class Replication2ScaldingWaves : Components.GenericBaitProximity
     public override void DrawArenaForeground(int pcSlot, Actor pc)
     {
         base.DrawArenaForeground(pcSlot, pc);
+        if (Service.Config.Get<M12S2LindwurmConfig>().Rep2Strategy == Replication2Strategy.BananaCodex)
+            return;
 
         var clone = _staging.WurmsBySlot[pcSlot];
         if (clone == null || _source == null)
@@ -343,6 +345,8 @@ class Replication2ManaBurst : Components.UniformStackSpread
     public override void DrawArenaForeground(int pcSlot, Actor pc)
     {
         base.DrawArenaForeground(pcSlot, pc);
+        if (Service.Config.Get<M12S2LindwurmConfig>().Rep2Strategy == Replication2Strategy.BananaCodex)
+            return;
 
         var clone = _staging.WurmsBySlot[pcSlot];
         if (clone == null)
@@ -1036,8 +1040,6 @@ sealed class Replication2TimelessSpite(BossModule module) : Components.UniformSt
     private DateTime _activation;
     private bool _far;
     public int NumCasts;
-    private readonly Replication2Staging _staging = module.FindComponent<Replication2Staging>()!;
-    private bool _netherwrathActive;
 
     public override void Update()
     {
@@ -1111,65 +1113,6 @@ sealed class Replication2TimelessSpite(BossModule module) : Components.UniformSt
             AddStack(raid[second], _activation);
     }
 
-    public override void DrawArenaForeground(int pcSlot, Actor pc)
-    {
-        var clone = _staging.WurmsBySlot[pcSlot];
-        if (clone == null)
-        {
-            base.DrawArenaForeground(pcSlot, pc);
-            return;
-        }
-
-        var role = clone.AssignedRole;
-        var config = Service.Config.Get<M12S2LindwurmConfig>();
-        var eff = config.GetReplication2();
-        var isBCStrat = eff.RelativeNorth == Clockspot.W;
-
-        // For BC strat during Netherwrath phase
-        if (isBCStrat && _netherwrathActive && _activation != default)
-        {
-            // Show positioning hints based on role
-            // Use actual boss position (the boss has been pulled to the W clockspot)
-            var bossPos = Module.PrimaryActor.Position;
-            var bossCardinal = eff.RelativeNorth.Angle; // West for BC
-            var perpDir = bossCardinal.ToDirection().OrthoL(); // Perpendicular for left/right
-
-            WPos targetPos;
-
-            // BC Strat positioning for Netherwrath
-            if (role.IsCone)
-            {
-                // Cone players stand near clones to either side of boss
-                if (role == Replication2Role.Cone1)
-                    targetPos = bossPos - 7f * perpDir; // Right side near clone
-                else // Cone2
-                    targetPos = bossPos + 7f * perpDir; // Left side near clone
-
-                var isInPosition = pc.Position.InCircle(targetPos, 2f);
-                Arena.ZoneCircleOutline(targetPos, 1f, isInPosition ? Colors.Safe : Colors.Vulnerable);
-                return; // Don't show stack indicators
-            }
-            else if (role.IsStack)
-            {
-                // Stack players stand between cone players and in boss hitbox
-                if (role == Replication2Role.Stack1)
-                    targetPos = bossPos - 2f * perpDir; // Between Cone1 and boss
-                else // Stack2
-                    targetPos = bossPos + 2f * perpDir; // Between Cone2 and boss
-            }
-            else
-            {
-                // All other players (Boss, None, Defam) stand west of boss (outside Nether AOE range)
-                targetPos = bossPos + 5f * 270.Degrees().ToDirection();
-            }
-
-            var inPosition = pc.Position.InCircle(targetPos, 2f);
-            Arena.ZoneCircleOutline(targetPos, 1f, inPosition ? Colors.Safe : Colors.Vulnerable);
-        }
-
-        base.DrawArenaForeground(pcSlot, pc);
-    }
-
     public override void OnCastStarted(Actor caster, ActorCastInfo spell)
     {
         switch (spell.Action.ID)
@@ -1177,13 +1120,11 @@ sealed class Replication2TimelessSpite(BossModule module) : Components.UniformSt
             case (uint)AID.NetherwrathNear:
                 _activation = Module.CastFinishAt(spell, 1.2d);
                 _far = false;
-                _netherwrathActive = true;
                 break;
 
             case (uint)AID.NetherwrathFar:
                 _activation = Module.CastFinishAt(spell, 1.2d);
                 _far = true;
-                _netherwrathActive = true;
                 break;
         }
     }
@@ -1196,7 +1137,6 @@ sealed class Replication2TimelessSpite(BossModule module) : Components.UniformSt
             if (NumCasts >= 2)
             {
                 _activation = default;
-                _netherwrathActive = false;
             }
         }
     }
