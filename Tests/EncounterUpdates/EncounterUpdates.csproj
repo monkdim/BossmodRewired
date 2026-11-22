@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+<PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+<ItemGroup>
+<Using Include="System.Runtime.InteropServices" />
+<Compile Include="../../BossMod/Modules/Dawntrail/Savage/M12SP1Lindwurm/RavenousReach.cs" />
+<Compile Include="../../BossMod/Modules/Dawntrail/Savage/M12SP1Lindwurm/M12SLindwurmEnums.cs" />
+<Compile Include="../../BossMod/Modules/RealmReborn/Alliance/A31AngraMainyu/AngraMechanics.cs" />
+<Compile Include="../../BossMod/Modules/RealmReborn/Alliance/A31AngraMainyu/A31AngraMainyuEnums.cs" />
+<Compile Include="../../BossMod/Modules/RealmReborn/Alliance/A14Phlegethon/AncientFlare.cs" />
+<Compile Include="../../BossMod/Modules/RealmReborn/Alliance/A14Phlegethon/A14PhlegethonEnums.cs" />
+<Compile Include="../../BossMod/Modules/RealmReborn/Alliance/A23Amon/CurtainCall.cs" />
+<Compile Include="../../BossMod/Modules/RealmReborn/Alliance/A23Amon/A23AmonEnums.cs" />
+<Compile Include="../../BossMod/Modules/Stormblood/Alliance/A33ThunderGod/HolySword.cs" />
+<Compile Include="../../BossMod/Modules/Stormblood/Alliance/A33ThunderGod/A33ThunderGodEnums.cs" />
+<Compile Include="../../BossMod/Modules/Heavensward/Dungeon/PharosSiriusHard/ProgenitorMechanics.cs" />
+<Compile Include="../../BossMod/Modules/Heavensward/Dungeon/PharosSiriusHard/ProgenitorEnums.cs" />
+<None Include="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
+</ItemGroup>
+</Project>

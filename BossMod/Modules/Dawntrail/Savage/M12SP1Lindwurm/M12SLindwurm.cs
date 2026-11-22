@@ -2,7 +2,6 @@ namespace BossMod.Dawntrail.Savage.M12SLindwurm;
 
 sealed class Slaughtershed0(BossModule module) : Components.RaidwideCast(module, (uint)AID.Slaughtershed0);
 sealed class unk_46194(BossModule module) : Components.RaidwideCast(module, (uint)AID.unk_46194);
-sealed class RavenousReach1(BossModule module) : Components.SimpleAOEs(module, (uint)AID.RavenousReach1, new AOEShapeCone(35f, 60f.Degrees()));
 sealed class PhagocyteSpotlight0(BossModule module) : Components.SimpleAOEs(module, (uint)AID.PhagocyteSpotlight0, 5f);
 sealed class GrandEntrance0(BossModule module) : Components.SimpleAOEs(module, (uint)AID.GrandEntrance0, 2f);
 sealed class GrandEntrance1(BossModule module) : Components.SimpleAOEs(module, (uint)AID.GrandEntrance1, 2f);

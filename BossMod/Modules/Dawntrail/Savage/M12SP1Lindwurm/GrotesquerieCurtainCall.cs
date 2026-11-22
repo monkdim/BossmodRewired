@@ -1,16 +1,12 @@
 namespace BossMod.Dawntrail.Savage.M12SLindwurm;
 
-// TODO: show goal zone for RottingFlesh players
 sealed class GrotesquerieCurtainCall(BossModule module) : Components.UniformStackSpread(module, default, 6f)
 {
     private const float ChainBreakDistance = 20f;
     private const float ChainGroupUpWindow = 4f;
 
-    private readonly bool[] _hasBurstingGrotesquerie = new bool[8];
-    private readonly bool[] _hasRottingFlesh = new bool[8];
     private readonly bool[] _hasBondsAlpha = new bool[8];
     private readonly bool[] _hasUnbreakableAlpha = new bool[8];
-    private readonly DateTime[] _rottingFleshExpiry = new DateTime[8];
     private DateTime _chainActivationTime;
 
     public override void OnStatusGain(Actor actor, ref ActorStatus status)
@@ -21,13 +17,7 @@ sealed class GrotesquerieCurtainCall(BossModule module) : Components.UniformStac
 
         if (status.ID == (uint)SID.BurstingGrotesquerie)
         {
-            _hasBurstingGrotesquerie[slot] = true;
             AddSpread(actor, status.ExpireAt);
-        }
-        else if (status.ID == (uint)SID.RottingFlesh)
-        {
-            _hasRottingFlesh[slot] = true;
-            _rottingFleshExpiry[slot] = status.ExpireAt;
         }
         else if (status.ID == (uint)SID.BondsOfFleshAlpha)
         {
@@ -50,13 +40,7 @@ sealed class GrotesquerieCurtainCall(BossModule module) : Components.UniformStac
 
         if (status.ID == (uint)SID.BurstingGrotesquerie)
         {
-            _hasBurstingGrotesquerie[slot] = false;
             Spreads.RemoveAll(s => s.Target == actor);
-        }
-        else if (status.ID == (uint)SID.RottingFlesh)
-        {
-            _hasRottingFlesh[slot] = false;
-            _rottingFleshExpiry[slot] = default;
         }
         else if (status.ID == (uint)SID.BondsOfFleshAlpha)
         {
@@ -131,11 +115,6 @@ sealed class GrotesquerieCurtainCall(BossModule module) : Components.UniformStac
     public override void AddHints(int slot, Actor actor, TextHints hints)
     {
         base.AddHints(slot, actor, hints);
-
-        if (_hasBurstingGrotesquerie[slot])
-            hints.Add("Spread and avoid cone!", false);
-        else if (_hasRottingFlesh[slot])
-            hints.Add("Spread and get hit by cone!", false);
 
         if (_hasUnbreakableAlpha[slot])
             hints.Add("Break chains!", false);

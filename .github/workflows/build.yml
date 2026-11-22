@@ -73,6 +73,12 @@ jobs:
       - name: Check Banana Codex guidance
         run: dotnet run --project Tests/BananaCodex/BananaCodex.csproj -c Release
 
+      - name: Check encounter updates against recordings
+        run: dotnet run --project Tests/EncounterUpdates/EncounterUpdates.csproj -c Release
+
+      - name: Check timeline synchronization against recordings
+        run: dotnet run --project Tests/Timelines/Timelines.csproj -c Release -- BossMod/Timelines/Cactbot
+
       - name: Build Plugin
         run: dotnet build --no-restore -c Release BossMod/BossModReborn.csproj
 

@@ -15,8 +15,8 @@ static class WelcomeRelease
     // Update these alongside each release. Older releases remain available through the release-history link.
     public static readonly Note[] Notes =
     [
-        new("A little banana buddy", "Lindwurm's Replication 2 now gives you a personal marker, a connecting line and an instruction for each step when Banana Codex is selected."),
-        new("Your spot, even without a tether", "The guide follows your actual assignment through baits, defamations, stacks, cone facing, close/far pairs and replay towers."),
-        new("Ready for your next adventure", "Keep Replication 2 strategy set to Banana Codex in Lindwurm phase-two settings. Type /bmr welcome to visit again.")
+        new("A little more help on your adventures", "Lindwurm's Curtain Call cone now tells you to enter or avoid it based on Rotting Flesh. Amon's radar loads with the default module setting."),
+        new("Eyes up, little adventurer", "Angra's marked circles follow their players at the corrected size, with brand and Doom reminders. Phlegethon and Thunder God gain mechanic callouts. Progenitor gains initial raidwide warnings in its work-in-progress module."),
+        new("Timely little reminders", "Fight timers now follow cast starts, sync windows, timeline jumps, combat starts, wipe resets, map effects and director updates. Type /bmr welcome to visit again.")
     ];
 }

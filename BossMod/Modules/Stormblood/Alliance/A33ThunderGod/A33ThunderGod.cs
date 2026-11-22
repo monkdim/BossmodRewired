@@ -1,4 +1,4 @@
-﻿namespace BossMod.Stormblood.Alliance.A33ThunderGod;
+namespace BossMod.Stormblood.Alliance.A33ThunderGod;
 
 class HallowedBolt(BossModule module) : Components.ConcentricAOEs(module, _shapes)
 {

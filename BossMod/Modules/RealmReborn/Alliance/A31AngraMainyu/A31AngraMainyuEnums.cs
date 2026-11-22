@@ -44,8 +44,8 @@ public enum SID : uint
 
 public enum IconID : uint
 {
-    Icon44 = 44, // player
-    Icon45 = 45, // player
+    Level100Flare = 44, // player
+    Level150Death = 45, // player
 }
 
 public enum TetherID : uint
